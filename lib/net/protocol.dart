@@ -25,6 +25,10 @@ class HostMsg {
   static const worldInit = 'worldInit';
   static const start = 'start';
   static const state = 'state';
+
+  /// The round was won. Carries what comes next, so every screen can show the
+  /// same "now stack your phones" instruction at the same moment.
+  static const won = 'won';
   static const pong = 'pong';
 }
 

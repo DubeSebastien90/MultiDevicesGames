@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:forge2d/forge2d.dart';
 
 import '../game/game_config.dart';
+import '../game/mini_game.dart';
 import '../model/coverage_map.dart';
 import '../model/world_rect.dart';
 import '../net/protocol.dart';
@@ -14,10 +15,14 @@ import '../net/protocol.dart';
 /// completely unaware of the seam — the whole point is that physics is
 /// continuous and the coverage map is metadata a *game* may consult, not a
 /// constraint on the simulation.
-class SlingshotSim {
+class SlingshotSim implements MiniGameSim {
   SlingshotSim({required this.coverage})
     : _world = World(Vector2(0, GameConfig.gravity)) {
     _build();
+    // The whole win condition: the bird touching the tower. A contact listener
+    // catches the graze that barely nudges a box as surely as the shot that
+    // flattens it, which polling positions afterwards would not.
+    _world.setContactListener(_BirdHitListener(() => _won = true));
   }
 
   final CoverageMap coverage;
@@ -35,7 +40,21 @@ class SlingshotSim {
   Vector2 get anchor => _anchor;
 
   int _tick = 0;
+  bool _won = false;
+
+  @override
   int get tick => _tick;
+
+  @override
+  bool get won => _won;
+
+  @override
+  GameProgress? get progress => null;
+
+  @override
+  Map<String, dynamic> worldInitExtras() => {
+    'anchor': {'x': _anchor.x, 'y': _anchor.y},
+  };
 
   // Slingshot state.
   String? _draggingPhoneId;
@@ -45,9 +64,14 @@ class SlingshotSim {
   Duration _atRest = Duration.zero;
 
   /// Static description of every entity, sent once at start.
+  @override
   List<EntitySpec> get specs => List.unmodifiable(_specs);
 
   static const _birdId = 'bird';
+
+  /// Marks a tower box. Every target shares the tag because the win condition
+  /// does not care *which* one was hit.
+  static const _targetTag = 'target';
 
   void _build() {
     final b = board;
@@ -125,6 +149,7 @@ class SlingshotSim {
         restitution: GameConfig.birdRestitution,
       ),
     );
+    body.userData = _birdId;
     _bodies[_birdId] = body;
     _specs.add(EntitySpec(
       id: _birdId,
@@ -167,6 +192,7 @@ class SlingshotSim {
             restitution: 0.05,
           ),
         );
+        body.userData = _targetTag;
         _bodies[id] = body;
         _initialPoses[id] = (position: pos.clone(), angle: 0.0);
         _specs.add(EntitySpec(
@@ -195,6 +221,7 @@ class SlingshotSim {
   ///
   /// The sim does not know or care which screen it came from, beyond honouring
   /// one drag at a time.
+  @override
   void onTouch({
     required String phoneId,
     required double worldX,
@@ -261,6 +288,7 @@ class SlingshotSim {
   }
 
   /// Put the bird back in the pouch and stand the tower back up.
+  @override
   void reset() {
     _draggingPhoneId = null;
     _inFlight = false;
@@ -286,9 +314,14 @@ class SlingshotSim {
 
   // ----------------------------------------------------------------- step
 
+  @override
   void step(double dt) {
     _world.stepDt(dt);
     _tick++;
+
+    // Once the tower has been hit the round is over: let the boxes finish
+    // tumbling on screen, but never yank the bird back for another go.
+    if (_won) return;
 
     if (_inFlight) {
       final elapsed = Duration(microseconds: (dt * 1e6).round());
@@ -315,6 +348,7 @@ class SlingshotSim {
   /// Everything a client needs for this instant. Static scenery is included so a
   /// client that joins mid-game (or a phone whose slice only contains ground)
   /// still has something to draw.
+  @override
   List<EntityState> entityStates() {
     final out = <EntityState>[];
     for (final spec in _specs) {
@@ -333,6 +367,7 @@ class SlingshotSim {
     return out;
   }
 
+  @override
   SlingState slingState() => SlingState(
     active: _draggingPhoneId != null,
     anchorX: _anchor.x,
@@ -341,4 +376,33 @@ class SlingshotSim {
     pullY: _draggingPhoneId != null ? _pull.y : _anchor.y,
     draggingPhoneId: _draggingPhoneId,
   );
+}
+
+/// Fires the first time the bird touches a tower box.
+///
+/// Reports through a callback rather than mutating the sim directly, so the one
+/// rule this class encodes — "bird meets target" — stays readable next to the
+/// Box2D ceremony it takes to notice.
+class _BirdHitListener extends ContactListener {
+  _BirdHitListener(this.onHit);
+
+  final void Function() onHit;
+
+  @override
+  void beginContact(Contact contact) {
+    final a = contact.fixtureA.body.userData;
+    final b = contact.fixtureB.body.userData;
+    final hit = (a == SlingshotSim._birdId && b == SlingshotSim._targetTag) ||
+        (b == SlingshotSim._birdId && a == SlingshotSim._targetTag);
+    if (hit) onHit();
+  }
+
+  @override
+  void endContact(Contact contact) {}
+
+  @override
+  void preSolve(Contact contact, Manifold oldManifold) {}
+
+  @override
+  void postSolve(Contact contact, ContactImpulse impulse) {}
 }

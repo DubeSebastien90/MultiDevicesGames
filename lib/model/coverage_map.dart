@@ -1,3 +1,4 @@
+import 'arrangement.dart';
 import 'world_rect.dart';
 
 /// Which parts of the board are backed by a real screen.
@@ -13,7 +14,11 @@ import 'world_rect.dart';
 /// of screens. A grid/quadtree/bitmask only pays off with many screens or
 /// per-pixel queries, so it is deliberately not here.
 class CoverageMap {
-  const CoverageMap({required this.liveRects, required this.board});
+  const CoverageMap({
+    required this.liveRects,
+    required this.board,
+    this.arrangement = Arrangement.strip,
+  });
 
   /// One rectangle per phone's active area, in world coordinates.
   final List<WorldRect> liveRects;
@@ -22,6 +27,10 @@ class CoverageMap {
   /// the only dead zones are real bezel gaps and every one means the same thing.
   final WorldRect board;
 
+  /// Which axis the phones were laid out along. Only [seamRects] needs it: a
+  /// seam runs across the board perpendicular to that axis.
+  final Arrangement arrangement;
+
   bool isCovered(double x, double y) {
     for (final r in liveRects) {
       if (r.contains(x, y)) return true;
@@ -29,15 +38,26 @@ class CoverageMap {
     return false;
   }
 
-  /// The gaps between consecutive screens, left to right. These are physically
-  /// real space the bird should traverse.
+  /// The gaps between consecutive screens, in layout order. These are
+  /// physically real space a ball or bird must traverse.
   List<WorldRect> seamRects() {
-    final sorted = List.of(liveRects)..sort((a, b) => a.left.compareTo(b.left));
     final seams = <WorldRect>[];
-    for (var i = 0; i < sorted.length - 1; i++) {
-      final gap = sorted[i + 1].left - sorted[i].right;
-      if (gap > 1e-6) {
-        seams.add(WorldRect(sorted[i].right, board.top, gap, board.height));
+    if (arrangement.isHorizontal) {
+      final sorted = List.of(liveRects)
+        ..sort((a, b) => a.left.compareTo(b.left));
+      for (var i = 0; i < sorted.length - 1; i++) {
+        final gap = sorted[i + 1].left - sorted[i].right;
+        if (gap > 1e-6) {
+          seams.add(WorldRect(sorted[i].right, board.top, gap, board.height));
+        }
+      }
+    } else {
+      final sorted = List.of(liveRects)..sort((a, b) => a.top.compareTo(b.top));
+      for (var i = 0; i < sorted.length - 1; i++) {
+        final gap = sorted[i + 1].top - sorted[i].bottom;
+        if (gap > 1e-6) {
+          seams.add(WorldRect(board.left, sorted[i].bottom, board.width, gap));
+        }
       }
     }
     return seams;
@@ -46,6 +66,7 @@ class CoverageMap {
   Map<String, dynamic> toJson() => {
     'live': [for (final r in liveRects) r.toJson()],
     'board': board.toJson(),
+    'arrangement': arrangement.wireName,
   };
 
   static CoverageMap fromJson(Map<String, dynamic> j) => CoverageMap(
@@ -54,6 +75,7 @@ class CoverageMap {
         WorldRect.fromJson(r as Map<String, dynamic>),
     ],
     board: WorldRect.fromJson(j['board'] as Map<String, dynamic>),
+    arrangement: ArrangementInfo.fromWire(j['arrangement'] as String?),
   );
 }
 

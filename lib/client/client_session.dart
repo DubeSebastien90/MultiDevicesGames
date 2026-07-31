@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../game/mini_game.dart';
+import '../model/arrangement.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
 import '../model/phone_layout.dart';
@@ -10,7 +12,46 @@ import '../net/protocol.dart';
 import '../net/transport.dart';
 import 'snapshot_buffer.dart';
 
-enum ClientPhase { connecting, lobby, placing, playing, rejected, disconnected }
+enum ClientPhase {
+  connecting,
+  lobby,
+  placing,
+  playing,
+  won,
+  rejected,
+  disconnected,
+}
+
+/// A round that was won, and what the playlist serves up next.
+class WinResult {
+  const WinResult({
+    required this.title,
+    required this.nextTitle,
+    required this.nextTagline,
+    required this.nextArrangement,
+    this.progress,
+  });
+
+  final String title;
+  final String nextTitle;
+  final String nextTagline;
+  final Arrangement nextArrangement;
+
+  /// Final score, for games that kept one.
+  final GameProgress? progress;
+
+  static WinResult fromJson(Map<String, dynamic> j) {
+    final p = j['progress'];
+    return WinResult(
+      title: (j['gameTitle'] as String?) ?? 'That round',
+      nextTitle: (j['nextTitle'] as String?) ?? 'Next game',
+      nextTagline: (j['nextTagline'] as String?) ?? '',
+      nextArrangement:
+          ArrangementInfo.fromWire(j['nextArrangement'] as String?),
+      progress: p is Map<String, dynamic> ? GameProgress.fromJson(p) : null,
+    );
+  }
+}
 
 /// One phone's view of the game: a viewport, nothing more.
 ///
@@ -56,6 +97,35 @@ class ClientSession extends ChangeNotifier {
   /// What the host calls this game, once we are in.
   String? get gameName => _gameName;
   String? _gameName;
+
+  /// The minigame currently being set up or played, as the host describes it.
+  /// All display-only — a client never builds a world from this.
+  String? get miniGameId => _miniGameId;
+  String? get miniGameTitle => _miniGameTitle;
+  String? get miniGameTagline => _miniGameTagline;
+  String? get miniGameGoal => _miniGameGoal;
+  String? _miniGameId;
+  String? _miniGameTitle;
+  String? _miniGameTagline;
+  String? _miniGameGoal;
+
+  /// How the phones should be laid out for it.
+  Arrangement get arrangement => _arrangement;
+  Arrangement _arrangement = Arrangement.strip;
+
+  /// The host's phase, verbatim. The client mostly routes on its own phase; it
+  /// needs this only to tell "host is picking the next game" from "host is
+  /// still in the lobby".
+  String? get hostPhase => _hostPhase;
+  String? _hostPhase;
+
+  /// Live score during play, for games that keep one.
+  GameProgress? get progress => _progress;
+  GameProgress? _progress;
+
+  /// Set when a round is won: what was beaten, and what is next.
+  WinResult? get win => _win;
+  WinResult? _win;
   PhoneLayout? get layout => _layout;
   CoverageMap? get coverage => _coverage;
   WorldRect? get board => _board;
@@ -174,6 +244,15 @@ class ClientSession extends ChangeNotifier {
         _lobbyPhones = [
           for (final p in msg['phones'] as List) p as Map<String, dynamic>,
         ];
+        _hostPhase = msg['phase'] as String?;
+        _readGameFields(msg);
+        // The host went back to setting up (next round, or a re-calibrate):
+        // follow it out of the win screen rather than stranding this phone on
+        // a stale "you win".
+        if (_phase == ClientPhase.won && _hostPhase != 'won') {
+          _phase = ClientPhase.lobby;
+          _win = null;
+        }
         notifyListeners();
 
       case HostMsg.layout:
@@ -181,7 +260,10 @@ class ClientSession extends ChangeNotifier {
         _coverage =
             CoverageMap.fromJson(msg['coverage'] as Map<String, dynamic>);
         _board = _layout!.board;
+        _readGameFields(msg);
         _phase = ClientPhase.placing;
+        _win = null;
+        _progress = null;
         buffer.clear();
         notifyListeners();
 
@@ -190,6 +272,7 @@ class ClientSession extends ChangeNotifier {
         final anchor = msg['anchor'] as Map<String, dynamic>?;
         _anchorX = (anchor?['x'] as num?)?.toDouble();
         _anchorY = (anchor?['y'] as num?)?.toDouble();
+        _readGameFields(msg);
         _specs = [
           for (final e in msg['entities'] as List)
             EntitySpec.fromJson(e as Map<String, dynamic>),
@@ -201,7 +284,14 @@ class ClientSession extends ChangeNotifier {
         buffer.clear();
         notifyListeners();
 
+      case HostMsg.won:
+        _win = WinResult.fromJson(msg);
+        _phase = ClientPhase.won;
+        notifyListeners();
+
       case HostMsg.state:
+        final p = msg['progress'];
+        if (p is Map<String, dynamic>) _progress = GameProgress.fromJson(p);
         buffer.add(Snapshot(
           tick: (msg['tick'] as num).toInt(),
           hostTimeMs: (msg['t'] as num).toDouble(),
@@ -220,6 +310,19 @@ class ClientSession extends ChangeNotifier {
       case HostMsg.pong:
         final sent = (msg['t'] as num).toDouble();
         _rttMs = _clock.elapsedMilliseconds - sent;
+    }
+  }
+
+  /// Picks up whichever game-description fields a message happens to carry.
+  /// The host repeats them liberally, so this is called from several handlers.
+  void _readGameFields(Map<String, dynamic> msg) {
+    _miniGameId = (msg['game'] as String?) ?? _miniGameId;
+    _miniGameTitle = (msg['gameTitle'] as String?) ?? _miniGameTitle;
+    _miniGameTagline = (msg['gameTagline'] as String?) ?? _miniGameTagline;
+    _miniGameGoal = (msg['gameGoal'] as String?) ?? _miniGameGoal;
+    final arrangement = msg['arrangement'] as String?;
+    if (arrangement != null) {
+      _arrangement = ArrangementInfo.fromWire(arrangement);
     }
   }
 

@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../app_controller.dart';
+import '../client/client_session.dart';
 import '../host/host_session.dart';
-import 'metrics_card.dart';
-import 'strip_diagram.dart';
 
-/// Step 1 of the build order, as a screen: get phones talking to each other.
+/// The connection screen, and only that: the code, the QR, the address, and who
+/// has arrived.
+///
+/// Deliberately says nothing about phone placement. That belongs to the
+/// arrangement screen, because it changes with every minigame while this screen
+/// never does — you set the room up once and let people in, then decide what to
+/// play.
 ///
 /// The host advertises the game by name over UDP so friends can find it without
 /// typing anything, and gates entry on a 5-digit code so a stranger who sees
@@ -24,27 +29,8 @@ class LobbyView extends StatelessWidget {
     final host = controller.host;
     final theme = Theme.of(context);
 
-    final phones = host != null
-        ? [
-            for (final p in host.phones)
-              StripPhone(
-                label: p.label,
-                widthMm: p.metrics?.widthMm ?? 70,
-                heightMm: p.metrics?.heightMm ?? 150,
-                isMe: p.phoneId == client.phoneId,
-                connected: p.connected,
-              ),
-          ]
-        : [
-            for (final p in client.lobbyPhones)
-              StripPhone(
-                label: (p['label'] as String?) ?? '?',
-                widthMm: (p['widthMm'] as num?)?.toDouble() ?? 70,
-                heightMm: (p['heightMm'] as num?)?.toDouble() ?? 150,
-                isMe: p['phoneId'] == client.phoneId,
-                connected: (p['connected'] as bool?) ?? true,
-              ),
-          ];
+    final phoneCount =
+        host?.phones.length ?? client.lobbyPhones.length;
 
     return Scaffold(
       body: SafeArea(
@@ -81,52 +67,133 @@ class LobbyView extends StatelessWidget {
                   if (host != null)
                     _HostPanel(host: host)
                   else
-                    Card(
-                      margin: EdgeInsets.zero,
-                      child: ListTile(
-                        leading: const Icon(Icons.check_circle_outline),
-                        title: const Text('Connected to the host'),
-                        subtitle: Text(
-                          'Waiting for the host to lay out the board. '
-                          '${phones.length} phone(s) in.',
-                        ),
-                      ),
-                    ),
+                    _JoinedPanel(client: client, phoneCount: phoneCount),
                   const SizedBox(height: 14),
-                  Text('Planned arrangement', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 6),
-                  StripDiagram(phones: phones),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Left to right, top edges aligned.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 14),
-                  MetricsCard(
-                    metrics: client.metrics,
-                    onChanged: client.updateMetrics,
+                  _WhoIsHere(
+                    controller: controller,
+                    count: phoneCount,
                   ),
                   if (host != null) ...[
-                    const SizedBox(height: 14),
-                    _PhoneOrderList(host: host, meId: client.phoneId),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
                     FilledButton.icon(
                       onPressed:
-                          host.canPlacePhones ? host.sendPlacement : null,
-                      icon: const Icon(Icons.grid_view),
+                          host.canStartArranging ? host.startArranging : null,
+                      icon: const Icon(Icons.play_arrow),
                       label: const Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Lay out the board'),
+                        child: Text('Play'),
                       ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      host.canStartArranging
+                          ? 'Next you will place the phones for '
+                              '${host.game.title}.'
+                          : 'Waiting for every phone to report its size…',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _JoinedPanel extends StatelessWidget {
+  const _JoinedPanel({required this.client, required this.phoneCount});
+
+  final ClientSession client;
+  final int phoneCount;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: EdgeInsets.zero,
+    child: ListTile(
+      leading: const Icon(Icons.check_circle_outline),
+      title: Text(client.gameName ?? 'Connected to the host'),
+      subtitle: Text(
+        'Waiting for the host to start. $phoneCount phone(s) in.',
+      ),
+    ),
+  );
+}
+
+/// Everyone who has made it in. Names only — sizes and ordering are the
+/// arrangement screen's business.
+class _WhoIsHere extends StatelessWidget {
+  const _WhoIsHere({required this.controller, required this.count});
+
+  final AppController controller;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final client = controller.client!;
+    final host = controller.host;
+
+    final entries = host != null
+        ? [
+            for (final p in host.phones)
+              (
+                label: p.label,
+                me: p.phoneId == client.phoneId,
+                ready: p.calibrated,
+                connected: p.connected,
+              ),
+          ]
+        : [
+            for (final p in client.lobbyPhones)
+              (
+                label: (p['label'] as String?) ?? '?',
+                me: p['phoneId'] == client.phoneId,
+                ready: (p['calibrated'] as bool?) ?? false,
+                connected: (p['connected'] as bool?) ?? true,
+              ),
+          ];
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              count == 1 ? '1 phone here' : '$count phones here',
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final e in entries)
+                  Chip(
+                    avatar: Icon(
+                      !e.connected
+                          ? Icons.link_off
+                          : e.ready
+                              ? Icons.smartphone
+                              : Icons.hourglass_empty,
+                      size: 16,
+                      color: e.connected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.error,
+                    ),
+                    label: Text(e.me ? '${e.label} (you)' : e.label),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -220,82 +287,6 @@ class _HostPanel extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The list order *is* the physical arrangement, so it has to be editable: the
-/// host is not necessarily the phone on the left.
-class _PhoneOrderList extends StatelessWidget {
-  const _PhoneOrderList({required this.host, required this.meId});
-
-  final HostSession host;
-  final String? meId;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final phones = host.phones;
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Column(
-          children: [
-            for (final (i, p) in phones.indexed)
-              ListTile(
-                dense: true,
-                leading: CircleAvatar(
-                  radius: 13,
-                  child: Text('${i + 1}', style: theme.textTheme.labelSmall),
-                ),
-                title: Row(
-                  children: [
-                    Text(p.label),
-                    if (p.phoneId == meId) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        '(this phone)',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                subtitle: Text(
-                  p.metrics == null
-                      ? 'waiting for calibration…'
-                      : '${p.metrics!.widthMm.toStringAsFixed(0)} × '
-                          '${p.metrics!.heightMm.toStringAsFixed(0)} mm · '
-                          'bezel ${p.metrics!.bezelMm.toStringAsFixed(1)} mm · '
-                          '${p.link.debugName}',
-                  style: theme.textTheme.bodySmall,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Move left',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: i == 0 ? null : () => host.movePhone(i, -1),
-                      icon: const Icon(Icons.arrow_back, size: 18),
-                    ),
-                    IconButton(
-                      tooltip: 'Move right',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: i == phones.length - 1
-                          ? null
-                          : () => host.movePhone(i, 1),
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),

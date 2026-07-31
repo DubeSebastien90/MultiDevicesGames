@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// One phone in the strip, as the diagram needs it.
-class StripPhone {
-  const StripPhone({
+import '../model/arrangement.dart';
+
+/// One phone in the diagram, as drawing it needs it.
+class DiagramPhone {
+  const DiagramPhone({
     required this.label,
     required this.widthMm,
     required this.heightMm,
@@ -22,19 +24,28 @@ class StripPhone {
 /// A to-scale picture of the arrangement the host has in mind.
 ///
 /// Drawn from the real millimetre measurements, so a phone that is physically
-/// larger looks larger here. This is the whole "place yourself here" instruction
-/// in one glance.
-class StripDiagram extends StatelessWidget {
-  const StripDiagram({super.key, required this.phones, this.height = 84});
+/// larger looks larger here. This is the whole "put your phone there"
+/// instruction in one glance — and since each minigame asks for a different
+/// arrangement, the picture is how you know the table has to change.
+class ArrangementDiagram extends StatelessWidget {
+  const ArrangementDiagram({
+    super.key,
+    required this.phones,
+    this.arrangement = Arrangement.strip,
+    this.extent = 84,
+  });
 
-  final List<StripPhone> phones;
-  final double height;
+  final List<DiagramPhone> phones;
+  final Arrangement arrangement;
+
+  /// How much room the drawing gets along its long axis.
+  final double extent;
 
   @override
   Widget build(BuildContext context) {
     if (phones.isEmpty) {
       return SizedBox(
-        height: height,
+        height: extent,
         child: Center(
           child: Text(
             'No phones yet',
@@ -45,26 +56,47 @@ class StripDiagram extends StatelessWidget {
     }
 
     final scheme = Theme.of(context).colorScheme;
-    final tallestMm = phones.map((p) => p.heightMm).reduce((a, b) => a > b ? a : b);
+    final horizontal = arrangement.isHorizontal;
+
+    // Scale so the whole arrangement fits the space it is given: across the
+    // packing axis for a strip, along it for a stack.
+    final double unit;
+    if (horizontal) {
+      final tallestMm =
+          phones.map((p) => p.heightMm).reduce((a, b) => a > b ? a : b);
+      unit = extent / tallestMm;
+    } else {
+      final totalMm = phones.fold<double>(0, (sum, p) => sum + p.heightMm);
+      // Leave room for the gaps drawn between phones.
+      unit = (extent - 4.0 * (phones.length - 1)) / totalMm;
+    }
+
+    final chips = <Widget>[
+      for (final (i, p) in phones.indexed) ...[
+        if (i > 0)
+          SizedBox(width: horizontal ? 6 : 0, height: horizontal ? 0 : 4),
+        _PhoneChip(
+          phone: p,
+          width: p.widthMm * unit,
+          height: p.heightMm * unit,
+          scheme: scheme,
+        ),
+      ],
+    ];
 
     return SizedBox(
-      height: height,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final (i, p) in phones.indexed) ...[
-            if (i > 0) const SizedBox(width: 6),
-            _PhoneChip(
-              phone: p,
-              // Aspect ratio comes from the measurements; the tallest phone
-              // fills the row.
-              boxHeight: height * (p.heightMm / tallestMm),
-              scheme: scheme,
+      height: extent,
+      child: horizontal
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: chips,
+            )
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: chips,
             ),
-          ],
-        ],
-      ),
     );
   }
 }
@@ -72,17 +104,18 @@ class StripDiagram extends StatelessWidget {
 class _PhoneChip extends StatelessWidget {
   const _PhoneChip({
     required this.phone,
-    required this.boxHeight,
+    required this.width,
+    required this.height,
     required this.scheme,
   });
 
-  final StripPhone phone;
-  final double boxHeight;
+  final DiagramPhone phone;
+  final double width;
+  final double height;
   final ColorScheme scheme;
 
   @override
   Widget build(BuildContext context) {
-    final aspect = phone.widthMm / phone.heightMm;
     final border = !phone.connected
         ? scheme.error
         : phone.isMe
@@ -90,8 +123,8 @@ class _PhoneChip extends StatelessWidget {
             : scheme.outlineVariant;
 
     return SizedBox(
-      height: boxHeight,
-      width: boxHeight * aspect,
+      height: height,
+      width: width,
       child: Container(
         decoration: BoxDecoration(
           color: phone.isMe
@@ -104,10 +137,12 @@ class _PhoneChip extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                phone.label,
-                style: Theme.of(context).textTheme.labelSmall,
-                overflow: TextOverflow.ellipsis,
+              Flexible(
+                child: Text(
+                  phone.label,
+                  style: Theme.of(context).textTheme.labelSmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (phone.confirmed)
                 Icon(Icons.check_circle, size: 14, color: scheme.primary),

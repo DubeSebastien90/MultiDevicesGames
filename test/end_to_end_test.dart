@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/client/client_session.dart';
 import 'package:multiscreen_slingshot/host/host_session.dart';
+import 'package:multiscreen_slingshot/model/arrangement.dart';
 import 'package:multiscreen_slingshot/model/device_metrics.dart';
 import 'package:multiscreen_slingshot/net/loopback_transport.dart';
 import 'package:multiscreen_slingshot/net/protocol.dart';
@@ -91,6 +92,12 @@ void main() {
   test('both phones handshake, get placed, and start playing', () async {
     await waitFor('both phones calibrated', () =>
         host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+    // The lobby is about connecting; laying phones out is the next screen.
+    expect(host.canStartArranging, isTrue);
+    expect(host.canPlacePhones, isFalse, reason: 'still in the lobby');
+    host.startArranging();
+    expect(host.phase, HostPhase.arranging);
     expect(host.canPlacePhones, isTrue);
 
     host.sendPlacement();
@@ -174,16 +181,25 @@ void main() {
     touchPhone1(anchorX, anchorY, TouchPhase.down);
     await Future<void>.delayed(const Duration(milliseconds: 40));
     touchPhone1(pullX, pullY, TouchPhase.move);
-    await Future<void>.delayed(const Duration(milliseconds: 40));
 
-    // While pulled, every screen is told about the band — not just the one being
-    // touched.
-    phone1.buffer.advance(16);
-    phone2.buffer.advance(16);
-    final slingOnPhone2 = phone2.buffer.sampleSling();
-    expect(slingOnPhone2, isNotNull);
-    expect(slingOnPhone2!.active, isTrue);
-    expect(slingOnPhone2.draggingPhoneId, phone1.phoneId);
+    // While pulled, every screen is told about the band — not just the one
+    // being touched. Waiting on the band itself rather than on a fixed sleep:
+    // how many milliseconds it takes to arrive depends on how loaded the
+    // machine is, but that it arrives at all does not.
+    SlingState? slingOnPhone2;
+    await waitFor('the pull to reach phone 2', () {
+      // Advance in step with the polling interval so the render clock stays
+      // roughly real-time instead of racing ahead into extrapolation.
+      phone1.buffer.advance(5);
+      phone2.buffer.advance(5);
+      final s = phone2.buffer.sampleSling();
+      if (s != null && s.active) {
+        slingOnPhone2 = s;
+        return true;
+      }
+      return false;
+    });
+    expect(slingOnPhone2!.draggingPhoneId, phone1.phoneId);
 
     touchPhone1(pullX, pullY, TouchPhase.up);
 
@@ -237,6 +253,79 @@ void main() {
       reason: 'phones disagreed by ${maxApart.toStringAsFixed(3)} units at the '
           'seam',
     );
+  });
+
+  test('winning a round moves the whole table on to the next game', () async {
+    await _startPlaying(host, phone1, phone2);
+    expect(host.game.id, 'slingshot');
+
+    // Take the shot that ends the round.
+    final anchorX = phone1.anchorX!;
+    final anchorY = phone1.anchorY!;
+    void touch(double wx, double wy, String phase) {
+      final px = phone1.layout!.worldToPhysicalPx(wx, wy);
+      final dpr = phone1.metrics.devicePixelRatio;
+      phone1.sendTouch(px.x / dpr, px.y / dpr, phase);
+    }
+
+    touch(anchorX, anchorY, TouchPhase.down);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    touch(anchorX - 2.8, anchorY + 1.0, TouchPhase.move);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    touch(anchorX - 2.8, anchorY + 1.0, TouchPhase.up);
+
+    await waitFor('the tower to be hit', () => host.phase == HostPhase.won,
+        timeout: const Duration(seconds: 12));
+
+    // Both screens are told, not just the one that took the shot.
+    await waitFor(
+      'both phones on the win screen',
+      () => phone1.phase == ClientPhase.won && phone2.phase == ClientPhase.won,
+    );
+    expect(phone1.win!.nextTitle, 'Ball Bin');
+    expect(phone2.win!.nextArrangement, Arrangement.stack);
+
+    // The playlist advances into the arrangement screen, not straight to play:
+    // the phones have to physically move first.
+    host.advanceToNextGame();
+    expect(host.phase, HostPhase.arranging);
+    expect(host.game.id, 'ballbin');
+    expect(host.game.arrangement, Arrangement.stack);
+
+    await waitFor(
+      'phones follow the host out of the win screen',
+      () => phone1.phase == ClientPhase.lobby &&
+          phone2.phase == ClientPhase.lobby,
+    );
+
+    host.sendPlacement();
+    await waitFor(
+      'new layouts delivered',
+      () => phone1.layout != null &&
+          phone2.layout != null &&
+          phone1.layout!.worldOffsetY != phone2.layout!.worldOffsetY,
+    );
+
+    // Stacked this time: same phones, board rotated a quarter turn.
+    expect(phone1.arrangement, Arrangement.stack);
+    expect(phone1.layout!.worldOffsetX, closeTo(0, 1e-9));
+    expect(phone2.layout!.worldOffsetX, closeTo(0, 1e-9));
+    expect(phone2.layout!.worldOffsetY, closeTo(6.858 + 0.6, 1e-9));
+    expect(phone2.layout!.placement, contains('below phone 1'));
+
+    // And it really plays: confirm through and the bin game starts.
+    phone1.confirmPlacement();
+    phone2.confirmPlacement();
+    await waitFor('the bin game running', () =>
+        host.phase == HostPhase.playing &&
+        phone1.specs.any((s) => s.id == 'bin'));
+
+    // The score rides on the snapshots, so it appears a frame or two after
+    // the world description does.
+    await waitFor('the score to reach both phones',
+        () => phone1.progress != null && phone2.progress != null);
+    expect(phone1.progress!.goal, 10);
+    expect(phone1.progress!.label, 'caught');
   });
 
   test('the bird flies through the dead zone rather than stopping at it',
@@ -302,6 +391,7 @@ Future<void> _startPlaying(
 ) async {
   await waitFor('both calibrated', () =>
       host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+  host.startArranging();
   host.sendPlacement();
   await waitFor(
     'layouts delivered',

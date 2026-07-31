@@ -3,10 +3,11 @@
 Several phones laid side by side on a table become **one shared game world**. One
 phone runs the authoritative simulation; every phone is a viewport onto it.
 
-The game is deliberately tiny — an Angry-Birds-style slingshot with one bird.
-The point of v1 is not the game. It is **the seam**: when the bird flies off one
-phone's screen, across the physical gap, and onto the next one, it has to look
-like one continuous motion across one continuous screen.
+The games are deliberately tiny — an Angry-Birds-style slingshot, and a bin that
+catches falling balls. The point is not the games. It is **the seam**: when the
+bird flies off one phone's screen, across the physical gap, and onto the next
+one, it has to look like one continuous motion across one continuous screen. The
+ball bin is the same trick turned ninety degrees.
 
 Built to [`multiscreen-game-v1-spec.md`](multiscreen-game-v1-spec.md).
 
@@ -21,13 +22,36 @@ On the first phone tap **Host a game**, name it, and it shows a 5-digit code.
 On the second tap **Join a game**: your friend's game is already in the list —
 pick it and type the code. Then:
 
-1. Check the measurements on each phone (see *Millimetres* below).
-2. Host taps **Lay out the board**.
+1. Host taps **Play**. That leaves the lobby for the arrangement screen.
+2. Check the measurements and the phone order (see *Millimetres* below), then
+   tap **Lay out the board**.
 3. Each phone shows where to sit. Push them together, tap **In place — confirm**.
-4. Drag the bird and let go.
+4. Play. Win, and the next minigame starts — with a different arrangement.
 
 The host is a player too — it renders its own viewport through the same code path
 as everybody else.
+
+## Two screens, on purpose
+
+**Lobby** is about *connecting*: the code, the QR, the address, who has arrived.
+You see it once. **Arrangement** is about *the table*: which minigame is next and
+where each phone physically goes. You see it once per round, because each
+minigame declares the board shape it needs.
+
+## The playlist
+
+Minigames alternate forever, and the arrangement alternates with them:
+
+| Game | Arrangement | Board | Won by |
+| --- | --- | --- | --- |
+| **Slingshot** | side by side, short edges touching | wide and short | hitting the tower |
+| **Ball Bin** | stacked, long edges touching | narrow and tall | catching 10 balls |
+
+Adding a third means writing a `MiniGameSim` and adding it to
+`host/game_catalog.dart`. Transport, layout, snapshots and interpolation never
+learn its name. Nothing else about the stack changed to add the second one —
+`PhoneLayout` always carried a full `(x, y)` offset, the second component just
+happened to be zero every time until now.
 
 Scanning the host's QR instead skips the code — it carries `ws://<ip>:<port>#<code>`,
 and standing in front of the screen is the same proof the code asks for. Typing
@@ -45,11 +69,16 @@ lib/
   net/          Transport interface + WebSocket, loopback, QueuedBroadcast
                   discovery.dart       UDP beacon: hosts announce, joiners listen
   model/        DeviceMetrics, PhoneLayout (the transforms), CoverageMap
+                  arrangement.dart     strip | stack — the shape of the table
+  game/         mini_game.dart         what the host needs from any minigame
+                  game_config.dart     every tunable, as plain data
   host/         HostSession (the only thing that runs physics)
-                  layout_solver.dart   packs phones left-to-right
+                  game_catalog.dart    the playlist
+                  layout_solver.dart   packs phones along either axis
                   slingshot_sim.dart   headless Forge2D world
+                  ball_bin_sim.dart    the other one
   client/       ClientSession, SnapshotBuffer (the interpolator), ViewportGame
-  ui/           role → lobby → placement → game
+  ui/           role → lobby → arrangement → placement → game → win
 ```
 
 Server-authoritative, client-side viewport rendering:

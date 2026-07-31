@@ -4,15 +4,24 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../game/game_config.dart';
+import '../game/mini_game.dart';
+import '../model/arrangement.dart';
 import '../model/device_metrics.dart';
 import '../net/discovery.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
 import '../net/websocket_transport.dart';
+import 'game_catalog.dart';
 import 'layout_solver.dart';
-import 'slingshot_sim.dart';
 
-enum HostPhase { idle, lobby, placing, playing }
+/// The host's journey through one session.
+///
+/// [lobby] is about *connecting* — the code, the QR, who is in. [arranging] is
+/// about the *table* — which minigame is next and where each phone physically
+/// goes. Keeping them apart is what lets a second minigame with a different
+/// board shape exist: the lobby is entered once, the arrangement screen once
+/// per round.
+enum HostPhase { idle, lobby, arranging, placing, playing, won }
 
 /// One connected phone, from the host's point of view.
 class PhoneRecord {
@@ -83,10 +92,13 @@ class HostSession extends ChangeNotifier {
 
   HostPhase _phase = HostPhase.idle;
   Uri? _address;
-  SlingshotSim? _sim;
+  MiniGameSim? _sim;
   BoardLayout? _layout;
   Timer? _loop;
   String? _warning;
+
+  /// Position in the playlist. It only ever goes up; the catalog wraps.
+  int _gameIndex = 0;
 
   int _nextPhoneNumber = 1;
   int _stepCount = 0;
@@ -96,6 +108,16 @@ class HostSession extends ChangeNotifier {
   HostPhase get phase => _phase;
   Uri? get address => _address;
   BoardLayout? get layout => _layout;
+
+  /// The minigame being set up or played right now.
+  MiniGameDef get game => GameCatalog.at(_gameIndex);
+
+  /// What comes after a win. Shown on the victory screen so people know which
+  /// way to turn their phones next.
+  MiniGameDef get nextGame => GameCatalog.at(_gameIndex + 1);
+
+  /// Live score for the current round, when the game keeps one.
+  GameProgress? get progress => _sim?.progress;
 
   /// What this game is called on other phones' join lists.
   String get name => _name;
@@ -120,8 +142,14 @@ class HostSession extends ChangeNotifier {
   /// Sim time in ms — the timeline every snapshot is stamped with.
   double get simTimeMs => _stepCount * (1000 / GameConfig.simHz);
 
-  bool get canPlacePhones =>
+  /// The lobby's only exit: at least one phone, all of them reporting a size.
+  bool get canStartArranging =>
       _phase == HostPhase.lobby &&
+      _phones.isNotEmpty &&
+      _phones.every((p) => p.calibrated && p.connected);
+
+  bool get canPlacePhones =>
+      _phase == HostPhase.arranging &&
       _phones.isNotEmpty &&
       _phones.every((p) => p.calibrated && p.connected);
 
@@ -352,7 +380,7 @@ class HostSession extends ChangeNotifier {
   /// this is how you say "actually, that phone is on the left".
   void movePhone(int index, int delta) {
     final target = index + delta;
-    if (_phase != HostPhase.lobby) return;
+    if (_phase != HostPhase.arranging) return;
     if (index < 0 || index >= _phones.length) return;
     if (target < 0 || target >= _phones.length) return;
     final p = _phones.removeAt(index);
@@ -361,14 +389,35 @@ class HostSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Leaves the lobby for the table: the connection details are done with, and
+  /// what matters now is which game is next and where the phones go.
+  void startArranging() {
+    if (!canStartArranging) return;
+    _phase = HostPhase.arranging;
+    _broadcastLobby();
+    _updateBeacon();
+    notifyListeners();
+  }
+
+  /// Back to the connection screen, to let one more friend in.
+  void backToLobby() {
+    if (_phase != HostPhase.arranging) return;
+    _phase = HostPhase.lobby;
+    _layout = null;
+    _broadcastLobby();
+    _updateBeacon();
+    notifyListeners();
+  }
+
   /// Builds the world from the calibration data and tells each phone where to
   /// sit. Play does not start until every phone confirms.
   void sendPlacement() {
     if (!canPlacePhones) return;
 
-    final solved = const LayoutSolver().solve([
-      for (final p in _phones) CalibratedPhone(p.phoneId, p.metrics!),
-    ]);
+    final solved = const LayoutSolver().solve(
+      [for (final p in _phones) CalibratedPhone(p.phoneId, p.metrics!)],
+      arrangement: game.arrangement,
+    );
     _layout = solved;
     _phase = HostPhase.placing;
     // The board is being laid out; the game is no longer joinable, so stop
@@ -384,6 +433,7 @@ class HostSession extends ChangeNotifier {
         'type': HostMsg.layout,
         ...l.toJson(),
         'coverage': solved.coverage.toJson(),
+        ..._gameFields,
       });
     }
     _broadcastLobby();
@@ -394,7 +444,7 @@ class HostSession extends ChangeNotifier {
     final solved = _layout;
     if (solved == null) return;
 
-    final sim = SlingshotSim(coverage: solved.coverage);
+    final sim = game.build(solved.coverage);
     _sim = sim;
     _phase = HostPhase.playing;
     _stepCount = 0;
@@ -404,8 +454,10 @@ class HostSession extends ChangeNotifier {
     _broadcast({
       'type': HostMsg.worldInit,
       'board': solved.coverage.board.toJson(),
-      'anchor': {'x': sim.anchor.x, 'y': sim.anchor.y},
       'entities': [for (final s in sim.specs) s.toJson()],
+      ..._gameFields,
+      // Whatever this particular game needs: a sling anchor, a target score.
+      ...sim.worldInitExtras(),
     });
     _broadcast({'type': HostMsg.start});
 
@@ -438,18 +490,81 @@ class HostSession extends ChangeNotifier {
     }
     if (!stepped) return;
 
+    final sling = sim.slingState();
     _broadcast({
       'type': HostMsg.state,
       'tick': sim.tick,
       't': simTimeMs,
       'entities': [for (final e in sim.entityStates()) e.toJson()],
-      'sling': sim.slingState().toJson(),
+      // Games without a slingshot leave the field out entirely rather than
+      // sending a meaningless one.
+      if (sling != null) 'sling': sling.toJson(),
+      if (sim.progress != null) 'progress': sim.progress!.toJson(),
     });
+
+    if (sim.won) _finishGame();
+  }
+
+  /// The round is over. Keep the final frame on screen — the tower mid-collapse
+  /// is the reward — and tell everyone what is next.
+  void _finishGame() {
+    if (_phase != HostPhase.playing) return;
+    _loop?.cancel();
+    _loop = null;
+    _phase = HostPhase.won;
+
+    _broadcast({
+      'type': HostMsg.won,
+      'game': game.id,
+      'gameTitle': game.title,
+      'nextGame': nextGame.id,
+      'nextTitle': nextGame.title,
+      'nextTagline': nextGame.tagline,
+      'nextArrangement': nextGame.arrangement.wireName,
+      if (_sim?.progress != null) 'progress': _sim!.progress!.toJson(),
+    });
+    _broadcastLobby();
+    notifyListeners();
+  }
+
+  /// On to the next game in the playlist, which means a new board shape and so
+  /// a fresh trip through the arrangement and placement screens.
+  void advanceToNextGame() {
+    if (_phase != HostPhase.won) return;
+    _gameIndex++;
+    _sim = null;
+    _layout = null;
+    for (final p in _phones) {
+      p.confirmed = false;
+    }
+    _phones.removeWhere((p) => !p.connected);
+    _phase = HostPhase.arranging;
+    _broadcastLobby();
+    _updateBeacon();
+    notifyListeners();
   }
 
   void resetBird() => _sim?.reset();
 
-  /// Tear the world down and go back to collecting phones.
+  /// Tear the world down and set the *same* game up again — the debug panel's
+  /// "re-calibrate", for when a measurement was wrong.
+  void recalibrate() {
+    _loop?.cancel();
+    _loop = null;
+    _sim = null;
+    _layout = null;
+    _warning = null;
+    _phones.removeWhere((p) => !p.connected);
+    for (final p in _phones) {
+      p.confirmed = false;
+    }
+    _phase = HostPhase.arranging;
+    _broadcastLobby();
+    _updateBeacon();
+    notifyListeners();
+  }
+
+  /// All the way back to the connection screen, mid-session.
   void returnToLobby() {
     _loop?.cancel();
     _loop = null;
@@ -479,10 +594,22 @@ class HostSession extends ChangeNotifier {
     }
   }
 
+  /// Which game is on, repeated on every message that could be a client's
+  /// first sight of it. Cheap, and it means a client never has to remember a
+  /// game id it was told about three screens ago.
+  Map<String, dynamic> get _gameFields => {
+    'game': game.id,
+    'gameTitle': game.title,
+    'gameTagline': game.tagline,
+    'gameGoal': game.goal,
+    'arrangement': game.arrangement.wireName,
+  };
+
   void _broadcastLobby() {
     _broadcast({
       'type': HostMsg.lobby,
       'phase': _phase.name,
+      ..._gameFields,
       'phones': [
         for (final (i, p) in _phones.indexed)
           {

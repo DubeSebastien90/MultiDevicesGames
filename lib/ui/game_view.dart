@@ -20,17 +20,31 @@ class GameView extends StatefulWidget {
 class _GameViewState extends State<GameView> {
   late final ViewportGame _game;
   Timer? _statsTimer;
+  Timer? _scoreTimer;
   bool _showDebug = false;
+  int? _shownScore;
 
   @override
   void initState() {
     super.initState();
     _game = ViewportGame(session: widget.controller.client!);
+
+    // Snapshots arrive 60 times a second and deliberately do not notify the
+    // widget tree — that is what keeps rendering in the Flame loop. The score
+    // rides along with them, so poll it slowly and rebuild only when the
+    // number a human can read actually changes.
+    _scoreTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      final value = widget.controller.client!.progress?.value;
+      if (value != _shownScore && mounted) {
+        setState(() => _shownScore = value);
+      }
+    });
   }
 
   @override
   void dispose() {
     _statsTimer?.cancel();
+    _scoreTimer?.cancel();
     super.dispose();
   }
 
@@ -80,10 +94,23 @@ class _GameViewState extends State<GameView> {
           Positioned(
             left: 10,
             top: 8,
-            child: _Badge(
-              text: layout == null
-                  ? client.phoneId ?? '…'
-                  : '${client.phoneId} · ${layout.index + 1}/${layout.total}',
+            child: Row(
+              children: [
+                _Badge(
+                  text: layout == null
+                      ? client.phoneId ?? '…'
+                      : '${client.phoneId} · '
+                          '${layout.index + 1}/${layout.total}',
+                ),
+                if (client.progress != null) ...[
+                  const SizedBox(width: 6),
+                  _Badge(
+                    text: '${client.progress!.value}/'
+                        '${client.progress!.goal} ${client.progress!.label}',
+                    highlight: true,
+                  ),
+                ],
+              ],
             ),
           ),
           Positioned(
@@ -93,7 +120,7 @@ class _GameViewState extends State<GameView> {
               children: [
                 _HudButton(
                   icon: Icons.refresh,
-                  tooltip: 'Reset the bird',
+                  tooltip: 'Start the round over',
                   onPressed: client.sendReset,
                 ),
                 _HudButton(
@@ -126,20 +153,27 @@ class _GameViewState extends State<GameView> {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({required this.text});
+  const _Badge({required this.text, this.highlight = false});
 
   final String text;
+
+  /// Used for the score, which is the one badge worth glancing at mid-game.
+  final bool highlight;
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.35),
+      color: Colors.black.withValues(alpha: highlight ? 0.5 : 0.35),
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(
       text,
-      style: const TextStyle(fontSize: 11, color: Colors.white70),
+      style: TextStyle(
+        fontSize: highlight ? 12.5 : 11,
+        fontWeight: highlight ? FontWeight.w600 : FontWeight.normal,
+        color: highlight ? const Color(0xFFFFD166) : Colors.white70,
+      ),
     ),
   );
 }
@@ -264,7 +298,9 @@ class _DebugPanel extends StatelessWidget {
           if (controller.host != null) ...[
             const Divider(height: 14, color: Colors.white24),
             TextButton.icon(
-              onPressed: () => controller.host!.returnToLobby(),
+              // Back to the arrangement screen for the *same* game, which is
+              // what you want when a measurement turned out wrong.
+              onPressed: () => controller.host!.recalibrate(),
               icon: const Icon(Icons.tune, size: 15),
               label: const Text('Re-calibrate the board',
                   style: TextStyle(fontSize: 11)),

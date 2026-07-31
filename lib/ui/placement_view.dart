@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../model/arrangement.dart';
 import '../model/coverage_map.dart';
 import '../model/phone_layout.dart';
 import 'strip_diagram.dart';
@@ -27,9 +28,11 @@ class PlacementView extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final arrangement = client.arrangement;
+
     final phones = [
       for (final p in client.lobbyPhones)
-        StripPhone(
+        DiagramPhone(
           label: (p['label'] as String?) ?? '?',
           widthMm: (p['widthMm'] as num?)?.toDouble() ?? 70,
           heightMm: (p['heightMm'] as num?)?.toDouble() ?? 150,
@@ -51,6 +54,7 @@ class PlacementView extends StatelessWidget {
               painter: _AlignmentGuidePainter(
                 layout: layout,
                 coverage: client.coverage,
+                arrangement: arrangement,
               ),
             ),
           ),
@@ -81,12 +85,14 @@ class PlacementView extends StatelessWidget {
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 12),
-                          StripDiagram(phones: phones, height: 70),
+                          ArrangementDiagram(
+                            phones: phones,
+                            arrangement: arrangement,
+                            extent: arrangement.isHorizontal ? 70 : 120,
+                          ),
                           const SizedBox(height: 12),
                           Text(
-                            'Push the phones together until the casings touch, '
-                            'with the top edges flush. The guide lines should '
-                            'continue straight across the gap.',
+                            arrangement.alignmentHint,
                             style: theme.textTheme.bodySmall,
                             textAlign: TextAlign.center,
                           ),
@@ -130,16 +136,29 @@ class PlacementView extends StatelessWidget {
   }
 }
 
+/// Guide lines drawn in *world* coordinates, so on correctly placed phones they
+/// run unbroken across the physical gap.
+///
+/// Everything here is mirrored about the packing axis. A strip has vertical
+/// seams, so the rules that expose a misalignment run horizontally; a stack has
+/// horizontal seams, so they run vertically. Drawing the wrong set would make a
+/// badly placed board look perfect.
 class _AlignmentGuidePainter extends CustomPainter {
-  _AlignmentGuidePainter({required this.layout, required this.coverage});
+  _AlignmentGuidePainter({
+    required this.layout,
+    required this.coverage,
+    required this.arrangement,
+  });
 
   final PhoneLayout layout;
   final CoverageMap? coverage;
+  final Arrangement arrangement;
 
   @override
   void paint(Canvas canvas, Size size) {
     final board = layout.board;
     final pxPerWorld = layout.logicalPxPerWorldUnit;
+    final horizontal = arrangement.isHorizontal;
 
     double toLocalX(double wx) => (wx - layout.worldOffsetX) * pxPerWorld;
     double toLocalY(double wy) => (wy - layout.worldOffsetY) * pxPerWorld;
@@ -152,24 +171,37 @@ class _AlignmentGuidePainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..color = const Color(0x40FFFFFF);
 
-    // Horizontal rules across the whole board: a step at the gap means the top
-    // edges are not flush.
+    // Rules running *across* the seams: a step in one of these is exactly what
+    // a misaligned edge looks like.
     for (final f in const [0.2, 0.5, 0.8]) {
-      final y = toLocalY(board.top + board.height * f);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+      if (horizontal) {
+        final y = toLocalY(board.top + board.height * f);
+        canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
+      } else {
+        final x = toLocalX(board.left + board.width * f);
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
+      }
     }
 
-    // Vertical ticks every 5cm of world space, labelled in world units so both
+    // Ticks every 5cm along the packing axis, labelled in world units so both
     // screens show the same numbers in the same physical places.
     final major = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = const Color(0x26FFFFFF);
-    for (var wx = 0.0; wx <= board.right; wx += 5) {
-      final x = toLocalX(wx);
-      if (x < -20 || x > size.width + 20) continue;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), major);
-      _label(canvas, '${wx.toInt()}cm', Offset(x + 4, 4));
+    final limit = horizontal ? board.right : board.bottom;
+    for (var w = 0.0; w <= limit; w += 5) {
+      if (horizontal) {
+        final x = toLocalX(w);
+        if (x < -20 || x > size.width + 20) continue;
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), major);
+        _label(canvas, '${w.toInt()}cm', Offset(x + 4, 4));
+      } else {
+        final y = toLocalY(w);
+        if (y < -20 || y > size.height + 20) continue;
+        canvas.drawLine(Offset(0, y), Offset(size.width, y), major);
+        _label(canvas, '${w.toInt()}cm', Offset(4, y + 4));
+      }
     }
 
     // A circle straddling each seam. Correctly placed, the two halves read as
@@ -180,19 +212,33 @@ class _AlignmentGuidePainter extends CustomPainter {
       ..strokeWidth = 3
       ..color = const Color(0x99FF6B4A);
     for (final seam in seams) {
-      final center = Offset(
-        toLocalX(seam.centerX),
-        toLocalY(board.centerY),
-      );
-      final radius = board.height * 0.32 * pxPerWorld;
+      final center = horizontal
+          ? Offset(toLocalX(seam.centerX), toLocalY(board.centerY))
+          : Offset(toLocalX(board.centerX), toLocalY(seam.centerY));
+      final radius =
+          (horizontal ? board.height : board.width) * 0.32 * pxPerWorld;
+
       // Skip seams nowhere near this screen.
-      if (center.dx < -radius * 2 || center.dx > size.width + radius * 2) {
-        continue;
+      if (horizontal) {
+        if (center.dx < -radius * 2 || center.dx > size.width + radius * 2) {
+          continue;
+        }
+      } else {
+        if (center.dy < -radius * 2 || center.dy > size.height + radius * 2) {
+          continue;
+        }
       }
+
       canvas.drawCircle(center, radius, ring);
+      // A bar through the middle, perpendicular to the seam, so the two halves
+      // have something to line up against.
       canvas.drawLine(
-        Offset(center.dx - radius * 1.4, center.dy),
-        Offset(center.dx + radius * 1.4, center.dy),
+        horizontal
+            ? Offset(center.dx - radius * 1.4, center.dy)
+            : Offset(center.dx, center.dy - radius * 1.4),
+        horizontal
+            ? Offset(center.dx + radius * 1.4, center.dy)
+            : Offset(center.dx, center.dy + radius * 1.4),
         ring,
       );
     }
@@ -211,5 +257,7 @@ class _AlignmentGuidePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AlignmentGuidePainter old) =>
-      old.layout != layout || old.coverage != coverage;
+      old.layout != layout ||
+      old.coverage != coverage ||
+      old.arrangement != arrangement;
 }
