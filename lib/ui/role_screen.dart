@@ -5,9 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
-import '../net/host_address.dart';
+import 'join_sheet.dart';
 import 'metrics_card.dart';
-import 'scan_sheet.dart';
 
 /// Pick a role. One app, two jobs: run the world, or be a window onto it.
 class RoleScreen extends StatefulWidget {
@@ -43,24 +42,22 @@ class _RoleScreenState extends State<RoleScreen> {
     );
   }
 
-  Future<void> _join() async {
-    final input = await showDialog<String>(
+  Future<void> _host() async {
+    final name = await showDialog<String>(
       context: context,
-      builder: (_) => const _JoinDialog(),
+      builder: (_) => const _NameDialog(),
     );
-    if (input == null || !mounted) return;
-
-    final uri = parseHostAddress(input);
-    if (uri == null) {
-      _snack('Could not read "$input" as an address.');
-      return;
-    }
-    await widget.controller.joinHost(uri, _metrics!);
+    if (name == null || !mounted) return;
+    await widget.controller.startHost(_metrics!, name: name);
   }
 
-  void _snack(String text) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(text)));
+  Future<void> _join() async {
+    final request = await Navigator.of(context).push<JoinRequest>(
+      MaterialPageRoute(builder: (_) => const JoinSheet()),
+    );
+    if (request == null || !mounted) return;
+    await widget.controller
+        .joinHost(request.uri, _metrics!, code: request.code);
   }
 
   @override
@@ -114,13 +111,11 @@ class _RoleScreenState extends State<RoleScreen> {
                       children: [
                         Expanded(
                           child: FilledButton.icon(
-                            onPressed: metrics == null
-                                ? null
-                                : () => widget.controller.startHost(metrics),
+                            onPressed: metrics == null ? null : _host,
                             icon: const Icon(Icons.podcasts),
                             label: const Padding(
                               padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Host a board'),
+                              child: Text('Host a game'),
                             ),
                           ),
                         ),
@@ -128,10 +123,10 @@ class _RoleScreenState extends State<RoleScreen> {
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: metrics == null ? null : _join,
-                            icon: const Icon(Icons.qr_code_scanner),
+                            icon: const Icon(Icons.search),
                             label: const Padding(
                               padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Join a board'),
+                              child: Text('Join a game'),
                             ),
                           ),
                         ),
@@ -158,15 +153,26 @@ class _RoleScreenState extends State<RoleScreen> {
   }
 }
 
-class _JoinDialog extends StatefulWidget {
-  const _JoinDialog();
+/// Names the game. This name is what friends look for in their join list, so
+/// it is the one thing worth asking before the lobby opens.
+class _NameDialog extends StatefulWidget {
+  const _NameDialog();
 
   @override
-  State<_JoinDialog> createState() => _JoinDialogState();
+  State<_NameDialog> createState() => _NameDialogState();
 }
 
-class _JoinDialogState extends State<_JoinDialog> {
-  final _controller = TextEditingController();
+class _NameDialogState extends State<_NameDialog> {
+  final _controller = TextEditingController(text: 'My board');
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _controller.text.length,
+    );
+  }
 
   @override
   void dispose() {
@@ -174,18 +180,17 @@ class _JoinDialogState extends State<_JoinDialog> {
     super.dispose();
   }
 
-  Future<void> _scan() async {
-    final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const ScanSheet()),
-    );
-    if (result == null || !mounted) return;
-    Navigator.of(context).pop(result);
+  void _submit() {
+    final name = _controller.text.trim();
+    Navigator.of(context).pop(name.isEmpty ? 'My board' : name);
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return AlertDialog(
-      title: const Text('Join a board'),
+      title: const Text('Name your game'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -193,22 +198,23 @@ class _JoinDialogState extends State<_JoinDialog> {
           TextField(
             controller: _controller,
             autofocus: true,
-            keyboardType: TextInputType.url,
-            onSubmitted: (v) => Navigator.of(context).pop(v),
+            maxLength: 40,
+            textCapitalization: TextCapitalization.words,
+            onSubmitted: (_) => _submit(),
             decoration: const InputDecoration(
-              labelText: 'Host address',
-              hintText: '192.168.1.42:8080',
+              labelText: 'Game name',
+              counterText: '',
               border: OutlineInputBorder(),
             ),
           ),
-          if (qrScanSupported) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _scan,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scan the host QR instead'),
+          const SizedBox(height: 8),
+          Text(
+            'This is how your friends will spot your game in their list. '
+            'You will get a 5-digit code to let them in.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-          ],
+          ),
         ],
       ),
       actions: [
@@ -216,10 +222,7 @@ class _JoinDialogState extends State<_JoinDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text('Connect'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Open lobby')),
       ],
     );
   }

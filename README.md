@@ -17,8 +17,9 @@ flutter pub get
 flutter run                # pick a device; two phones on the same WiFi
 ```
 
-On the first phone tap **Host a board**; it shows a QR of `ws://<ip>:<port>`.
-On the second tap **Join a board** and scan it (or type the address). Then:
+On the first phone tap **Host a game**, name it, and it shows a 5-digit code.
+On the second tap **Join a game**: your friend's game is already in the list —
+pick it and type the code. Then:
 
 1. Check the measurements on each phone (see *Millimetres* below).
 2. Host taps **Lay out the board**.
@@ -28,15 +29,21 @@ On the second tap **Join a board** and scan it (or type the address). Then:
 The host is a player too — it renders its own viewport through the same code path
 as everybody else.
 
+Scanning the host's QR instead skips the code — it carries `ws://<ip>:<port>#<code>`,
+and standing in front of the screen is the same proof the code asks for. Typing
+the address by hand still works too; both fallbacks are on every device, because
+broadcast is the first thing a locked-down network drops.
+
 It also runs on Windows desktop, which is the fastest way to iterate: launch two
-instances and have one join `127.0.0.1:8080`. Bezels default to 0mm there, so the
-two windows behave as one gapless board.
+instances, tap **Type address** and join `127.0.0.1:8080` with the host's code.
+Bezels default to 0mm there, so the two windows behave as one gapless board.
 
 ## Architecture
 
 ```
 lib/
   net/          Transport interface + WebSocket, loopback, QueuedBroadcast
+                  discovery.dart       UDP beacon: hosts announce, joiners listen
   model/        DeviceMetrics, PhoneLayout (the transforms), CoverageMap
   host/         HostSession (the only thing that runs physics)
                   layout_solver.dart   packs phones left-to-right
@@ -159,15 +166,23 @@ concept.
 Both phones must be on the same WiFi, and that network must let devices talk to
 each other.
 
-- **Guest/public WiFi** usually has client isolation → the join silently fails.
+- **Guest/public WiFi** usually has client isolation → no beacons arrive and the
+  join list stays empty. The QR and typed address are right there for this.
 - **One phone on cellular** → not the same LAN → no connection.
 - **Escape hatch, no code change:** run a hotspot on one phone and join it from
   the other. The same WebSocket code works unchanged.
+- **iOS 14+** wants the `com.apple.developer.networking.multicast` entitlement
+  before an app may broadcast. Without it the beacon simply never leaves the
+  phone: hosting still works, and joiners use the QR. Requesting it from Apple is
+  the only thing that turns the list on for iOS hosts — the app needs no change.
+- **Android** filters broadcast traffic in the WiFi chip unless a `MulticastLock`
+  is held; `MainActivity.kt` takes one while the app is in front.
 
 ## Deliberately not built
 
 No TypeScript, no cloud, no dedicated server. No accounts or persistence. No
-mDNS/Nearby/Multipeer — a QR sidesteps discovery entirely. No freeform phone
+mDNS/Nearby/Multipeer — discovery is 200 lines of UDP broadcast with a QR and a
+typed address behind it, and it never leaves the LAN. No freeform phone
 packing (v1 forces a left-to-right strip; the per-phone transform already handles
 different sizes, which was the part worth proving). No sensor-based placement
 verification. No game-definition loader — but game logic is kept as data in

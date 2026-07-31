@@ -8,9 +8,11 @@ import 'strip_diagram.dart';
 
 /// Step 1 of the build order, as a screen: get phones talking to each other.
 ///
-/// Discovery is a QR of `ws://<ip>:<port>` and nothing else. No mDNS, no Nearby
-/// — a code on the screen sidesteps discovery entirely and never mysteriously
-/// fails in front of a friend.
+/// The host advertises the game by name over UDP so friends can find it without
+/// typing anything, and gates entry on a 5-digit code so a stranger who sees
+/// the name still cannot walk in. The QR (which carries address *and* code) and
+/// the plain address are always on screen too — broadcast is the first thing a
+/// hostile network drops, and the game has to survive that.
 class LobbyView extends StatelessWidget {
   const LobbyView({super.key, required this.controller});
 
@@ -140,50 +142,82 @@ class _HostPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final address = host.address?.toString() ?? 'starting…';
+    final qr = host.qrPayload;
+    final waiting = host.phones.where((p) => p.connected).length < 2;
 
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: QrImageView(
-                data: address,
-                version: QrVersions.auto,
-                size: 118,
-                backgroundColor: Colors.white,
-                padding: EdgeInsets.zero,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(host.name, style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 2),
+                      Text(
+                        waiting
+                            ? 'Waiting for your friends…'
+                            : '${host.phones.length} phones in.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Give them this code',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      SelectableText(
+                        host.joinCode,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontFamily: 'monospace',
+                          letterSpacing: 8,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (qr != null)
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: QrImageView(
+                      // Address *and* code: scanning proves you were standing
+                      // in front of this screen, which is what the code asks
+                      // for anyway — so a scan should not demand it twice.
+                      data: qr,
+                      version: QrVersions.auto,
+                      size: 112,
+                      backgroundColor: Colors.white,
+                      padding: EdgeInsets.zero,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Scan to join', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    address,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontFeatures: const [],
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Or type that address on the other phone. Same WiFi only — '
-                    'guest networks usually block device-to-device traffic.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 10),
+            Text(
+              host.discoveryFailure == null
+                  ? 'Your game shows up under “${host.name}” when they tap '
+                        '“Join a game”. They can also scan the QR, or type '
+                        '$address.'
+                  : 'This network will not let the game announce itself. Have '
+                        'them scan the QR, or type $address.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ],

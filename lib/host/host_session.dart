@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
 import '../game/game_config.dart';
 import '../model/device_metrics.dart';
+import '../net/discovery.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
 import '../net/websocket_transport.dart';
@@ -14,10 +16,17 @@ enum HostPhase { idle, lobby, placing, playing }
 
 /// One connected phone, from the host's point of view.
 class PhoneRecord {
-  PhoneRecord({required this.phoneId, required this.link});
+  PhoneRecord({required this.link});
 
-  final String phoneId;
+  /// Assigned once the join code checks out — an unauthenticated connection
+  /// never burns a phone number, so the first real joiner is always `p2`.
+  String phoneId = '';
+
   final PeerLink link;
+
+  /// False until the right code arrives. Everything this peer says before then
+  /// is ignored.
+  bool authenticated = false;
 
   DeviceMetrics? metrics;
   bool confirmed = false;
@@ -35,14 +44,42 @@ class PhoneRecord {
 /// This is the only object in the app that runs physics. Everything else —
 /// including the host's own screen — is a viewport that receives snapshots.
 class HostSession extends ChangeNotifier {
-  HostSession({HostTransport? transport})
-    : _transport = transport ?? WebSocketHostTransport();
+  HostSession({
+    HostTransport? transport,
+    String name = 'My board',
+    String? joinCode,
+    bool advertise = true,
+  }) : _transport = transport ?? WebSocketHostTransport(),
+       _name = name,
+       _joinCode = joinCode ?? generateJoinCode(),
+       _advertise = advertise;
+
+  /// A stranger gets this many wrong guesses before we stop answering them.
+  /// With 100 000 codes and a 30-second penalty, guessing your way in takes
+  /// weeks — while a friend fat-fingering a digit is barely inconvenienced.
+  static const int _maxWrongGuesses = 5;
+  static const Duration _lockout = Duration(seconds: 30);
+
+  /// How long a connection may sit there without proving itself.
+  static const Duration _joinDeadline = Duration(seconds: 15);
 
   final HostTransport _transport;
+  final String _name;
+  final String _joinCode;
+  final bool _advertise;
 
   final _clock = Stopwatch();
   final _phones = <PhoneRecord>[];
   final _subs = <StreamSubscription<dynamic>>[];
+
+  /// Connections that have not sent a valid code yet.
+  final _pending = <PhoneRecord, Timer>{};
+
+  /// Wrong-code counters, keyed by remote address.
+  final _wrongGuesses = <String, int>{};
+  final _lockedOut = <String, DateTime>{};
+
+  DiscoveryBroadcaster? _beacon;
 
   HostPhase _phase = HostPhase.idle;
   Uri? _address;
@@ -59,6 +96,21 @@ class HostSession extends ChangeNotifier {
   HostPhase get phase => _phase;
   Uri? get address => _address;
   BoardLayout? get layout => _layout;
+
+  /// What this game is called on other phones' join lists.
+  String get name => _name;
+
+  /// The secret that lets a phone in. Shown on the host's screen only.
+  String get joinCode => _joinCode;
+
+  /// The QR payload: address plus code, so scanning skips the keypad.
+  String? get qrPayload =>
+      _address == null ? null : '$_address#$_joinCode';
+
+  /// Non-null when the game could not be advertised — the network blocked the
+  /// beacon, or the platform refused the socket. Hosting still works; joiners
+  /// use the QR or type the address.
+  String? get discoveryFailure => _beacon?.failure;
 
   /// Ordered left-to-right; this order *is* the physical arrangement.
   List<PhoneRecord> get phones => List.unmodifiable(_phones);
@@ -81,6 +133,23 @@ class HostSession extends ChangeNotifier {
     _address = uri;
     _phase = HostPhase.lobby;
     _subs.add(_transport.onPeer.listen(_attachPeer));
+
+    if (_advertise) {
+      final beacon = DiscoveryBroadcaster(
+        // Random per session: two games with the same name stay distinct in a
+        // joiner's list, and the id reveals nothing about the code.
+        id: '${DateTime.now().microsecondsSinceEpoch}-'
+            '${Random().nextInt(1 << 32)}',
+        name: _name,
+        address: uri,
+      );
+      // Never blocks hosting: if the beacon cannot start, the game is simply
+      // unlisted and joiners fall back to the QR or the typed address.
+      await beacon.start();
+      _beacon = beacon;
+      _updateBeacon();
+    }
+
     notifyListeners();
     return uri;
   }
@@ -88,39 +157,123 @@ class HostSession extends ChangeNotifier {
   /// Adds the host's own screen as a peer. It then goes through the identical
   /// handshake, layout and interpolation path as any remote phone — which is
   /// what keeps every screen on one shared timeline.
-  void addLocalPeer(PeerLink peer) => _attachPeer(peer);
+  ///
+  /// Trusted: this peer is a function call away, not a socket, so there is
+  /// nobody to prove anything to.
+  void addLocalPeer(PeerLink peer) => _attachPeer(peer, trusted: true);
 
-  void _attachPeer(PeerLink link) {
+  void _attachPeer(PeerLink link, {bool trusted = false}) {
     if (_phase == HostPhase.playing || _phase == HostPhase.placing) {
       // Joining mid-game would invalidate the board everyone already placed
       // themselves for. Turn them away with an explanation instead.
-      link.send({
-        'type': HostMsg.welcome,
-        'rejected': true,
-        'reason': 'Game already set up. Ask the host to re-calibrate.',
-      });
-      Future<void>.delayed(const Duration(milliseconds: 300), link.close);
+      _reject(link, 'Game already set up. Ask the host to re-calibrate.');
       return;
     }
 
-    final record = PhoneRecord(
-      phoneId: 'p${_nextPhoneNumber++}',
-      link: link,
-    );
-    _phones.add(record);
+    final remote = link.debugName;
+    final until = _lockedOut[remote];
+    if (until != null && DateTime.now().isBefore(until)) {
+      _reject(link, 'Too many wrong codes. Wait a moment and try again.');
+      return;
+    }
 
+    final record = PhoneRecord(link: link);
+
+    // One subscription for the connection's whole life. Splitting it into a
+    // "gate" listener and a "session" listener would drop whatever arrived
+    // between cancelling the first and attaching the second.
     _subs.add(link.onMessage.listen(
       (msg) => _handleMessage(record, msg),
       onDone: () => _handleDisconnect(record),
       onError: (Object _) => _handleDisconnect(record),
     ));
 
-    link.send({'type': HostMsg.welcome, 'phoneId': record.phoneId});
+    if (trusted) {
+      _admit(record);
+      return;
+    }
+
+    // A connection that never sends a code is either a port scanner or a
+    // crashed client. Either way it should not hold a slot open forever.
+    _pending[record] = Timer(_joinDeadline, () {
+      if (_pending.containsKey(record)) {
+        _pending.remove(record);
+        _reject(link, 'No join code was sent.');
+      }
+    });
+  }
+
+  /// Checks the code and either lets the phone in or shows it the door.
+  void _handleJoin(PhoneRecord record, Map<String, dynamic> msg) {
+    final timer = _pending.remove(record);
+    if (timer == null) return; // Not waiting on this one; ignore a repeat.
+    timer.cancel();
+
+    final offered = (msg['code'] as String?)?.trim() ?? '';
+    if (_codeMatches(offered)) {
+      _wrongGuesses.remove(record.link.debugName);
+      _admit(record);
+      return;
+    }
+
+    final remote = record.link.debugName;
+    final wrong = (_wrongGuesses[remote] ?? 0) + 1;
+    _wrongGuesses[remote] = wrong;
+    if (wrong >= _maxWrongGuesses) {
+      _lockedOut[remote] = DateTime.now().add(_lockout);
+      _wrongGuesses.remove(remote);
+    }
+    _reject(record.link, 'Wrong code.');
+  }
+
+  /// Constant-time-ish compare. The timing of a 5-digit string comparison is
+  /// not a realistic attack over WiFi, but there is no reason to leak it.
+  bool _codeMatches(String offered) {
+    if (offered.length != _joinCode.length) return false;
+    var diff = 0;
+    for (var i = 0; i < offered.length; i++) {
+      diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
+
+  void _admit(PhoneRecord record) {
+    record.authenticated = true;
+    record.phoneId = 'p${_nextPhoneNumber++}';
+    _phones.add(record);
+    record.link.send({
+      'type': HostMsg.welcome,
+      'phoneId': record.phoneId,
+      'gameName': _name,
+    });
     _broadcastLobby();
+    _updateBeacon();
     notifyListeners();
   }
 
+  void _reject(PeerLink link, String reason) {
+    link.send({
+      'type': HostMsg.welcome,
+      'rejected': true,
+      'reason': reason,
+    });
+    // Long enough for the frame to make it out before the socket shuts.
+    Future<void>.delayed(const Duration(milliseconds: 300), link.close);
+  }
+
+  void _updateBeacon() => _beacon?.update(
+    players: _phones.where((p) => p.connected).length,
+    open: _phase == HostPhase.lobby,
+  );
+
   void _handleDisconnect(PhoneRecord record) {
+    final pending = _pending.remove(record);
+    if (pending != null) {
+      // Dropped before it ever got in; there is nothing to clean up.
+      pending.cancel();
+      return;
+    }
+    if (!record.authenticated) return;
     if (!record.connected) return;
     record.connected = false;
 
@@ -133,11 +286,20 @@ class HostSession extends ChangeNotifier {
           'board.';
     }
     _broadcastLobby();
+    _updateBeacon();
     notifyListeners();
   }
 
   void _handleMessage(PhoneRecord record, Map<String, dynamic> msg) {
-    switch (msg['type'] as String?) {
+    final type = msg['type'] as String?;
+
+    // Until the code checks out, `join` is the only word this peer knows.
+    if (!record.authenticated) {
+      if (type == ClientMsg.join) _handleJoin(record, msg);
+      return;
+    }
+
+    switch (type) {
       case ClientMsg.calibration:
         record.metrics =
             DeviceMetrics.fromJson(msg['metrics'] as Map<String, dynamic>);
@@ -209,6 +371,9 @@ class HostSession extends ChangeNotifier {
     ]);
     _layout = solved;
     _phase = HostPhase.placing;
+    // The board is being laid out; the game is no longer joinable, so stop
+    // advertising it as open.
+    _updateBeacon();
     for (final p in _phones) {
       p.confirmed = false;
     }
@@ -297,6 +462,7 @@ class HostSession extends ChangeNotifier {
     }
     _phase = HostPhase.lobby;
     _broadcastLobby();
+    _updateBeacon();
     notifyListeners();
   }
 
@@ -336,6 +502,12 @@ class HostSession extends ChangeNotifier {
   @override
   void dispose() {
     _loop?.cancel();
+    for (final t in _pending.values) {
+      t.cancel();
+    }
+    _pending.clear();
+    _beacon?.dispose();
+    _beacon = null;
     for (final s in _subs) {
       s.cancel();
     }

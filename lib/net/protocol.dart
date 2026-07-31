@@ -7,6 +7,9 @@ library;
 
 /// Client -> Host.
 class ClientMsg {
+  /// First message on a fresh connection: carries the 5-digit join code. The
+  /// host answers nothing else until this one checks out.
+  static const join = 'join';
   static const calibration = 'calibration';
   static const confirmPlacement = 'confirmPlacement';
   static const touch = 'touch';

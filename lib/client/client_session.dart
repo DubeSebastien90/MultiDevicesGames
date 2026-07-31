@@ -17,12 +17,20 @@ enum ClientPhase { connecting, lobby, placing, playing, rejected, disconnected }
 /// It sends raw local touches up and renders whatever the host describes. It
 /// runs no physics — which is exactly why every screen agrees on the world.
 class ClientSession extends ChangeNotifier {
-  ClientSession({required Transport transport, required DeviceMetrics metrics})
-    : _transport = transport,
-      _metrics = metrics;
+  ClientSession({
+    required Transport transport,
+    required DeviceMetrics metrics,
+    String? joinCode,
+  }) : _transport = transport,
+       _metrics = metrics,
+       _joinCode = joinCode;
 
   final Transport _transport;
   DeviceMetrics _metrics;
+
+  /// The 5-digit code proving we were invited. Null on the host's own
+  /// loopback, which the host trusts without asking.
+  final String? _joinCode;
 
   final buffer = SnapshotBuffer();
   final _clock = Stopwatch()..start();
@@ -44,6 +52,10 @@ class ClientSession extends ChangeNotifier {
 
   ClientPhase get phase => _phase;
   String? get phoneId => _phoneId;
+
+  /// What the host calls this game, once we are in.
+  String? get gameName => _gameName;
+  String? _gameName;
   PhoneLayout? get layout => _layout;
   CoverageMap? get coverage => _coverage;
   WorldRect? get board => _board;
@@ -66,6 +78,12 @@ class ClientSession extends ChangeNotifier {
         onDone: () => _fail(ClientPhase.disconnected, 'Connection closed.'),
         onError: (Object e) => _fail(ClientPhase.disconnected, '$e'),
       );
+      // The code first, before anything else: the host ignores every other
+      // message until it has one, and answers `welcome` only once it matches.
+      _transport.send({
+        'type': ClientMsg.join,
+        if (_joinCode != null) 'code': _joinCode,
+      });
       _sendCalibration();
       _pingTimer =
           Timer.periodic(const Duration(seconds: 1), (_) => _sendPing());
@@ -146,6 +164,7 @@ class ClientSession extends ChangeNotifier {
           return;
         }
         _phoneId = msg['phoneId'] as String;
+        _gameName = msg['gameName'] as String?;
         _phase = ClientPhase.lobby;
         // Re-send now that we have an id attached.
         _sendCalibration();

@@ -8,6 +8,13 @@
          from Android 13 for local-network peer discovery and connections. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
+    <!-- The WiFi chip drops broadcast packets that are not addressed to this
+         device unless a MulticastLock is held — which is exactly the traffic
+         the game-discovery beacon rides on. MainActivity takes the lock; this
+         permission is what lets it. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
     <application
         android:label="multiscreen_slingshot"
         android:name="${applicationName}"

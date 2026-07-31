@@ -48,7 +48,10 @@ void main() {
   late Uri address;
 
   setUp(() async {
-    host = HostSession();
+    // No UDP beacon here: this suite is about the game, and binding a
+    // broadcast socket on a build machine is a different kind of flaky.
+    // Discovery has its own test.
+    host = HostSession(name: 'test board', advertise: false);
     address = await host.start();
 
     loopback = LoopbackPair();
@@ -65,6 +68,7 @@ void main() {
     phone2 = ClientSession(
       transport: WebSocketTransport(local),
       metrics: landscapePhone('joined phone'),
+      joinCode: host.joinCode,
     );
     await phone2.connect();
   });

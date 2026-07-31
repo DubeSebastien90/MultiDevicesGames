@@ -28,10 +28,11 @@ class AppController extends ChangeNotifier {
   bool get busy => _busy;
   bool get isHost => _role == AppRole.host;
 
-  Future<void> startHost(DeviceMetrics metrics) async {
+  /// Opens a game under [name], generating the 5-digit code friends will need.
+  Future<void> startHost(DeviceMetrics metrics, {required String name}) async {
     _begin(AppRole.host);
     try {
-      final host = HostSession();
+      final host = HostSession(name: name);
       await host.start();
 
       final loopback = LoopbackPair();
@@ -55,12 +56,17 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> joinHost(Uri uri, DeviceMetrics metrics) async {
+  Future<void> joinHost(
+    Uri uri,
+    DeviceMetrics metrics, {
+    required String code,
+  }) async {
     _begin(AppRole.join);
     try {
       final client = ClientSession(
         transport: WebSocketTransport(uri),
         metrics: metrics,
+        joinCode: code,
       );
       await client.connect();
       _client = client..addListener(notifyListeners);
