@@ -149,6 +149,7 @@ class DiscoveryBroadcaster {
   Timer? _timer;
   int _players = 0;
   bool _open = true;
+  int _consecutiveFailures = 0;
 
   /// Non-null when discovery could not start. Hosting is unaffected.
   String? get failure => _failure;
@@ -156,24 +157,51 @@ class DiscoveryBroadcaster {
 
   bool get running => _socket != null;
 
+  /// Give up after this many refusals in a row. A flapping interface deserves
+  /// another go; an OS that will never allow broadcast deserves silence rather
+  /// than an error every second for the rest of the session.
+  static const int _maxConsecutiveFailures = 3;
+
   Future<void> start() async {
     try {
       final socket = await _bind(port);
       socket.broadcastEnabled = true;
       _socket = socket;
+      // Learn the subnet broadcast addresses; the first datagram goes out on
+      // 255.255.255.255 regardless, so this never delays anything.
+      unawaited(_refreshLocalIPs());
       // Answer probes immediately: a joiner opening the list should not wait
       // out our next scheduled beacon before seeing the game.
-      socket.listen((event) {
-        if (event != RawSocketEvent.read) return;
-        final dg = socket.receive();
-        if (dg == null) return;
-        if (_isProbe(dg.data)) _send();
-      });
+      socket.listen(
+        (event) {
+          if (event != RawSocketEvent.read) return;
+          final dg = socket.receive();
+          if (dg == null) return;
+          if (_isProbe(dg.data)) _send();
+        },
+        // A refused send does NOT throw at the call site — the OS error is
+        // reported here, asynchronously, well after `send` has returned. This
+        // handler is the only thing standing between "this network will not
+        // carry our beacon" and an unhandled exception that takes the host
+        // down with it.
+        onError: _handleSocketError,
+        cancelOnError: false,
+      );
       _timer = Timer.periodic(kBeaconInterval, (_) => _send());
       _send();
     } on Object catch (e) {
       _failure = '$e';
     }
+  }
+
+  void _handleSocketError(Object error) {
+    _consecutiveFailures++;
+    if (_consecutiveFailures < _maxConsecutiveFailures) return;
+    _failure = '$error';
+    // Stop beaconing, keep the socket: hosting carries on, the lobby says the
+    // game could not be announced, and the QR does the job instead.
+    _timer?.cancel();
+    _timer = null;
   }
 
   /// Keeps the advertised player count and joinability current.
@@ -194,12 +222,7 @@ class DiscoveryBroadcaster {
       seenAt: DateTime.now(),
     );
     final bytes = utf8.encode(jsonEncode(beacon.toJson()));
-    try {
-      socket.send(bytes, InternetAddress('255.255.255.255'), port);
-    } on Object {
-      // A transient send failure (interface went away mid-beacon) is not worth
-      // tearing the host down for; the next tick tries again.
-    }
+    _sendToBroadcastTargets(socket, bytes, port);
   }
 
   void dispose() {
@@ -228,6 +251,11 @@ class DiscoveryListener extends ChangeNotifier {
   String? get failure => _failure;
   String? _failure;
 
+  /// Set when the outgoing probe was refused. Diagnostic only: listening is
+  /// the half that matters, and it may well still be working.
+  String? get probeFailure => _probeFailure;
+  String? _probeFailure;
+
   /// Games heard recently, most players first, then alphabetical so the list
   /// does not reshuffle itself under the user's thumb every second.
   List<GameBeacon> get games {
@@ -245,23 +273,33 @@ class DiscoveryListener extends ChangeNotifier {
       final socket = await _bind(port);
       socket.broadcastEnabled = true;
       _socket = socket;
-      socket.listen((event) {
-        if (event != RawSocketEvent.read) return;
-        final dg = socket.receive();
-        if (dg == null) return;
-        final beacon = GameBeacon.tryParse(dg.data);
-        if (beacon == null) return;
-        final previous = _byId[beacon.id];
-        _byId[beacon.id] = beacon;
-        // Only repaint when something a human can see actually changed.
-        if (previous == null ||
-            previous.name != beacon.name ||
-            previous.players != beacon.players ||
-            previous.open != beacon.open ||
-            previous.uri != beacon.uri) {
-          notifyListeners();
-        }
-      });
+      // Learn the subnet broadcast addresses; the first datagram goes out on
+      // 255.255.255.255 regardless, so this never delays anything.
+      unawaited(_refreshLocalIPs());
+      socket.listen(
+        (event) {
+          if (event != RawSocketEvent.read) return;
+          final dg = socket.receive();
+          if (dg == null) return;
+          final beacon = GameBeacon.tryParse(dg.data);
+          if (beacon == null) return;
+          final previous = _byId[beacon.id];
+          _byId[beacon.id] = beacon;
+          // Only repaint when something a human can see actually changed.
+          if (previous == null ||
+              previous.name != beacon.name ||
+              previous.players != beacon.players ||
+              previous.open != beacon.open ||
+              previous.uri != beacon.uri) {
+            notifyListeners();
+          }
+        },
+        // A refused probe arrives here rather than at the call site, and it is
+        // not fatal: a machine that may not transmit can still hear beacons.
+        // Recorded, never surfaced as "cannot search the network".
+        onError: (Object e) => _probeFailure = '$e',
+        cancelOnError: false,
+      );
       _probe();
       _prune = Timer.periodic(kBeaconInterval, (_) => _pruneStale());
     } on Object catch (e) {
@@ -271,18 +309,18 @@ class DiscoveryListener extends ChangeNotifier {
   }
 
   /// Asks any host within earshot to beacon right now.
+  ///
+  /// Entirely optional. If the probe cannot go out we simply wait for the next
+  /// scheduled beacon — *receiving* is the half that matters here, and it can
+  /// work fine on a machine that is not allowed to transmit.
   void _probe() {
     final socket = _socket;
     if (socket == null) return;
-    try {
-      socket.send(
-        utf8.encode(jsonEncode({'app': _magic, 'probe': true})),
-        InternetAddress('255.255.255.255'),
-        port,
-      );
-    } on Object {
-      // Harmless: we just wait for the next scheduled beacon instead.
-    }
+    _sendToBroadcastTargets(
+      socket,
+      utf8.encode(jsonEncode({'app': _magic, 'probe': true})),
+      port,
+    );
   }
 
   /// Re-probe, for a pull-to-refresh or a "not seeing it?" tap.
@@ -304,6 +342,79 @@ class DiscoveryListener extends ChangeNotifier {
     _socket?.close();
     _socket = null;
     super.dispose();
+  }
+}
+
+/// Sends one datagram to every address worth trying.
+///
+/// `255.255.255.255` is the obvious one, but plenty of networks and stacks drop
+/// it while happily carrying a subnet-directed broadcast like `192.168.1.255`.
+/// Dart does not expose interface netmasks, so the subnet targets are derived
+/// by assuming a /24 — wrong for an unusual netmask, harmless when it is (the
+/// datagram simply goes nowhere), and right on essentially every home network.
+///
+/// Failures are not reported here at all. A refused send surfaces asynchronously
+/// on the socket's own stream, which is where both sides handle it.
+void _sendToBroadcastTargets(RawDatagramSocket socket, List<int> bytes,
+    int port) {
+  for (final target in _broadcastTargets) {
+    try {
+      socket.send(bytes, target, port);
+    } on Object {
+      // Keep going: one dead interface must not stop the others.
+    }
+  }
+}
+
+/// Cached because it hits the interface list, and it changes rarely.
+List<InternetAddress> get _broadcastTargets {
+  final now = DateTime.now();
+  final cached = _cachedTargets;
+  if (cached != null &&
+      now.difference(_targetsComputedAt) < const Duration(seconds: 30)) {
+    return cached;
+  }
+  final targets = <InternetAddress>[InternetAddress('255.255.255.255')];
+  for (final ip in _lastKnownLocalIPv4) {
+    final parts = ip.split('.');
+    if (parts.length != 4) continue;
+    try {
+      targets.add(InternetAddress('${parts[0]}.${parts[1]}.${parts[2]}.255'));
+    } on Object {
+      // Not a usable address; skip it.
+    }
+  }
+  _cachedTargets = targets;
+  _targetsComputedAt = now;
+  return targets;
+}
+
+List<InternetAddress>? _cachedTargets;
+DateTime _targetsComputedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+/// Local IPv4 addresses, refreshed in the background so building the target
+/// list never blocks a beacon.
+List<String> _lastKnownLocalIPv4 = const [];
+bool _refreshingIPs = false;
+
+Future<void> _refreshLocalIPs() async {
+  if (_refreshingIPs) return;
+  _refreshingIPs = true;
+  try {
+    final interfaces = await NetworkInterface.list(
+      includeLoopback: false,
+      includeLinkLocal: false,
+      type: InternetAddressType.IPv4,
+    );
+    _lastKnownLocalIPv4 = [
+      for (final i in interfaces)
+        for (final a in i.addresses) a.address,
+    ];
+    _cachedTargets = null; // Recompute with the fresh list.
+  } on Object {
+    // Keep whatever we had; the limited broadcast address still works.
+  } finally {
+    _refreshingIPs = false;
   }
 }
 

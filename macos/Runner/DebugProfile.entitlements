@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<!-- Accept incoming connections: this is how a Mac hosts a game.
+	     Flutter's template already grants it, because the debug VM service
+	     needs it too. -->
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- Make outgoing connections. NOT in Flutter's template, and without it
+	     the sandbox denies both joining someone else's game and sending the
+	     discovery beacon — the latter as `Operation not permitted, errno = 1`
+	     on a UDP send, which is not obviously a permissions problem at all. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

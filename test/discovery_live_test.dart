@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/net/discovery.dart';
 
@@ -8,6 +10,8 @@ import 'package:multiscreen_slingshot/net/discovery.dart';
 /// another. It binds a real UDP port and broadcasts on the machine's network,
 /// so a firewall prompt on first run is expected.
 void main() {
+  _unhandledErrorTests();
+
   test('a broadcaster is heard by a listener, and disappears when it stops',
       () async {
     final beacon = DiscoveryBroadcaster(
@@ -61,6 +65,47 @@ void main() {
     );
 
     listener.dispose();
+  });
+}
+
+/// A socket refusal must never escape as an unhandled error.
+///
+/// `RawDatagramSocket.send` does not throw at the call site when the OS refuses
+/// it — sandboxed macOS returns `Operation not permitted` and Dart reports it
+/// asynchronously, on the socket's own stream. A `try`/`catch` around `send`
+/// cannot see that, so without an `onError` on the listen it takes down
+/// whatever was awaiting: in this app, hosting a game.
+void _unhandledErrorTests() {
+  test('no socket error escapes the broadcaster or the listener', () async {
+    final escaped = <Object>[];
+
+    await runZonedGuarded(() async {
+      final beacon = DiscoveryBroadcaster(
+        id: 'zone-test',
+        name: 'zone test',
+        address: Uri.parse('ws://127.0.0.1:8080'),
+      );
+      final listener = DiscoveryListener();
+
+      await listener.start();
+      await beacon.start();
+
+      // Long enough for several beacons and any refusal to come back.
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+
+      beacon.dispose();
+      listener.dispose();
+    }, (error, _) => escaped.add(error));
+
+    // Drain anything queued behind the zone.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+
+    expect(
+      escaped,
+      isEmpty,
+      reason: 'these must be reported through `failure`, never thrown: '
+          '$escaped',
+    );
   });
 }
 

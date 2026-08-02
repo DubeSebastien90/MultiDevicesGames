@@ -201,11 +201,24 @@ each other.
 - **Escape hatch, no code change:** run a hotspot on one phone and join it from
   the other. The same WebSocket code works unchanged.
 - **iOS 14+** wants the `com.apple.developer.networking.multicast` entitlement
-  before an app may broadcast. Without it the beacon simply never leaves the
-  phone: hosting still works, and joiners use the QR. Requesting it from Apple is
-  the only thing that turns the list on for iOS hosts — the app needs no change.
+  before an app may broadcast. Without it the beacon never leaves the phone:
+  hosting and joining still work, and joiners use the QR. Requesting it from
+  Apple is the only thing that turns the list on for iOS — the app needs no
+  change.
+- **macOS** is sandboxed, and Flutter's template grants
+  `com.apple.security.network.server` but *not* `network.client` — and the
+  release profile grants neither. Without the client entitlement the sandbox
+  denies every outgoing operation: joining a game, and sending the beacon. The
+  latter shows up as `SocketException: Send failed (OS Error: Operation not
+  permitted, errno = 1)`, which reads like a bug in the app rather than a
+  permission it was never given. Both are granted in
+  `macos/Runner/*.entitlements`; macOS needs no multicast entitlement.
 - **Android** filters broadcast traffic in the WiFi chip unless a `MulticastLock`
   is held; `MainActivity.kt` takes one while the app is in front.
+- **A refused send does not throw at the call site.** `RawDatagramSocket.send`
+  reports OS refusals asynchronously on the socket's own stream, so the only
+  place to catch one is an `onError` on the `listen`. Wrapping `send` in a
+  `try`/`catch` looks right and catches nothing.
 
 ## Deliberately not built
 
