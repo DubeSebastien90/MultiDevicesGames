@@ -21,17 +21,34 @@ class RoleScreen extends StatefulWidget {
 class _RoleScreenState extends State<RoleScreen> {
   DeviceMetrics? _metrics;
 
+  /// Whether the surface we are actually being drawn on is taller than it is
+  /// wide, despite the landscape lock.
+  bool _surfaceIsPortrait = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _metrics ??= _detect();
+    // Re-measured every time the view changes, not just once. A device that
+    // rotates into landscape a beat after launch then corrects itself instead
+    // of carrying a first guess for the rest of the session.
+    _metrics = _detect();
   }
 
   DeviceMetrics _detect() {
     final view = View.of(context);
     final px = view.physicalSize;
-    // We are locked to landscape, so the long edge is the width. Reading it this
-    // way survives being measured a frame before the rotation lands.
+
+    // We are locked to landscape, so the long edge is the width. Reading it
+    // this way survives being measured a frame before the rotation lands.
+    //
+    // It is also a lie worth noticing when the lock does not hold — an iPad
+    // that supports Split View ignores the orientation lock entirely, and then
+    // this reports a wide, short device that does not exist. Every millimetre
+    // downstream is wrong: the placement diagram draws the tablet on its side,
+    // its neighbours are positioned against the wrong edge, and the world
+    // renders at the wrong scale so the seam cannot line up.
+    _surfaceIsPortrait = px.height > px.width;
+
     return DeviceMetrics.estimate(
       physicalPx: Size(
         math.max(px.width, px.height),
@@ -91,6 +108,10 @@ class _RoleScreenState extends State<RoleScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 18),
+                  if (_surfaceIsPortrait) ...[
+                    _PortraitWarning(),
+                    const SizedBox(height: 14),
+                  ],
                   if (metrics != null)
                     MetricsCard(
                       metrics: metrics,
@@ -148,6 +169,38 @@ class _RoleScreenState extends State<RoleScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Shown when the device is drawing portrait despite the landscape lock.
+///
+/// The board is measured in real millimetres, so this is not cosmetic: every
+/// size the app reports about this screen would be sideways, and the seam could
+/// not line up. Better to say so than to draw a confidently wrong diagram.
+class _PortraitWarning extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.screen_rotation, color: scheme.onErrorContainer, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Turn this device sideways. It is drawing upright, so its '
+              'measurements — and its place on the board — would be wrong.',
+              style: TextStyle(color: scheme.onErrorContainer),
+            ),
+          ),
+        ],
       ),
     );
   }

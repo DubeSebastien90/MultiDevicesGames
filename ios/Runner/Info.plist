@@ -59,16 +59,25 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- The board is measured in real millimetres of the whole screen, so this
+	     app cannot run in Split View: a multitasking window is some fraction of
+	     the display, and every physical measurement would be a fiction.
+	     Requiring full screen is also the only way an orientation lock is
+	     honoured on iPad — iPadOS ignores setPreferredOrientations for any app
+	     that supports multitasking, which is why an iPad would sit in portrait
+	     while the app assumed landscape. -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<!-- Landscape only, on every device. Declared here as well as locked at
+	     runtime so the very first frame is already the right way round; the
+	     metrics are read within a frame or two of launch. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
