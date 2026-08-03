@@ -42,7 +42,8 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Multiscreen Slingshot',
+      // Also what Android shows in the recent-apps switcher.
+      title: 'MultiDevicesGame',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

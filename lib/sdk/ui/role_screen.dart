@@ -77,14 +77,14 @@ class _RoleScreenState extends State<RoleScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Multiscreen Slingshot',
+                    'MultiDevicesGame',
                     style: theme.textTheme.headlineSmall,
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Lay the phones side by side on a table, long edges '
-                    'touching. They become one board.',
+                    'Lay the phones together on a table. They become one '
+                    'board, and each game arranges them its own way.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
