@@ -1,13 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/client/client_session.dart';
-import 'package:multiscreen_slingshot/host/host_session.dart';
-import 'package:multiscreen_slingshot/model/device_metrics.dart';
-import 'package:multiscreen_slingshot/net/discovery.dart';
-import 'package:multiscreen_slingshot/net/host_address.dart';
-import 'package:multiscreen_slingshot/net/loopback_transport.dart';
-import 'package:multiscreen_slingshot/net/websocket_transport.dart';
+import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
+import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
+import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
+import 'package:multiscreen_slingshot/sdk/net/discovery.dart';
+import 'package:multiscreen_slingshot/sdk/net/host_address.dart';
+import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
+import 'package:multiscreen_slingshot/sdk/net/websocket_transport.dart';
 
 /// The door policy: the name is public, the code is not, and only the code
 /// gets you in.
@@ -66,7 +66,7 @@ void main() {
 
     await waitFor('welcomed', () => client.phase == ClientPhase.lobby);
     expect(client.phoneId, isNotNull);
-    expect(client.gameName, 'kitchen table');
+    expect(client.sessionName, 'kitchen table');
     expect(host.phones.length, 1);
 
     client.dispose();

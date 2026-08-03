@@ -22,36 +22,48 @@ On the first phone tap **Host a game**, name it, and it shows a 5-digit code.
 On the second tap **Join a game**: your friend's game is already in the list —
 pick it and type the code. Then:
 
-1. Host taps **Play**. That leaves the lobby for the arrangement screen.
-2. Check the measurements and the phone order (see *Millimetres* below), then
-   tap **Lay out the board**.
+1. Check the measurements in the lobby (see *Millimetres* below).
+2. Host taps **Play**. The game decides where every phone goes, and everyone is
+   told at once — there is no arrangement screen to review.
 3. Each phone shows where to sit. Push them together, tap **In place — confirm**.
 4. Play. Win, and the next minigame starts — with a different arrangement.
 
 The host is a player too — it renders its own viewport through the same code path
 as everybody else.
 
-## Two screens, on purpose
+## It is an SDK now
 
-**Lobby** is about *connecting*: the code, the QR, the address, who has arrived.
-You see it once. **Arrangement** is about *the table*: which minigame is next and
-where each phone physically goes. You see it once per round, because each
-minigame declares the board shape it needs.
+The platform owns lobby, discovery, transport, the shared timeline and the
+camera. A game owns its rules, its pixels, and **where the phones go**. The whole
+contract is four members:
 
-## The playlist
+```dart
+abstract class MultiscreenGame {
+  GameManifest get manifest;                    // who am I, how many phones
+  BoardPlan planBoard(LobbyInfo lobby);         // where do the phones go
+  GameSim createSim(BoardContext context);      // rules   — host only
+  GameView createView(ViewContext context);     // pixels  — every phone
+}
+```
 
-Minigames alternate forever, and the arrangement alternates with them:
+Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 
-| Game | Arrangement | Board | Won by |
+| Game | Layout it asks for | Board | Won by |
 | --- | --- | --- | --- |
-| **Slingshot** | side by side, short edges touching | wide and short | hitting the tower |
-| **Ball Bin** | stacked, long edges touching | narrow and tall | catching 10 balls |
+| **Slingshot** | `Layouts.row`, smallest first | wide and short | hitting the tower |
+| **Ball Bin** | `Layouts.column`, largest last | narrow and tall | catching 10 balls |
 
-Adding a third means writing a `MiniGameSim` and adding it to
-`host/game_catalog.dart`. Transport, layout, snapshots and interpolation never
-learn its name. Nothing else about the stack changed to add the second one —
-`PhoneLayout` always carried a full `(x, y)` offset, the second component just
-happened to be zero every time until now.
+Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
+Transport, layout, snapshots and interpolation never learn its name.
+
+## Score
+
+Score belongs to the lobby, not to a game: one running total per phone that
+survives across rounds, so a table can play five minigames and still know who is
+winning. A game calls `scores.award(phoneId, points)`; the platform does the
+rest, and shows nothing at all until somebody actually scores — both shipped
+games are co-operative, and Ball Bin is the only one that credits catches to
+individual phones.
 
 Scanning the host's QR instead skips the code — it carries `ws://<ip>:<port>#<code>`,
 and standing in front of the screen is the same proof the code asks for. Typing
@@ -66,31 +78,42 @@ Bezels default to 0mm there, so the two windows behave as one gapless board.
 
 ```
 lib/
-  net/          Transport interface + WebSocket, loopback, QueuedBroadcast
-                  discovery.dart       UDP beacon: hosts announce, joiners listen
-  model/        DeviceMetrics, PhoneLayout (the transforms), CoverageMap
-                  arrangement.dart     strip | stack — the shape of the table
-  game/         mini_game.dart         what the host needs from any minigame
-                  game_config.dart     every tunable, as plain data
-  host/         HostSession (the only thing that runs physics)
-                  game_catalog.dart    the playlist
-                  layout_solver.dart   packs phones along either axis
-                  slingshot_sim.dart   headless Forge2D world
-                  ball_bin_sim.dart    the other one
-  client/       ClientSession, SnapshotBuffer (the interpolator), ViewportGame
-  ui/           role → lobby → arrangement → placement → game → win
+  sdk/          the platform — knows nothing about any particular game
+    contract/     MultiscreenGame, GameSim, GameView, Entity, Frame
+    layout/       PhoneSpec, BoardPlan, Layouts.row/column, BoardCompiler
+    physics/      Forge2DGameSim base class, DeadZones helpers
+    render/       ShapeView — the default renderer, for games without art
+    score/        Scoreboard: per-phone, survives every round
+    model/        PhoneLayout (the transforms), CoverageMap, WorldRect
+    net/          Transport + WebSocket, loopback, discovery beacon
+    host/         HostSession (the only thing that runs a simulation)
+    client/       ClientSession, SnapshotBuffer (the interpolator), ViewportGame
+    ui/           role → lobby → placement → game → results
+    catalog.dart  the playlist — the ONLY file in sdk/ that knows games/ exists
+  games/
+    slingshot/    game + sim + view + config
+    ball_bin/     game + sim + view + config
+  main.dart
 ```
+
+`sdk/` imports from `games/` in exactly one file. That is what makes the
+boundary real, and it is the line a package extraction would cut along.
 
 Server-authoritative, client-side viewport rendering:
 
 - **The host owns the world.** A continuous coordinate space holding all physics.
-  `slingshot_sim.dart` imports no Flutter and no Flame — a client cannot
-  accidentally become a second source of truth.
+  A `GameSim` imports no Flutter and no Flame — a client cannot accidentally
+  become a second source of truth.
 - **Phones send raw local input** as physical pixels. The host converts to world
   coordinates using that phone's offset, because only the host knows where that
   screen sits.
-- **Clients are render-only.** They draw what the host describes and interpolate
-  between snapshots.
+- **Clients render, and only render.** A game's `GameView` runs on every phone
+  and paints whatever it likes, but it is a pure function of the `Frame` it is
+  handed. The host is the only writer.
+- **Only transforms are interpolated.** An entity declares its kind and its
+  fixed properties once; what moves every tick is `(x, y, angle)`, and that is
+  the one thing the platform smooths. It is what lets a game own its pixels
+  without being able to break the seam.
 
 ### Coordinates
 

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/net/discovery.dart';
+import 'package:multiscreen_slingshot/sdk/net/discovery.dart';
 
 /// Discovery over real sockets.
 ///

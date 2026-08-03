@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'app_controller.dart';
-import 'ui/role_screen.dart';
-import 'ui/session_screen.dart';
+import 'sdk/app_controller.dart';
+import 'sdk/ui/role_screen.dart';
+import 'sdk/ui/session_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

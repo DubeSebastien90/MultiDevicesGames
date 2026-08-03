@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/client/snapshot_buffer.dart';
-import 'package:multiscreen_slingshot/net/protocol.dart';
+import 'package:multiscreen_slingshot/sdk/client/snapshot_buffer.dart';
+import 'package:multiscreen_slingshot/sdk/net/protocol.dart';
 
 Snapshot snap({
   required double t,
@@ -17,7 +17,6 @@ Snapshot snap({
   entities: {
     'bird': EntityState(id: 'bird', x: x, y: y, angle: angle, vx: vx, vy: vy),
   },
-  sling: null,
 );
 
 void main() {

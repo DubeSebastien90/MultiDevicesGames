@@ -2,14 +2,21 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/client/client_session.dart';
-import 'package:multiscreen_slingshot/client/viewport_game.dart';
-import 'package:multiscreen_slingshot/host/layout_solver.dart';
-import 'package:multiscreen_slingshot/host/slingshot_sim.dart';
-import 'package:multiscreen_slingshot/model/device_metrics.dart';
-import 'package:multiscreen_slingshot/net/loopback_transport.dart';
-import 'package:multiscreen_slingshot/net/protocol.dart';
+import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
+import 'package:multiscreen_slingshot/sdk/client/viewport_game.dart';
+import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
+import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
+import 'package:multiscreen_slingshot/sdk/net/protocol.dart';
+import 'package:multiscreen_slingshot/sdk/catalog.dart';
+import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
+import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
+/// The camera half of the contract: whatever a game paints, the platform
+/// guarantees it lands at the same physical size and the same place on every
+/// panel. Feeds a client the exact messages a real host sends, using the real
+/// compiler and the real sim, then mounts the real renderer on top.
 DeviceMetrics landscapePhone(String label) => DeviceMetrics(
   activePxWidth: 2400,
   activePxHeight: 1080,
@@ -21,17 +28,18 @@ DeviceMetrics landscapePhone(String label) => DeviceMetrics(
 );
 
 void main() {
-  /// Feeds a client the exact messages a real host would send, using the real
-  /// solver and the real sim, then mounts the real renderer on top.
   Future<(ClientSession, ViewportGame, LoopbackPair)> mountViewport(
     WidgetTester tester, {
     required int phoneIndex,
   }) async {
-    final board = const LayoutSolver().solve([
-      CalibratedPhone('p1', landscapePhone('p1')),
-      CalibratedPhone('p2', landscapePhone('p2')),
+    const game = SlingshotGame();
+    final lobby = LobbyInfo([
+      PhoneSpec.fromMetrics('p1', landscapePhone('p1')),
+      PhoneSpec.fromMetrics('p2', landscapePhone('p2')),
     ]);
-    final sim = SlingshotSim(coverage: board.coverage);
+    final board =
+        const BoardCompiler().compile(game.planBoard(lobby), lobby);
+    final sim = game.createSim(board.contextFor(Scoreboard()));
 
     final loopback = LoopbackPair();
     final session = ClientSession(
@@ -47,13 +55,18 @@ void main() {
         'type': HostMsg.layout,
         ...me.toJson(),
         'coverage': board.coverage.toJson(),
+        'instruction': board.instruction,
+        'game': game.manifest.id,
       })
       ..send({
         'type': HostMsg.worldInit,
         'board': board.coverage.board.toJson(),
-        'anchor': {'x': sim.anchor.x, 'y': sim.anchor.y},
-        'entities': [for (final s in sim.specs) s.toJson()],
+        'entities': [
+          for (final e in sim.entities) e.descriptor.toJson(),
+        ],
+        'game': game.manifest.id,
       })
+      ..send({'type': HostMsg.shared, 'state': sim.sharedState})
       ..send({'type': HostMsg.start});
 
     // Two snapshots so there is something to interpolate between.
@@ -61,22 +74,31 @@ void main() {
       sim.step(1 / 60);
       loopback.peer.send({
         'type': HostMsg.state,
-        'tick': sim.tick,
+        'tick': (t / 16.6667).round(),
         't': t,
-        'entities': [for (final e in sim.entityStates()) e.toJson()],
-        'sling': sim.slingState().toJson(),
+        'entities': [
+          for (final e in sim.entities)
+            EntityState(
+              id: e.id,
+              x: e.x,
+              y: e.y,
+              angle: e.angle,
+              vx: e.vx,
+              vy: e.vy,
+            ).toJson(),
+        ],
       });
     }
 
-    final game = ViewportGame(session: session);
+    final viewport = ViewportGame(session: session);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: GameWidget(game: game))),
+      MaterialApp(home: Scaffold(body: GameWidget(game: viewport))),
     );
     // Let the loopback microtasks land, then run a few frames.
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
-    return (session, game, loopback);
+    return (session, viewport, loopback);
   }
 
   testWidgets('the camera shows one world unit at its true physical size',
@@ -110,24 +132,61 @@ void main() {
     await _teardown(tester, session, loopback);
   });
 
-  testWidgets('renders interpolated entities without throwing',
+  testWidgets("the game's own view is built, loaded and handed frames",
       (tester) async {
-    final (session, game, loopback) =
+    final (session, _, loopback) =
         await mountViewport(tester, phoneIndex: 0);
-    // The render loop is reading the delayed timeline and finding entities on it.
-    expect(game.entities, isNotEmpty);
-    expect(game.entities.containsKey('bird'), isTrue);
-    expect(game.sling, isNotNull);
-    expect(session.buffer.bufferedSnapshots, greaterThan(0));
 
-    // Exercise both debug overlays too — they draw extra geometry.
-    game
-      ..showGrid = true
-      ..showSeams = true;
-    await tester.pump(const Duration(milliseconds: 16));
+    // The client resolved the game id against its own catalog and built that
+    // game's renderer — this is the half of the contract that runs on clients.
+    expect(session.game, isNotNull);
+    expect(session.manifest!.id, 'slingshot');
+    expect(session.view, isNotNull);
+
+    final frame = session.frameAt(16);
+    expect(frame, isNotNull);
+    expect(frame!.entities, isNotEmpty);
+    expect(frame.entities.containsKey('bird'), isTrue);
+
+    // Descriptors arrived with worldInit, so the view knows what each
+    // transform *is* and not merely where it is.
+    expect(frame.entities['bird']!.kind, 'bird');
+    expect(frame.ofKind('target'), isNotEmpty);
+
+    // The pouch is an ordinary entity on the same interpolated clock.
+    expect(frame.byId('pouch'), isNotNull);
+    expect(frame.sharedState['anchorX'], isNotNull);
+
     expect(tester.takeException(), isNull);
-
     await _teardown(tester, session, loopback);
+  });
+
+  testWidgets('a phone missing the game is turned away, not left blank',
+      (tester) async {
+    final loopback = LoopbackPair();
+    final session = ClientSession(
+      transport: loopback.transport,
+      metrics: landscapePhone('me'),
+    );
+    await session.connect();
+
+    loopback.peer
+      ..send({'type': HostMsg.welcome, 'phoneId': 'p1'})
+      ..send({'type': HostMsg.lobby, 'phase': 'lobby', 'phones': [],
+        'game': 'a-game-from-the-future'});
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(session.phase, ClientPhase.rejected);
+    expect(session.message, contains('does not have the game'));
+
+    session.dispose();
+    await loopback.dispose();
+    await tester.pump();
+  });
+
+  test('the catalog fingerprint is what the handshake compares', () {
+    expect(GameCatalog.fingerprint, isNotEmpty);
+    expect(GameCatalog.byId('slingshot'), isNotNull);
   });
 }
 
