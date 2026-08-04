@@ -57,7 +57,15 @@ Entity entityOf(GameSim sim, String id) =>
 void main() {
   group('the catalog', () {
     test('offers every registered game and wraps', () {
-      expect(GameCatalog.playlist, hasLength(5));
+      // Counted from the playlist rather than written down: registering a game
+      // is meant to be one import and one list entry, and a hardcoded length
+      // here made it one import, one list entry and a test to go and fix.
+      expect(GameCatalog.playlist, isNotEmpty);
+      for (final game in GameCatalog.playlist) {
+        expect(GameCatalog.byId(game.manifest.id), same(game),
+            reason: 'every registered game must be reachable by its own id');
+      }
+
       expect(GameCatalog.byId('slingshot'), isNotNull);
       expect(GameCatalog.byId('ballbin'), isNotNull);
       expect(GameCatalog.byId('hotpotato'), isNotNull);

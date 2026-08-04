@@ -100,9 +100,13 @@ class HostSession extends ChangeNotifier {
        _joinCode = joinCode ?? generateJoinCode(),
        _advertise = advertise;
 
-  /// A stranger gets this many wrong guesses before we stop answering them.
-  static const int _maxWrongGuesses = 5;
-  static const Duration _lockout = Duration(seconds: 30);
+  // JOIN CODE DISABLED — the lockout only means something with a code to get
+  // wrong.
+  //
+  // /// A stranger gets this many wrong guesses before we stop answering them.
+  // static const int _maxWrongGuesses = 5;
+  // static const Duration _lockout = Duration(seconds: 30);
+
   static const Duration _joinDeadline = Duration(seconds: 15);
 
   final HostTransport _transport;
@@ -114,8 +118,9 @@ class HostSession extends ChangeNotifier {
   final _phones = <PhoneRecord>[];
   final _subs = <StreamSubscription<dynamic>>[];
   final _pending = <PhoneRecord, Timer>{};
-  final _wrongGuesses = <String, int>{};
-  final _lockedOut = <String, DateTime>{};
+  // JOIN CODE DISABLED
+  // final _wrongGuesses = <String, int>{};
+  // final _lockedOut = <String, DateTime>{};
 
   /// The session standings, shared by every game.
   final scores = Scoreboard();
@@ -257,12 +262,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    final remote = link.debugName;
-    final until = _lockedOut[remote];
-    if (until != null && DateTime.now().isBefore(until)) {
-      _reject(link, 'Too many wrong codes. Wait a moment and try again.');
-      return;
-    }
+    // JOIN CODE DISABLED — nothing can be locked out while nothing is checked.
+    // final remote = link.debugName;
+    // final until = _lockedOut[remote];
+    // if (until != null && DateTime.now().isBefore(until)) {
+    //   _reject(link, 'Too many wrong codes. Wait a moment and try again.');
+    //   return;
+    // }
 
     final record = PhoneRecord(link: link);
 
@@ -280,9 +286,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
+    // Still worth waiting on with the code gate open: the join message is also
+    // what carries the app fingerprint, so a peer that never sends one has not
+    // proved it can render this build.
     _pending[record] = Timer(_joinDeadline, () {
       if (_pending.remove(record) != null) {
-        _reject(link, 'No join code was sent.');
+        // JOIN CODE DISABLED — was 'No join code was sent.'
+        _reject(link, 'That phone never finished joining.');
       }
     });
   }
@@ -304,33 +314,43 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    final offered = (msg['code'] as String?)?.trim() ?? '';
-    if (_codeMatches(offered)) {
-      _wrongGuesses.remove(record.link.debugName);
-      _admit(record);
-      return;
-    }
+    // JOIN CODE DISABLED — anyone on this WiFi who finds the beacon is let in.
+    // The code is still generated, still sent by clients and still in the QR;
+    // it is simply not checked. To bring the door policy back, delete the
+    // `_admit` below and uncomment the block under it, then the four other
+    // `JOIN CODE DISABLED` markers (`grep -rn "JOIN CODE DISABLED"`).
+    _admit(record);
 
-    final remote = record.link.debugName;
-    final wrong = (_wrongGuesses[remote] ?? 0) + 1;
-    _wrongGuesses[remote] = wrong;
-    if (wrong >= _maxWrongGuesses) {
-      _lockedOut[remote] = DateTime.now().add(_lockout);
-      _wrongGuesses.remove(remote);
-    }
-    _reject(record.link, 'Wrong code.');
+    // final offered = (msg['code'] as String?)?.trim() ?? '';
+    // if (_codeMatches(offered)) {
+    //   _wrongGuesses.remove(record.link.debugName);
+    //   _admit(record);
+    //   return;
+    // }
+    //
+    // final remote = record.link.debugName;
+    // final wrong = (_wrongGuesses[remote] ?? 0) + 1;
+    // _wrongGuesses[remote] = wrong;
+    // if (wrong >= _maxWrongGuesses) {
+    //   _lockedOut[remote] = DateTime.now().add(_lockout);
+    //   _wrongGuesses.remove(remote);
+    // }
+    // _reject(record.link, 'Wrong code.');
   }
 
-  /// Constant-time-ish compare. The timing of a 5-digit string comparison is
-  /// not a realistic attack over WiFi, but there is no reason to leak it.
-  bool _codeMatches(String offered) {
-    if (offered.length != _joinCode.length) return false;
-    var diff = 0;
-    for (var i = 0; i < offered.length; i++) {
-      diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
-    }
-    return diff == 0;
-  }
+  // JOIN CODE DISABLED — unused while the gate is open, so it is commented out
+  // rather than left to trip the analyzer.
+  //
+  // /// Constant-time-ish compare. The timing of a 5-digit string comparison is
+  // /// not a realistic attack over WiFi, but there is no reason to leak it.
+  // bool _codeMatches(String offered) {
+  //   if (offered.length != _joinCode.length) return false;
+  //   var diff = 0;
+  //   for (var i = 0; i < offered.length; i++) {
+  //     diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
+  //   }
+  //   return diff == 0;
+  // }
 
   void _admit(PhoneRecord record) {
     record.authenticated = true;
