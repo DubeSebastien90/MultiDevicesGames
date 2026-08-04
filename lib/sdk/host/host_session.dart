@@ -13,6 +13,7 @@ import '../catalog.dart';
 import '../contract/entity.dart';
 import '../contract/game.dart';
 import '../contract/sim.dart';
+import '../layout/board_audit.dart';
 import '../layout/board_compiler.dart';
 import '../layout/board_plan.dart';
 import '../layout/phone_spec.dart';
@@ -99,9 +100,13 @@ class HostSession extends ChangeNotifier {
        _joinCode = joinCode ?? generateJoinCode(),
        _advertise = advertise;
 
-  /// A stranger gets this many wrong guesses before we stop answering them.
-  static const int _maxWrongGuesses = 5;
-  static const Duration _lockout = Duration(seconds: 30);
+  // JOIN CODE DISABLED — the lockout only means something with a code to get
+  // wrong.
+  //
+  // /// A stranger gets this many wrong guesses before we stop answering them.
+  // static const int _maxWrongGuesses = 5;
+  // static const Duration _lockout = Duration(seconds: 30);
+
   static const Duration _joinDeadline = Duration(seconds: 15);
 
   final HostTransport _transport;
@@ -113,8 +118,9 @@ class HostSession extends ChangeNotifier {
   final _phones = <PhoneRecord>[];
   final _subs = <StreamSubscription<dynamic>>[];
   final _pending = <PhoneRecord, Timer>{};
-  final _wrongGuesses = <String, int>{};
-  final _lockedOut = <String, DateTime>{};
+  // JOIN CODE DISABLED
+  // final _wrongGuesses = <String, int>{};
+  // final _lockedOut = <String, DateTime>{};
 
   /// The session standings, shared by every game.
   final scores = Scoreboard();
@@ -172,6 +178,16 @@ class HostSession extends ChangeNotifier {
   String? get planError => _planError;
   String? _planError;
 
+  /// A full record of the last board that was laid out — measurements, plan,
+  /// compiled geometry, and the reason every pair of screens was or was not
+  /// joined. Readable from any browser at the host's own address.
+  String? get lastAudit => _lastAudit;
+  String? _lastAudit;
+
+  /// The one-line verdict from that audit, for the host's own screen.
+  String? get lastAuditSummary => _lastAuditSummary;
+  String? _lastAuditSummary;
+
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming =>
       GameCatalog.playableFrom(_gameIndex, _phones.length);
@@ -212,6 +228,14 @@ class HostSession extends ChangeNotifier {
     _phase = HostPhase.lobby;
     _subs.add(_transport.onPeer.listen(_attachPeer));
 
+    // Make the audit readable from any browser on the same WiFi. The only way
+    // to get diagnostics off a phone that is hosting.
+    final ws = _transport;
+    if (ws is WebSocketHostTransport) {
+      ws.diagnostics = () =>
+          _lastAudit ?? 'MultiDevicesGame host — no board laid out yet';
+    }
+
     if (_advertise) {
       final beacon = DiscoveryBroadcaster(
         id: '${DateTime.now().microsecondsSinceEpoch}-'
@@ -238,12 +262,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    final remote = link.debugName;
-    final until = _lockedOut[remote];
-    if (until != null && DateTime.now().isBefore(until)) {
-      _reject(link, 'Too many wrong codes. Wait a moment and try again.');
-      return;
-    }
+    // JOIN CODE DISABLED — nothing can be locked out while nothing is checked.
+    // final remote = link.debugName;
+    // final until = _lockedOut[remote];
+    // if (until != null && DateTime.now().isBefore(until)) {
+    //   _reject(link, 'Too many wrong codes. Wait a moment and try again.');
+    //   return;
+    // }
 
     final record = PhoneRecord(link: link);
 
@@ -261,9 +286,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
+    // Still worth waiting on with the code gate open: the join message is also
+    // what carries the app fingerprint, so a peer that never sends one has not
+    // proved it can render this build.
     _pending[record] = Timer(_joinDeadline, () {
       if (_pending.remove(record) != null) {
-        _reject(link, 'No join code was sent.');
+        // JOIN CODE DISABLED — was 'No join code was sent.'
+        _reject(link, 'That phone never finished joining.');
       }
     });
   }
@@ -285,33 +314,43 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    final offered = (msg['code'] as String?)?.trim() ?? '';
-    if (_codeMatches(offered)) {
-      _wrongGuesses.remove(record.link.debugName);
-      _admit(record);
-      return;
-    }
+    // JOIN CODE DISABLED — anyone on this WiFi who finds the beacon is let in.
+    // The code is still generated, still sent by clients and still in the QR;
+    // it is simply not checked. To bring the door policy back, delete the
+    // `_admit` below and uncomment the block under it, then the four other
+    // `JOIN CODE DISABLED` markers (`grep -rn "JOIN CODE DISABLED"`).
+    _admit(record);
 
-    final remote = record.link.debugName;
-    final wrong = (_wrongGuesses[remote] ?? 0) + 1;
-    _wrongGuesses[remote] = wrong;
-    if (wrong >= _maxWrongGuesses) {
-      _lockedOut[remote] = DateTime.now().add(_lockout);
-      _wrongGuesses.remove(remote);
-    }
-    _reject(record.link, 'Wrong code.');
+    // final offered = (msg['code'] as String?)?.trim() ?? '';
+    // if (_codeMatches(offered)) {
+    //   _wrongGuesses.remove(record.link.debugName);
+    //   _admit(record);
+    //   return;
+    // }
+    //
+    // final remote = record.link.debugName;
+    // final wrong = (_wrongGuesses[remote] ?? 0) + 1;
+    // _wrongGuesses[remote] = wrong;
+    // if (wrong >= _maxWrongGuesses) {
+    //   _lockedOut[remote] = DateTime.now().add(_lockout);
+    //   _wrongGuesses.remove(remote);
+    // }
+    // _reject(record.link, 'Wrong code.');
   }
 
-  /// Constant-time-ish compare. The timing of a 5-digit string comparison is
-  /// not a realistic attack over WiFi, but there is no reason to leak it.
-  bool _codeMatches(String offered) {
-    if (offered.length != _joinCode.length) return false;
-    var diff = 0;
-    for (var i = 0; i < offered.length; i++) {
-      diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
-    }
-    return diff == 0;
-  }
+  // JOIN CODE DISABLED — unused while the gate is open, so it is commented out
+  // rather than left to trip the analyzer.
+  //
+  // /// Constant-time-ish compare. The timing of a 5-digit string comparison is
+  // /// not a realistic attack over WiFi, but there is no reason to leak it.
+  // bool _codeMatches(String offered) {
+  //   if (offered.length != _joinCode.length) return false;
+  //   var diff = 0;
+  //   for (var i = 0; i < offered.length; i++) {
+  //     diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
+  //   }
+  //   return diff == 0;
+  // }
 
   void _admit(PhoneRecord record) {
     record.authenticated = true;
@@ -478,8 +517,10 @@ class HostSession extends ChangeNotifier {
     ]);
 
     final BoardLayout solved;
+    final BoardPlan plan;
     try {
-      solved = const BoardCompiler().compile(game.planBoard(lobby), lobby);
+      plan = game.planBoard(lobby);
+      solved = const BoardCompiler().compile(plan, lobby);
     } on BoardPlanError catch (e) {
       // The game's plan is unusable. Nobody is asked to rearrange a table for
       // a round that cannot run.
@@ -488,6 +529,19 @@ class HostSession extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    // Record what just happened, before anyone is told anything. Four phones on
+    // a table produce measurements no synthetic test will guess, and this is
+    // how those numbers get read rather than inferred from stripe colours.
+    final audit = BoardAudit.of(
+      gameId: game.manifest.id,
+      lobby: lobby,
+      plan: plan,
+      board: solved,
+    );
+    _lastAudit = BoardAudit.toPrettyJson(audit);
+    _lastAuditSummary = audit['summary'] as String?;
+    debugPrint('=== board audit ===\n$_lastAudit');
 
     _layout = solved;
     _phase = HostPhase.placing;
@@ -506,6 +560,9 @@ class HostSession extends ChangeNotifier {
         // the game actually chose rather than a guess reconstructed from the
         // lobby's join order.
         'slices': [for (final s in solved.slices) s.toJson()],
+        // Coloured stripes marking which edge meets which neighbour. Computed
+        // once by the compiler; every phone draws the same answer.
+        'links': [for (final l in solved.links) l.toJson()],
         'instruction': solved.instruction,
         ..._gameFields,
       });

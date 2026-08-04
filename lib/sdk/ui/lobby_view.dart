@@ -91,6 +91,13 @@ class LobbyView extends StatelessWidget {
                     onChanged: client.updateMetrics,
                   ),
                   if (host != null) ...[
+                    if (host.lastAuditSummary != null) ...[
+                      const SizedBox(height: 14),
+                      _AuditNote(
+                        summary: host.lastAuditSummary!,
+                        address: host.address?.toString(),
+                      ),
+                    ],
                     if (host.planError != null) ...[
                       const SizedBox(height: 14),
                       _PlanErrorBanner(
@@ -142,6 +149,73 @@ class LobbyView extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The one-line verdict from the last board that was laid out.
+///
+/// Host-only, and only after a round has been set up. Says whether the
+/// connectors came out as joins or as inward fallbacks, and where to read the
+/// full numbers — which is the difference between "a stripe looks wrong" and
+/// knowing which measurement caused it.
+class _AuditNote extends StatelessWidget {
+  const _AuditNote({required this.summary, required this.address});
+
+  final String summary;
+  final String? address;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final worrying = summary.startsWith('NO joins') || summary.contains('rejected');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: worrying
+            ? theme.colorScheme.errorContainer
+            : theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                worrying ? Icons.warning_amber : Icons.fact_check_outlined,
+                size: 18,
+                color: worrying
+                    ? theme.colorScheme.onErrorContainer
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text('Last board', style: theme.textTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            summary,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: worrying
+                  ? theme.colorScheme.onErrorContainer
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (address != null) ...[
+            const SizedBox(height: 6),
+            SelectableText(
+              'Full numbers: open '
+              '${address!.replaceFirst("ws://", "http://")} in a browser.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -314,23 +388,26 @@ class _HostPanel extends StatelessWidget {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Give them this code',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      SelectableText(
-                        host.joinCode,
-                        style: theme.textTheme.displaySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          letterSpacing: 8,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
+                      // JOIN CODE DISABLED — showing a code nobody is asked for
+                      // would just be a puzzle. The QR beside this still works;
+                      // it carries the address, which is the part that matters.
+                      // const SizedBox(height: 12),
+                      // Text(
+                      //   'Give them this code',
+                      //   style: theme.textTheme.labelMedium?.copyWith(
+                      //     color: theme.colorScheme.onSurfaceVariant,
+                      //   ),
+                      // ),
+                      // const SizedBox(height: 2),
+                      // SelectableText(
+                      //   host.joinCode,
+                      //   style: theme.textTheme.displaySmall?.copyWith(
+                      //     fontFamily: 'monospace',
+                      //     letterSpacing: 8,
+                      //     fontWeight: FontWeight.w600,
+                      //     color: theme.colorScheme.primary,
+                      //   ),
+                      // ),
                     ],
                   ),
                 ),

@@ -1,18 +1,88 @@
 import 'dart:ui';
 
 import 'slingshot_config.dart';
+import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/world_rect.dart';
+import '../../sdk/render/lottie_sprite.dart';
 import '../../sdk/render/shape_view.dart';
 
-/// The slingshot's look: [ShapeView] for the bird, ground and tower, plus the
-/// rubber band on top.
-///
-/// A worked example of the cheap path — the shapes come for free, and the game
-/// only writes the one thing the default renderer could not have guessed.
 class SlingshotView extends ShapeView {
   SlingshotView();
 
   final _band = Paint()..style = PaintingStyle.stroke;
+  final _character = LottieSprite();
+
+  @override
+  Future<void> load() async {
+    await _character.load(
+      'assets/animations/character_test.json',
+      width: 256,
+      height: 256,
+    );
+  }
+
+  @override
+  void renderEntities(Canvas canvas, Frame frame) {
+    final view = frame.visible.inflate(2.0);
+
+    for (final e in frame.entities.values) {
+      if (e.kind == 'bird') {
+        // Draw the Lottie character instead of the default circle.
+        final size = SlingshotConfig.birdRadius * 2.5;
+        if (_isOffScreen(e, size, view)) continue;
+        _character.draw(
+          canvas,
+          Offset(e.x, e.y),
+          frame.timeMs,
+          worldSize: size,
+          angle: e.angle,
+        );
+      } else {
+        // Everything else uses the default shape renderer.
+        _drawShape(canvas, e, view, frame.onePixel);
+      }
+    }
+  }
+
+  bool _isOffScreen(RenderEntity e, double reach, WorldRect view) {
+    return e.x + reach < view.left ||
+        e.x - reach > view.right ||
+        e.y + reach < view.top ||
+        e.y - reach > view.bottom;
+  }
+
+  /// Replicates ShapeView's per-entity drawing for non-bird entities.
+  void _drawShape(Canvas canvas, RenderEntity e, WorldRect view, double onePixel) {
+    final shape = e.props[ShapeProps.shape] as String?;
+    if (shape == null) return;
+
+    final fill = Paint();
+    fill.color = Color(e.propInt(ShapeProps.color, 0xFFFFFFFF));
+
+    switch (shape) {
+      case ShapeKind.circle:
+        final r = e.propDouble(ShapeProps.radius);
+        if (_isOffScreen(e, r, view)) return;
+        canvas.drawCircle(Offset(e.x, e.y), r, fill);
+      case ShapeKind.box:
+        final w = e.propDouble(ShapeProps.width);
+        final h = e.propDouble(ShapeProps.height);
+        if (_isOffScreen(e, w > h ? w : h, view)) return;
+        canvas
+          ..save()
+          ..translate(e.x, e.y)
+          ..rotate(e.angle);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: Offset.zero, width: w, height: h),
+            Radius.circular((w < h ? w : h) * 0.12),
+          ),
+          fill,
+        );
+        canvas.restore();
+    }
+  }
 
   @override
   void renderForeground(Canvas canvas, Frame frame) {
@@ -23,7 +93,6 @@ class SlingshotView extends ShapeView {
     final anchor = Offset(anchorX, anchorY);
     final px = frame.onePixel;
 
-    // The pouch marker is always drawn, so you can see where to grab.
     _band
       ..color = const Color(0x55FFFFFF)
       ..strokeWidth = 1.5 * px;
@@ -31,8 +100,6 @@ class SlingshotView extends ShapeView {
 
     if (frame.sharedState['dragging'] == null) return;
 
-    // The pouch rides the same interpolated timeline as the bird, so the band
-    // and the thing it is flinging can never disagree.
     final pouch = frame.byId('pouch');
     if (pouch == null) return;
 
@@ -46,5 +113,11 @@ class SlingshotView extends ShapeView {
       )!
       ..strokeWidth = 3 * px;
     canvas.drawLine(anchor, pull, _band);
+  }
+
+  @override
+  void dispose() {
+    _character.dispose();
+    super.dispose();
   }
 }
