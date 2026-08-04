@@ -370,6 +370,41 @@ The platform shows standings in the lobby and on the results screen, and shows
 **nothing at all** until somebody scores — so a co-operative game that never
 awards is completely normal.
 
+## Ending a round
+
+Return a `GameOutcome` from `outcome` and the round is over. Which constructor
+you pick decides what each phone is told — pick the one that is true, because
+"who won" is not the same question for every game:
+
+```dart
+GameOutcome.won(summary: 'the tower fell')          // the table did it together
+GameOutcome.lost(summary: 'time ran out')           // the table did not
+GameOutcome.contest(winners: {'p1','p3'}, …)        // some phones won
+GameOutcome.draw(summary: 'dead level')             // a contest nobody won
+GameOutcome.perPhone({'p1': 'You made 40 points'})  // no winning, just facts
+```
+
+| You return | The named phones see | Everyone else sees |
+| --- | --- | --- |
+| `won` | 🏆 **You win!** | the same |
+| `lost` | **Round over** | the same |
+| `contest` | 🏆 **You win!** | **You lost** |
+| `draw` | **A draw** | the same |
+| `perPhone` | 🏆 **Well played!** + their line | the headline, without a line |
+
+Three things worth knowing:
+
+- **`lines` rides along with any of them.** A contest can say **You win!** *and*
+  "3 kills" underneath. The platform owns the headline so five phones cannot
+  word one result differently; you own the facts under it.
+- **Keys are `phoneId`s.** Using your own indices means everybody is told they
+  lost — the host notices and warns, but the round is already over by then.
+- **Latch it.** `outcome` is polled several times a tick, so build the object
+  once and return the same one, exactly as with awarding points.
+
+A game that ends when its goal is met has nothing to decide here: `won` is
+right, and `outcome` returns null until then.
+
 ## Five rules that will break the seam if you ignore them
 
 1. **`step(dt)` must be pure with respect to wall-clock time.** No

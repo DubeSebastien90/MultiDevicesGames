@@ -673,6 +673,25 @@ class HostSession extends ChangeNotifier {
 
   /// The round is over. Keep the final frame on screen — a tower mid-collapse
   /// is the reward — and tell everyone what is next.
+  /// A game naming phones that are not at the table has almost certainly used
+  /// its own indices — `'0'`, `'blue'` — where a `phoneId` was wanted, and the
+  /// symptom is every player being told they lost. Said out loud at the moment
+  /// it happens rather than left to be puzzled over on five screens at once.
+  void _warnAboutUnknownPhones(GameOutcome outcome) {
+    final known = {for (final p in _phones) p.phoneId};
+    final named = <String>{
+      ...?outcome.winners,
+      ...?outcome.lines?.keys,
+    };
+    final strangers = named.difference(known);
+    if (strangers.isEmpty) return;
+
+    _warning = '${_game?.manifest.title ?? 'That game'} ended naming phones '
+        'that are not here: ${strangers.join(', ')}. Outcomes are keyed by '
+        'phoneId.';
+    debugPrint('[outcome] $_warning');
+  }
+
   void _finishRound(GameOutcome outcome) {
     if (_phase != HostPhase.playing) return;
     _loop?.cancel();
@@ -680,11 +699,16 @@ class HostSession extends ChangeNotifier {
     _phase = HostPhase.finished;
     _outcome = outcome;
 
+    _warnAboutUnknownPhones(outcome);
+
     final next = nextGame;
     _broadcast({
       'type': HostMsg.outcome,
+      'kind': outcome.kind.name,
       'won': outcome.won,
       'summary': outcome.summary,
+      if (outcome.winners != null) 'winners': outcome.winners!.toList(),
+      if (outcome.lines != null) 'lines': outcome.lines,
       ..._gameFields,
       // Present only on a playlist round. Its absence is how every phone knows
       // this one ends at the lobby.

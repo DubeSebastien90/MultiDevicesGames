@@ -12,7 +12,7 @@ import '../net/transport.dart';
 import '../catalog.dart';
 import '../contract/entity.dart';
 import '../contract/game.dart';
-import '../contract/sim.dart' show PhoneSlice;
+import '../contract/sim.dart' show OutcomeKind, PhoneSlice;
 import '../contract/view.dart';
 import '../score/scoreboard.dart';
 import 'snapshot_buffer.dart';
@@ -27,6 +27,26 @@ enum ClientPhase {
   disconnected,
 }
 
+/// What one phone is told about a round that ended.
+class RoundVerdict {
+  const RoundVerdict({
+    required this.headline,
+    required this.line,
+    required this.celebrate,
+  });
+
+  /// 'You win!', 'You lost', 'A draw', 'Well played!', 'Round over'. The
+  /// platform's words, so five phones never disagree about the phrasing of the
+  /// same result.
+  final String headline;
+
+  /// The game's line for *this* phone, if it gave one.
+  final String? line;
+
+  /// Whether to show this as a win — the trophy rather than the neutral icon.
+  final bool celebrate;
+}
+
 /// A round that ended, and what follows it.
 ///
 /// [nextTitle] is null when the round was a one-off started from the games
@@ -37,6 +57,9 @@ class RoundResult {
     required this.won,
     required this.title,
     required this.summary,
+    this.kind = OutcomeKind.shared,
+    this.winners,
+    this.lines,
     this.nextTitle,
     this.nextTagline,
     this.nextInstruction,
@@ -45,6 +68,62 @@ class RoundResult {
   final bool won;
   final String title;
   final String? summary;
+
+  /// What kind of ending this was, as the game declared it.
+  final OutcomeKind kind;
+
+  /// Who won, when [kind] is [OutcomeKind.contest].
+  final Set<String>? winners;
+
+  /// A line for one phone in particular, keyed by `phoneId`.
+  final Map<String, String>? lines;
+
+  /// What to put on [phoneId]'s screen.
+  ///
+  /// **The only place this is decided.** Every phone runs it, including the
+  /// host's own, so the table cannot be shown two different verdicts for one
+  /// round — the sort of split that has bitten this codebase every time one
+  /// fact had two implementations.
+  RoundVerdict verdictFor(String? phoneId) {
+    final line = phoneId == null ? null : lines?[phoneId];
+
+    switch (kind) {
+      case OutcomeKind.contest:
+        // No id means this phone has not been welcomed, so it is neither a
+        // winner nor a loser. Telling it that it lost would be inventing a
+        // result out of missing information.
+        if (phoneId == null) {
+          return const RoundVerdict(
+            headline: 'Round over',
+            line: null,
+            celebrate: false,
+          );
+        }
+        final iWon = winners?.contains(phoneId) ?? false;
+        return RoundVerdict(
+          headline: iWon ? 'You win!' : 'You lost',
+          line: line,
+          celebrate: iWon,
+        );
+
+      case OutcomeKind.draw:
+        return RoundVerdict(headline: 'A draw', line: line, celebrate: false);
+
+      case OutcomeKind.personal:
+        return RoundVerdict(
+          headline: 'Well played!',
+          line: line,
+          celebrate: true,
+        );
+
+      case OutcomeKind.shared:
+        return RoundVerdict(
+          headline: won ? 'You win!' : 'Round over',
+          line: line,
+          celebrate: won,
+        );
+    }
+  }
 
   final String? nextTitle;
   final String? nextTagline;
@@ -58,6 +137,14 @@ class RoundResult {
     won: j['won'] as bool? ?? true,
     title: (j['gameTitle'] as String?) ?? 'That round',
     summary: j['summary'] as String?,
+    kind: OutcomeKind.values.firstWhere(
+      (k) => k.name == j['kind'],
+      orElse: () => OutcomeKind.shared,
+    ),
+    winners: (j['winners'] as List?)?.map((w) => w as String).toSet(),
+    lines: (j['lines'] as Map?)?.map(
+      (k, v) => MapEntry(k as String, v as String),
+    ),
     nextTitle: j['nextTitle'] as String?,
     nextTagline: j['nextTagline'] as String?,
     nextInstruction: j['nextInstruction'] as String?,

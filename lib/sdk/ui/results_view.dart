@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../client/client_session.dart' show RoundVerdict;
 import 'standings_card.dart';
 
 /// The round is over: what happened, and where everyone stands.
@@ -21,9 +22,19 @@ class ResultsView extends StatelessWidget {
     final host = controller.host;
     final result = client.result;
 
-    final won = host?.outcome?.won ?? result?.won ?? true;
-    final summary = host?.outcome?.summary ?? result?.summary;
-    final title = host?.game?.manifest.title ?? result?.title;
+    // Deliberately only the *received* result, on the host as much as on a
+    // joiner: the host is its own client over loopback, so it gets the same
+    // message everyone else does. Reading its own `outcome` object here instead
+    // would be a second source for one fact, and every time this codebase has
+    // had two of those they have eventually disagreed.
+    final verdict = result?.verdictFor(client.phoneId) ??
+        const RoundVerdict(
+          headline: 'Round over',
+          line: null,
+          celebrate: false,
+        );
+    final summary = result?.summary;
+    final title = result?.title;
 
     // A playlist round chains into the next game; one started from the games
     // list ends here. The host knows directly; a joiner reads it from whether
@@ -46,15 +57,15 @@ class ResultsView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Icon(
-                    won ? Icons.emoji_events : Icons.replay,
+                    verdict.celebrate ? Icons.emoji_events : Icons.replay,
                     size: 44,
-                    color: won
+                    color: verdict.celebrate
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    won ? 'You win!' : 'Round over',
+                    verdict.headline,
                     style: theme.textTheme.headlineMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -65,6 +76,17 @@ class ResultsView extends StatelessWidget {
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  // The game's line for this phone in particular, above the
+                  // line everyone gets — "You made 320 points" matters more to
+                  // the person holding the phone than "time ran out" does.
+                  if (verdict.line != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      verdict.line!,
+                      style: theme.textTheme.titleSmall,
                       textAlign: TextAlign.center,
                     ),
                   ],

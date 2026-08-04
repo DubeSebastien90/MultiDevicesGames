@@ -443,7 +443,10 @@ void main() {
         advance(sim, FloodConfig.maxRoundLength + 1);
 
         expect(sim.outcome, isNotNull, reason: '${game.manifest.id} must end');
-        expect(sim.outcome!.summary, contains('draw'));
+        // Declared, not spelled out in prose: the platform is what tells each
+        // phone "a draw", so the word being in the summary proved nothing.
+        expect(sim.outcome!.kind, OutcomeKind.draw);
+        expect(sim.outcome!.winners, isNull);
       }
     });
 
