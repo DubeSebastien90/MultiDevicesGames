@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../contract/sim.dart' show PhoneSlice;
+import '../layout/board_links.dart';
 import '../model/world_rect.dart';
+import 'link_palette.dart';
 
 /// A to-scale picture of the board the game actually compiled.
 ///
@@ -22,6 +24,7 @@ class BoardDiagram extends StatelessWidget {
     super.key,
     required this.slices,
     required this.board,
+    this.links = const [],
     this.meId,
     this.confirmed = const {},
     this.maxExtent = 170,
@@ -32,6 +35,11 @@ class BoardDiagram extends StatelessWidget {
 
   /// The playfield, for proportions.
   final WorldRect board;
+
+  /// Every screen's edge stripes — *all* of them, not just this phone's. Seeing
+  /// both ends of a red join in the picture is what makes the red line on your
+  /// own glass mean something.
+  final List<EdgeMarker> links;
 
   /// Highlighted as "you".
   final String? meId;
@@ -106,6 +114,18 @@ class BoardDiagram extends StatelessWidget {
                   ),
                   for (final (i, slice) in slices.indexed)
                     _positionedScreen(slice, i, left, top, scale, scheme),
+                  // Drawn over the screens so a join reads as one band even
+                  // where two phones nearly touch.
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _LinkPainter(
+                        links: links,
+                        left: left,
+                        top: top,
+                        scale: scale,
+                      ),
+                    ),
+                  ),
                 ],
               );
             },
@@ -235,4 +255,41 @@ class _Screen extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// The edge stripes, in the schema's own little coordinate space.
+class _LinkPainter extends CustomPainter {
+  _LinkPainter({
+    required this.links,
+    required this.left,
+    required this.top,
+    required this.scale,
+  });
+
+  final List<EdgeMarker> links;
+  final double left;
+  final double top;
+  final double scale;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    for (final link in links) {
+      stroke.color = LinkPalette.of(link.colorIndex);
+      canvas.drawLine(
+        Offset((link.x1 - left) * scale, (link.y1 - top) * scale),
+        Offset((link.x2 - left) * scale, (link.y2 - top) * scale),
+        stroke,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LinkPainter old) =>
+      old.links != links || old.scale != scale;
 }
