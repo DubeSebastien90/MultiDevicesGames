@@ -46,12 +46,10 @@ class FloodShrinkingView extends FloodView {
     final closedBottom =
         waterlineY(frame, (boundary + scale).clamp(-1.0, 1.0));
 
-    final window = WorldRect(
-      band.left,
-      closedTop,
-      band.width,
-      closedBottom - closedTop,
-    ).intersect(band);
+    final window = FloodView.overlap(
+      WorldRect(band.left, closedTop, band.width, closedBottom - closedTop),
+      band,
+    );
     if (window == null) return;
 
     final clip =

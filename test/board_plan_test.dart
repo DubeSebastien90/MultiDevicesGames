@@ -103,6 +103,98 @@ void main() {
     });
   });
 
+  group('Layouts.grid packs two axes at once', () {
+    test('fills row by row, so the first half is the top row', () {
+      final phones = [for (var i = 1; i <= 6; i++) phone('p$i')];
+      final plan = Layouts.grid(phones, rows: 2);
+      final board = compiler.compile(plan, lobbyOf(phones));
+
+      final tops = {for (final s in board.slices) s.phoneId: s.viewport};
+      // p1..p3 are the top row, p4..p6 the bottom.
+      for (final top in ['p1', 'p2', 'p3']) {
+        for (final bottom in ['p4', 'p5', 'p6']) {
+          expect(
+            tops[top]!.bottom <= tops[bottom]!.top,
+            isTrue,
+            reason: '$top should sit above $bottom',
+          );
+        }
+      }
+    });
+
+    test('columns widen the board and rows deepen it', () {
+      final four = [for (var i = 1; i <= 4; i++) phone('p$i')];
+      final two = [for (var i = 1; i <= 2; i++) phone('p$i')];
+      final wide = compiler.compile(
+        Layouts.grid(four, rows: 2),
+        lobbyOf(four),
+      );
+      final narrow = compiler.compile(
+        Layouts.grid(two, rows: 2),
+        lobbyOf(two),
+      );
+
+      expect(wide.phones, hasLength(4));
+      // 2x2 against 1x2: same depth, twice the columns.
+      expect(wide.board.height, closeTo(narrow.board.height, 1e-9));
+      expect(wide.board.width, greaterThan(narrow.board.width * 1.9));
+    });
+
+    test('refuses a count that will not fill the rows', () {
+      final phones = [for (var i = 1; i <= 5; i++) phone('p$i')];
+      expect(
+        () => Layouts.grid(phones, rows: 2),
+        throwsA(isA<BoardPlanError>()),
+        reason: 'five phones cannot make two equal rows',
+      );
+      expect(
+        () => Layouts.grid(phones, rows: 0),
+        throwsA(isA<BoardPlanError>()),
+      );
+    });
+
+    test('mismatched phones meet at the seam, not at their far edges', () {
+      // A deep phone facing a shallow one. Seam-aligned, the shallow phone
+      // gives up its far edge and both still touch across the middle.
+      final phones = [
+        phone('deep', heightMm: 160),
+        phone('shallow', heightMm: 120),
+      ];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+      final deep = board.slices.firstWhere((s) => s.phoneId == 'deep').viewport;
+      final shallow =
+          board.slices.firstWhere((s) => s.phoneId == 'shallow').viewport;
+
+      // Deep is the top row; its bottom edge and shallow's top edge are a
+      // bezel apart, not a bezel plus the depth difference.
+      final gapMm = (shallow.top - deep.bottom) / 0.1;
+      expect(gapMm, closeTo(6, 0.5), reason: 'both bezels, and nothing else');
+    });
+
+    test('a single row is just a row', () {
+      final phones = [for (var i = 1; i <= 3; i++) phone('p$i')];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 1),
+        lobbyOf(phones),
+      );
+      expect(board.board.width, greaterThan(board.board.height));
+    });
+
+    test('the playfield is what every facing pair can see', () {
+      // A narrow phone opposite a wide one: the column is only as wide as the
+      // narrow one, because the wide phone's overhang has no screen under it.
+      final phones = [phone('wide', widthMm: 80), phone('narrow', widthMm: 60)];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+      expect(board.board.width / 0.1, closeTo(60, 0.5));
+    });
+  });
+
   group('the game decides the order', () {
     test('smallest first puts the little phone at the start', () {
       final small = phone('small', widthMm: 50, heightMm: 100);

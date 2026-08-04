@@ -28,6 +28,24 @@ abstract class FloodView extends GameView {
   final _stroke = Paint()..style = PaintingStyle.stroke;
   final _foam = Paint();
 
+  /// The overlap of two world rectangles, or null when they do not meet.
+  ///
+  /// Flood fills *regions* rather than drawing objects, which is why it needs
+  /// this and the other games do not: `ShapeView` culls an entity with a
+  /// boolean "is this circle off-screen?", whereas "blue from the top of the
+  /// board down to the waterline" is a rectangle that has to be cut to what
+  /// this phone can actually see, in both axes. Doing that with four
+  /// hand-written min/max calls per drawing site is easy to get subtly wrong
+  /// in one axis, and a mistake there shows up as a seam artefact.
+  static WorldRect? overlap(WorldRect a, WorldRect b) {
+    final l = a.left > b.left ? a.left : b.left;
+    final t = a.top > b.top ? a.top : b.top;
+    final r = a.right < b.right ? a.right : b.right;
+    final bottom = a.bottom < b.bottom ? a.bottom : b.bottom;
+    if (r <= l || bottom <= t) return null;
+    return WorldRect(l, t, r - l, bottom - t);
+  }
+
   /// Maps the game's `[-1, +1]` axis onto the board's vertical extent.
   ///
   /// **The axis runs opposite to the screen.** Blue sits along the top and taps
@@ -84,7 +102,7 @@ abstract class FloodView extends GameView {
     // Blue from the top of the board down to the waterline, red from there to
     // the bottom. Drawn in *board* coordinates and cut to what this screen can
     // see, so each phone shows its own slice of one continuous picture.
-    final band = frame.board.intersect(view);
+    final band = overlap(frame.board, view);
     if (band != null) {
       _fill.color = const Color(FloodConfig.colorBlue);
       final blueBottom = math.min(waterY, band.bottom);

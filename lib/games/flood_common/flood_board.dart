@@ -1,17 +1,11 @@
-import 'dart:math' as math;
-
 import '../../sdk/contract/sim.dart';
 import '../../sdk/layout/board_plan.dart';
+import '../../sdk/layout/layouts.dart';
 import '../../sdk/layout/phone_spec.dart';
 import 'flood_config.dart';
 
 /// The two-row grid both Flood variants play on, and the team split that falls
 /// out of it.
-///
-/// `Layouts.row` and `.column` pack along a single axis, and this board is two
-/// axes at once: N columns wide and always exactly **two rows deep**, one row
-/// per team. So it is written directly as placements, which is the path the SDK
-/// documents for "an L, a grid, a ring".
 ///
 /// ```
 ///   1v1                2v2                  3v3
@@ -26,19 +20,20 @@ import 'flood_config.dart';
 /// phone directly in front of them to tap, teammates sit shoulder to shoulder
 /// along their row, and the boundary they are all pushing runs across the
 /// single seam between the rows.
+///
+/// The packing itself is [Layouts.grid] — a facing-rows board is not a Flood
+/// idea, and any team-versus-team game wants the same shape. What is left here
+/// is only what is genuinely Flood's: which phones make up each team, and where
+/// the line between them sits.
 class FloodBoard {
   const FloodBoard._();
 
-  /// Phones stand as you normally hold them. Portrait gives the push axis the
-  /// most travel per phone, which is the axis the whole game happens on.
-  static const int _quarterTurns = 0;
-  static const double _turnDeg = 0;
-
   /// Lay out [lobby] as two equal rows.
   ///
-  /// Throws [BoardPlanError] on an odd phone count — two equal teams is the
-  /// premise of the game, not a preference. The host sees the message on the
-  /// lobby screen and the round never starts.
+  /// Throws [BoardPlanError] on an odd phone count. The manifest's parity rule
+  /// already keeps the lobby from offering the game at an odd table, so this is
+  /// a backstop: the board is built from the premise of two equal teams, and a
+  /// silent wrong answer here would be a game people can see is broken.
   static BoardPlan plan(LobbyInfo lobby) {
     final count = lobby.phoneCount;
     if (count.isOdd) {
@@ -56,103 +51,36 @@ class FloodBoard {
     }
 
     final perTeam = count ~/ 2;
-
-    // Biggest screens to the middle, so the seam — where every round is
-    // actually decided — falls across the most glass available. Ties keep join
-    // order, which keeps the layout stable between rounds on matched phones.
-    final ordered = List.of(lobby.phones)
-      ..sort((a, b) => b.areaMm2.compareTo(a.areaMm2));
-    final blue = <PhoneSpec>[];
-    final red = <PhoneSpec>[];
-    for (var i = 0; i < ordered.length; i++) {
-      (i.isEven ? blue : red).add(ordered[i]);
-    }
-
-    // Columns are as wide as their widest phone, so a mismatched pair still
-    // stacks with its lit areas centred on each other.
-    final columnWidths = <double>[
-      for (var c = 0; c < perTeam; c++)
-        math.max(blue[c].footprintWidthMm(_quarterTurns),
-            red[c].footprintWidthMm(_quarterTurns)),
-    ];
-
-    // Rows are as deep as their deepest phone, and the two rows are pushed
-    // together casing to casing.
-    final blueDepth = [
-      for (final p in blue) p.footprintHeightMm(_quarterTurns),
-    ].reduce(math.max);
-    final redDepth = [
-      for (final p in red) p.footprintHeightMm(_quarterTurns),
-    ].reduce(math.max);
-
-    // The seam: both bezels of whichever pair meets across it. Every column
-    // shares one seam line, so the widest bezel pair sets it — that is the
-    // phones physically touching.
-    var seamMm = 0.0;
-    for (var c = 0; c < perTeam; c++) {
-      final gap = blue[c].bezelMm + red[c].bezelMm;
-      if (gap > seamMm) seamMm = gap;
-    }
-
-    final placements = <PhonePlacement>[];
-    var x = 0.0;
-    // The playfield spans every column, but within a column it is only as wide
-    // as the *narrower* of the two phones facing each other — the strip that
-    // both teams can actually see. A wider phone's overhang looks like
-    // playfield and is not, because the team opposite has no screen under it.
-    var playLeft = double.infinity;
-    var playRight = double.negativeInfinity;
-
-    for (var c = 0; c < perTeam; c++) {
-      final columnWidth = columnWidths[c];
-      var columnLeft = double.negativeInfinity;
-      var columnRight = double.infinity;
-
-      for (final (spec, isBlue) in [(blue[c], true), (red[c], false)]) {
-        final w = spec.footprintWidthMm(_quarterTurns);
-        final h = spec.footprintHeightMm(_quarterTurns);
-        final left = x + (columnWidth - w) / 2;
-
-        // Bottom-aligned in the top row, top-aligned in the bottom row: both
-        // teams' screens run right up to the seam, whatever their depth. A
-        // shallower phone loses its far edge, never its front line.
-        final top = isBlue
-            ? blueDepth - h
-            : blueDepth + seamMm;
-
-        // Placements are the *centre* of the lit area, so convert from the
-        // edges everything above is reasoned in.
-        placements.add(PhonePlacement(
-          spec.phoneId,
-          xMm: left + w / 2,
-          yMm: top + h / 2,
-          turnDeg: _turnDeg,
-          hint: _hint(isBlue, c, perTeam),
-        ));
-
-        // Intersect *within* the column: the two phones facing each other.
-        if (left > columnLeft) columnLeft = left;
-        if (left + w < columnRight) columnRight = left + w;
-      }
-
-      // Union *across* columns: they sit side by side, so each adds ground.
-      if (columnLeft < playLeft) playLeft = columnLeft;
-      if (columnRight > playRight) playRight = columnRight;
-
-      x += columnWidth;
-    }
-
-    return BoardPlan(
-      placements,
+    final grid = Layouts.grid(
+      lobby.phones,
+      rows: 2,
+      // Largest first, and the grid fills row by row — so the biggest screens
+      // land across the top and the seam, where every round is actually
+      // decided, falls across the most glass available.
+      sort: PhoneSort.largestFirst,
+      // Portrait: the push axis is vertical, so each phone gives it the long
+      // edge and the most travel.
+      orientation: PhoneOrientation.upright,
       instruction:
           'Two rows facing each other, upright, long edges touching — '
           'blue along the top, red along the bottom.',
-      bounds: BoardBoundsMm(
-        leftMm: playLeft,
-        topMm: 0,
-        widthMm: playRight - playLeft,
-        heightMm: blueDepth + seamMm + redDepth,
-      ),
+    );
+
+    // Re-hint with team names. The grid knows about rows; only Flood knows a
+    // row is a side.
+    return BoardPlan(
+      [
+        for (var i = 0; i < grid.placements.length; i++)
+          PhonePlacement(
+            grid.placements[i].phoneId,
+            xMm: grid.placements[i].xMm,
+            yMm: grid.placements[i].yMm,
+            turnDeg: grid.placements[i].turnDeg,
+            hint: _hint(i < perTeam, i % perTeam, perTeam),
+          ),
+      ],
+      instruction: grid.instruction,
+      bounds: grid.bounds,
     );
   }
 
@@ -238,6 +166,9 @@ class FloodBoard {
     return (topRowBottom + bottomRowTop) / 2;
   }
 
+  /// The grid's own hint says which row you are in; this says which *team*
+  /// that makes you, which is what a player actually needs to know before the
+  /// countdown starts.
   static String _hint(bool isBlue, int column, int perTeam) {
     final side = isBlue ? 'top' : 'bottom';
     final team = isBlue ? 'BLUE' : 'RED';
@@ -247,5 +178,4 @@ class FloodBoard {
     return '$team — $side row, position ${column + 1} of $perTeam '
         'from the left';
   }
-
 }

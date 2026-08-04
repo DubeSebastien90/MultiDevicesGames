@@ -53,7 +53,7 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | **Slingshot** | `Layouts.row`, smallest first | wide and short | hitting the tower |
 | **Ball Bin** | `Layouts.column`, largest last | narrow and tall | catching 10 balls |
 | **Hot Potato** | `Layouts.circle`, join order | a ring | not holding it at the end |
-| **Flood** | a hand-written 2×N grid, upright | two rows facing each other | flooding the other team off the board |
+| **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
 | **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
 
 Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
@@ -95,6 +95,26 @@ that is checked: `grep -rn "Slingshot" lib/sdk/` returns only `catalog.dart`.
 If your game ships images or sounds, you also add them to `assets/games/<id>/`
 and declare the folder in `pubspec.yaml`. That is the whole list of files
 outside your own folder.
+
+### When the platform genuinely is missing something
+
+Rarely, and it wants saying out loud rather than quietly. Adding Flood turned up
+two, and both are in `sdk/` on purpose:
+
+- **`Layouts.grid`** — `row`, `column` and `circle` pack one axis. Two rows of
+  players facing each other is two axes, and it is not a Flood idea: any
+  team-versus-team game wants it. It went in as a helper beside the others
+  rather than living in one game's folder.
+- **`host_session.dart` catching a failed `createSim`** — `planBoard` was
+  already guarded, but a game that refuses at `createSim` threw straight
+  through the phase transition, and every phone sat on the placement screen
+  forever with nothing on any screen to say why. That is a platform gap; Flood
+  merely found it first.
+
+The test is whether the next game would want it too. If the answer is no, it
+belongs in your folder — Flood's `overlap` helper stayed in `FloodView` for
+exactly that reason, because filling regions rather than drawing entities is
+peculiar to it.
 
 ## What you implement
 
@@ -171,7 +191,14 @@ Use a helper unless you genuinely need something else:
 Layouts.row(lobby.phones, sort: PhoneSort.smallestFirst)   // wide runway
 Layouts.column(lobby.phones, sort: PhoneSort.largestLast)  // tall well
 Layouts.circle(lobby.phones)                               // ring, 3+ phones
+Layouts.grid(lobby.phones, rows: 2)                        // teams facing off
 ```
+
+`grid` is the two-axis one: it fills row by row, so with `rows: 2` the first
+half of the sorted phones is the top row and the second half the bottom. Rows
+are pulled toward the seam they share, so a shallower phone gives up its far
+edge rather than its front line — which matters when the game happens at the
+seam. Flood uses it; anything team-versus-team wants the same shape.
 
 Every helper returns a plain `BoardPlan`, so you can call one and then nudge a
 single phone with `withPlacement`. Or build placements yourself — position is
@@ -379,12 +406,16 @@ the other team. Because every phone draws the same boundary in world
 coordinates, that line runs unbroken across every seam — the same trick as the
 bird, on a board where the *whole picture* is the moving thing.
 
-`Layouts.row`/`.column` pack along one axis and this is two at once, so
-`FloodBoard.plan` is written directly as placements — the path the SDK documents
-for "an L, a grid, a ring". Two things it does that the helpers do not: the
+The board is `Layouts.grid(rows: 2)`. It began as hand-written placements —
+`row` and `column` pack one axis and this needs two — but nothing in it was
+actually about flooding, so it moved into the SDK where any team-versus-team
+game can reach it. Two things it does that the single-axis helpers do not: the
 playfield intersects **within** a column (the strip both facing phones can see)
-and unions **across** columns, and each row is aligned to the seam, so a
+and unions **across** columns, and each row is pulled toward the seam, so a
 shallower phone loses its far edge rather than its front line.
+
+What stayed behind in `FloodBoard` is only what is genuinely Flood's: the
+even-count rule, which row is which team, and where the line between them sits.
 
 The two variants share their board, teams, countdown and tap handling in
 `games/flood_common/`, and differ in exactly one method each:

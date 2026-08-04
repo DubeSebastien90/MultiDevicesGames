@@ -26,21 +26,6 @@ class WorldRect {
   WorldRect inflate(double d) =>
       WorldRect(left - d, top - d, width + 2 * d, height + 2 * d);
 
-  /// The overlap of two rectangles, or null when they do not touch.
-  ///
-  /// What a renderer wants for "the part of the board this screen can see":
-  /// drawing is naturally expressed in board coordinates and has to be cut down
-  /// to the viewport, and doing that with four hand-written min/max calls is
-  /// easy to get subtly wrong in one axis.
-  WorldRect? intersect(WorldRect o) {
-    final l = left > o.left ? left : o.left;
-    final t = top > o.top ? top : o.top;
-    final r = right < o.right ? right : o.right;
-    final b = bottom < o.bottom ? bottom : o.bottom;
-    if (r <= l || b <= t) return null;
-    return WorldRect(l, t, r - l, b - t);
-  }
-
   Map<String, dynamic> toJson() => {'x': left, 'y': top, 'w': width, 'h': height};
 
   static WorldRect fromJson(Map<String, dynamic> j) => WorldRect(
