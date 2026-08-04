@@ -47,6 +47,7 @@ class PitchCarsSim extends Forge2DGameSim {
   String get currentTurn => _order[_currentIndex];
 
   final _lastHitBy = <String, String?>{};
+  final _lastHitAt = <String, Duration>{};
   final _lastOnTrack = <String, Vector2>{};
   final _rawProgress = <String, double>{};
   final _progress = <String, double>{};
@@ -251,7 +252,9 @@ class PitchCarsSim extends Forge2DGameSim {
         _lastOnTrack[id] = pos.clone();
         continue;
       }
-      final selfFault = id == currentTurn && _lastHitBy[id] == null;
+      final hitRecently = _lastHitBy[id] != null &&
+          (_sinceLaunch - (_lastHitAt[id] ?? Duration.zero)) <= PitchCarsConfig.hitGraceWindow;
+      final selfFault = id == currentTurn && !hitRecently;
       final resetTo = selfFault ? _preTurnPosition : (_lastOnTrack[id] ?? _preTurnPosition);
       car
         ..setTransform(resetTo.clone(), car.angle)
@@ -290,6 +293,7 @@ class PitchCarsSim extends Forge2DGameSim {
     _moving = false;
     for (final id in _order) {
       _lastHitBy[id] = null;
+      _lastHitAt.remove(id);
     }
     _currentIndex = (_currentIndex + 1) % _order.length;
     _preTurnPosition = carOf(currentTurn).position.clone();
@@ -328,6 +332,7 @@ class PitchCarsSim extends Forge2DGameSim {
     _sinceLaunch = Duration.zero;
     _atRest = Duration.zero;
     _lastHitBy.clear();
+    _lastHitAt.clear();
 
     for (var i = 0; i < _order.length; i++) {
       final pos = _startPositionFor(i);
@@ -357,6 +362,8 @@ class _CarContactListener extends ContactListener {
     if (a is String && b is String && sim._order.contains(a) && sim._order.contains(b)) {
       sim._lastHitBy[a] = b;
       sim._lastHitBy[b] = a;
+      sim._lastHitAt[a] = sim._sinceLaunch;
+      sim._lastHitAt[b] = sim._sinceLaunch;
     }
   }
 

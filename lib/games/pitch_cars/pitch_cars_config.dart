@@ -35,6 +35,12 @@ class PitchCarsConfig {
   static const Duration restDelay = Duration(milliseconds: 600);
   static const Duration maxFlightTime = Duration(seconds: 6);
 
+  /// A collision only excuses a car from the self-fault penalty if the car
+  /// left the track within this long of being hit — a graze early in a turn,
+  /// followed by the player's own reckless momentum carrying it off-track much
+  /// later, still counts as self-fault.
+  static const Duration hitGraceWindow = Duration(milliseconds: 250);
+
   /// Colours are chosen host-side so every screen agrees exactly.
   static const List<int> carColors = [
     0xFFFF6B4A,
