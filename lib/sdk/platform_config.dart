@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// The handful of numbers the platform itself owns.
 ///
 /// Everything else that used to live beside these was a *game's* tuning — how
@@ -6,6 +8,14 @@
 /// everyone else.
 class PlatformConfig {
   const PlatformConfig._();
+
+  /// Whether to show the developer chrome laid over a running game: the phone
+  /// badge, restart, debug and leave.
+  ///
+  /// Off in a release build. Those controls are for whoever is working on the
+  /// platform, and a table of people playing should see the game and nothing
+  /// else — a stray tap on Leave mid-round is not a feature.
+  static const bool showDevChrome = !kReleaseMode;
 
   /// World units per millimetre, shared by every phone and every game.
   ///
