@@ -55,24 +55,22 @@ class GameCatalog {
       playlist.any((g) => g.manifest.fits(phoneCount));
 
   /// The game at [index] if it fits the table, otherwise the next one along
-  /// that does. Null when nothing fits.
+  /// that does. Null once the list runs out.
   ///
-  /// The playlist wraps, so this only returns null when *no* game can be played
-  /// at this phone count — which the lobby says out loud rather than offering a
-  /// Play button that fails.
+  /// **Does not wrap.** The playlist is played through once and then everyone
+  /// is back in the lobby, which is what makes it an evening rather than a
+  /// treadmill nobody can get off. Null therefore means two different things
+  /// worth telling apart: from index 0 it means nothing fits this table at all,
+  /// and from further in it means the list is finished.
   static MultiscreenGame? playableFrom(int index, int phoneCount) {
-    for (var i = 0; i < playlist.length; i++) {
-      final game = playlist[(index + i) % playlist.length];
-      if (game.manifest.fits(phoneCount)) return game;
-    }
-    return null;
+    final at = playableIndexFrom(index, phoneCount);
+    return at == null ? null : playlist[at];
   }
 
   /// The index of the first playable game at or after [index], for advancing
-  /// the playlist without losing your place.
+  /// the playlist without losing your place. Null once nothing is left.
   static int? playableIndexFrom(int index, int phoneCount) {
-    for (var i = 0; i < playlist.length; i++) {
-      final at = (index + i) % playlist.length;
+    for (var at = index; at < playlist.length; at++) {
       if (playlist[at].manifest.fits(phoneCount)) return at;
     }
     return null;

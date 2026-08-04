@@ -199,7 +199,8 @@ abstract class FloodSim extends GameSim {
   void _resolveByLead() {
     final b = effectiveBoundary;
     if (b == 0) {
-      _outcome = const GameOutcome.won(summary: 'time — dead level, a draw');
+      // Nobody won, said out loud rather than by everyone being congratulated.
+      _outcome = const GameOutcome.draw(summary: 'time — dead level');
       return;
     }
     final winner = b < 0 ? FloodConfig.blue : FloodConfig.red;
@@ -210,10 +211,15 @@ abstract class FloodSim extends GameSim {
     if (_outcome != null) return;
     // A point each to the winning side. Score belongs to the lobby and follows
     // these players into the next minigame.
+    final winners = <String>{};
     for (final entry in teams.entries) {
-      if (entry.value == team) context.scores.award(entry.key, 1);
+      if (entry.value != team) continue;
+      context.scores.award(entry.key, 1);
+      winners.add(entry.key);
     }
-    _outcome = GameOutcome.won(summary: summary);
+    // Named, so the losing side is told it lost rather than congratulated
+    // alongside the winners.
+    _outcome = GameOutcome.contest(winners: winners, summary: summary);
   }
 
   // ----------------------------------------------------------- snapshots

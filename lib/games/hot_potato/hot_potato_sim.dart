@@ -153,6 +153,8 @@ class HotPotatoSim implements GameSim {
     _elapsed = 0;
     _exploded = false;
     _awarded = false;
+    // The latched verdict belongs to the round that just ended.
+    _outcome = null;
     _swipeStart.clear();
     _holderIndex = _random.nextInt(_order.length);
     _potato = _seatOf(_holderIndex);
@@ -203,9 +205,17 @@ class HotPotatoSim implements GameSim {
   @override
   GameOutcome? get outcome {
     if (!_exploded) return null;
-    // Everyone else survived; the round is over rather than lost by the table.
-    return GameOutcome.won(summary: 'the potato went off');
+
+    // Everyone who passed it on in time; the holder is the one person at the
+    // table who did not. Built once — `outcome` is polled several times a tick.
+    return _outcome ??= GameOutcome.contest(
+      winners: {for (final id in _order) if (id != holder) id},
+      summary: 'the potato went off',
+      lines: {holder: 'You were holding it'},
+    );
   }
+
+  GameOutcome? _outcome;
 
   @override
   void dispose() {}

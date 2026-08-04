@@ -253,6 +253,44 @@ void main() {
       expect(sim.outcome, isNotNull);
     });
 
+    test('the holder loses and everybody else wins', () {
+      final started = start(3);
+      final sim = started.sim;
+
+      for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      final victim = sim.holder;
+      final outcome = sim.outcome!;
+
+      // The whole point of the game. It used to report a win for the table,
+      // so the player left holding it was congratulated along with everyone
+      // who had successfully got rid of it.
+      expect(outcome.kind, OutcomeKind.contest);
+      expect(outcome.winners, isNot(contains(victim)));
+      expect(outcome.winners, hasLength(2));
+      expect(outcome.lines![victim], isNotNull,
+          reason: 'the loser is told why');
+
+      // Polled repeatedly, as the platform does — always the same verdict.
+      expect(identical(sim.outcome, outcome), isTrue);
+    });
+
+    test('a replayed round does not reuse the last verdict', () {
+      final started = start(3);
+      final sim = started.sim;
+      for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.outcome, isNotNull);
+
+      sim.reset();
+
+      // Latching the outcome is required — it is polled several times a tick —
+      // which makes clearing it on reset required too.
+      expect(sim.outcome, isNull);
+    });
+
     test('costs the holder ten points, once', () {
       final started = start(3);
       final sim = started.sim;

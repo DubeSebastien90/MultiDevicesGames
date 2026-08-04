@@ -27,6 +27,7 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
@@ -47,3 +48,8 @@ app.*.map.json
 # Per-machine Claude Code permissions. Tracking this caused a merge conflict
 # once already: it holds absolute paths from whichever machine wrote it.
 .claude/settings.local.json
+
+# Screenshots and board audits captured while chasing a bug. Useful to whoever
+# is holding the phones that day, meaningless to everyone else, and the images
+# were the three largest files in the repository.
+/debug/
