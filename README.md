@@ -52,9 +52,325 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | --- | --- | --- | --- |
 | **Slingshot** | `Layouts.row`, smallest first | wide and short | hitting the tower |
 | **Ball Bin** | `Layouts.column`, largest last | narrow and tall | catching 10 balls |
+| **Hot Potato** | `Layouts.circle`, join order | a ring | not holding it at the end |
+| **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
+| **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
 
 Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
+
+---
+
+# Writing a game
+
+**Read this before touching anything. If you are an AI agent, this section is
+the brief.**
+
+## The one rule
+
+> **Do not modify anything under `lib/sdk/`.**
+>
+> A new game — new rules, new layout, new artwork, no physics, whatever it needs
+> — is written entirely inside `lib/games/<your_game>/`. The platform is
+> finished. If it looks like you need to change it, you have almost certainly
+> missed something the contract already gives you.
+
+There is **exactly one exception**, and it is one line:
+
+```dart
+// lib/sdk/catalog.dart
+import '../games/your_game/your_game.dart';   // ← add this
+
+static const playlist = <MultiscreenGame>[
+  SlingshotGame(),
+  BallBinGame(),
+  HotPotatoGame(),
+  YourGame(),                                 // ← and this
+];
+```
+
+That file exists *to be* the seam. Nothing else in `sdk/` names a game, and
+that is checked: `grep -rn "Slingshot" lib/sdk/` returns only `catalog.dart`.
+
+If your game ships images or sounds, you also add them to `assets/games/<id>/`
+and declare the folder in `pubspec.yaml`. That is the whole list of files
+outside your own folder.
+
+### When the platform genuinely is missing something
+
+Rarely, and it wants saying out loud rather than quietly. Adding Flood turned up
+two, and both are in `sdk/` on purpose:
+
+- **`Layouts.grid`** — `row`, `column` and `circle` pack one axis. Two rows of
+  players facing each other is two axes, and it is not a Flood idea: any
+  team-versus-team game wants it. It went in as a helper beside the others
+  rather than living in one game's folder.
+- **`host_session.dart` catching a failed `createSim`** — `planBoard` was
+  already guarded, but a game that refuses at `createSim` threw straight
+  through the phase transition, and every phone sat on the placement screen
+  forever with nothing on any screen to say why. That is a platform gap; Flood
+  merely found it first.
+
+The test is whether the next game would want it too. If the answer is no, it
+belongs in your folder — Flood's `overlap` helper stayed in `FloodView` for
+exactly that reason, because filling regions rather than drawing entities is
+peculiar to it.
+
+## What you implement
+
+Four members. That is the entire contract.
+
+```dart
+class YourGame implements MultiscreenGame {
+  const YourGame();
+
+  @override
+  GameManifest get manifest => const GameManifest(
+    id: 'yourgame',                    // stable, wire-visible
+    title: 'Your Game',
+    tagline: 'One line, shown before the round.',
+    goal: 'How it ends, in the player\'s words.',
+    players: PlayerCount.range(min: 2, max: 6),
+    supportsIpad: false,               // claim it only once you have tried one
+  );
+
+  @override
+  BoardPlan planBoard(LobbyInfo lobby) => Layouts.row(lobby.phones);
+
+  @override
+  GameSim createSim(BoardContext context) => YourSim(context);   // host only
+
+  @override
+  GameView createView(ViewContext context) => YourView();        // every phone
+}
+```
+
+### `manifest` — who you are, and what table you need
+
+`PlayerCount` has four shapes. Reach for the last only when nothing else fits:
+
+```dart
+PlayerCount.range(min: 3)                                    // 3 or more
+PlayerCount.range(min: 2, max: 8, parity: CountParity.even)  // teams
+PlayerCount.exactly(2)                                       // head to head
+PlayerCount.anyOf([3, 5, 9])                                 // escape hatch
+```
+
+The lobby greys your game out and explains why, entirely from this. You write no
+UI for it.
+
+### `planBoard` — where the phones go
+
+Called the moment your game is chosen, *before* anything is broadcast, so a bad
+plan fails on the host's screen instead of sending everyone to rearrange a table
+for a round that cannot start.
+
+You are handed a `LobbyInfo`:
+
+| What you get | Meaning |
+| --- | --- |
+| `phones` | `List<PhoneSpec>`, in join order — which means nothing physical |
+| `phoneCount` | how many |
+| `byId(id)` | lookup |
+
+And per phone (`PhoneSpec`):
+
+| Field | Meaning |
+| --- | --- |
+| `phoneId` | `'p1'`, stable for the connection |
+| `label` | `'Pixel 7'`, for diagrams |
+| `widthMm`, `heightMm` | **portrait**: width is the *short* edge |
+| `bezelMm` | casing edge to first lit pixel |
+| `dpi`, `devicePixelRatio` | density |
+| `activePxWidth`, `activePxHeight` | resolution |
+| `areaMm2`, `diagonalMm` | derived, for sorting by size |
+
+Use a helper unless you genuinely need something else:
+
+```dart
+Layouts.row(lobby.phones, sort: PhoneSort.smallestFirst)   // wide runway
+Layouts.column(lobby.phones, sort: PhoneSort.largestLast)  // tall well
+Layouts.circle(lobby.phones)                               // ring, 3+ phones
+Layouts.grid(lobby.phones, rows: 2)                        // teams facing off
+```
+
+`grid` is the two-axis one: it fills row by row, so with `rows: 2` the first
+half of the sorted phones is the top row and the second half the bottom. Rows
+are pulled toward the seam they share, so a shallower phone gives up its far
+edge rather than its front line — which matters when the game happens at the
+seam. Flood uses it; anything team-versus-team wants the same shape.
+
+Every helper returns a plain `BoardPlan`, so you can call one and then nudge a
+single phone with `withPlacement`. Or build placements yourself — position is
+the **centre** of the lit area in millimetres, plus `turnDeg` clockwise:
+
+```dart
+BoardPlan([
+  PhonePlacement('p1', xMm: 0,   yMm: 0, turnDeg: 90),
+  PhonePlacement('p2', xMm: 160, yMm: 0, turnDeg: 90),
+], instruction: 'Side by side, on their sides.')
+```
+
+The compiler **refuses** a plan that overlaps two screens, leaves a phone
+unplaced, names a phone that is not there, or strands one far from the rest.
+Pass `allowGaps: true` if the spacing is deliberate, as a ring's is.
+
+### `createSim` — the rules, host only
+
+```dart
+abstract class GameSim {
+  void step(double dt);                 // fixed 60Hz
+  void onTouch(TouchEvent touch);       // world coordinates, tagged by phone
+  Iterable<Entity> get entities;        // everything drawable, right now
+  Map<String, Object?> get sharedState; // slow-changing values, e.g. phase
+  GameOutcome? get outcome;             // non-null ends the round
+  void reset();
+}
+```
+
+`BoardContext` gives you:
+
+| What you get | Meaning |
+| --- | --- |
+| `board` | the playfield, `WorldRect`, world units |
+| `coverage` | which parts are backed by a screen; `seamRects()` |
+| `scores` | the session scoreboard, **writable** |
+| `slices` | named screen rectangles, turn included |
+| `phoneAt(x, y)` | whose screen is this point on? |
+| `nearestPhone(x, y)` | same, but never null |
+
+### `createView` — the pixels, every phone
+
+Each frame you are handed a `Frame`:
+
+| What you get | Meaning |
+| --- | --- |
+| `entities` | interpolated to this instant, by id |
+| `sharedState`, `scores` | as the sim published them |
+| `timeMs` | the **shared** clock — identical on every phone |
+| `dt` | local frame delta, for effects that need not agree |
+| `me` | this phone's `PhoneLayout` |
+| `board`, `coverage`, `visible` | geometry, and what to cull against |
+| `onePixel` | one physical pixel in world units, for stroke widths |
+| `ofKind(kind)`, `byId(id)` | convenience |
+
+The canvas arrives with the camera applied: draw at world coordinates and it
+lands correctly, at true physical scale, on whichever phone can see it.
+
+## Physics is optional
+
+Two starting points. Pick by whether you have anything to integrate.
+
+**No physics** — extend `GameSim` directly and link no engine. Hot Potato does
+this: its whole world is "who is holding it" and "how long is left".
+
+```dart
+class YourSim implements GameSim { ... }
+```
+
+**Physics** — extend `Forge2DGameSim`, which wires up a world and the
+body↔entity plumbing. Build in your constructor body with `addBody`:
+
+```dart
+class YourSim extends Forge2DGameSim {
+  YourSim(super.context) : super(gravity: Vector2(0, 9)) {
+    addBoundaryWalls();
+    addBody('ball', 'ball', BodyDef(type: BodyType.dynamic, position: ...),
+        props: {ShapeProps.shape: ShapeKind.circle, ShapeProps.radius: 0.5});
+  }
+}
+```
+
+`hide(id)` / `show(id)` park a body without destroying it — how Ball Bin
+recycles a pool of six balls.
+
+**Even with no physics, still use entities.** Physics is optional; the
+platform's interpolation is not. An entity's transform is smoothed onto the
+shared timeline, so easing one toward a new position makes it visibly slide
+across the table on every screen at once, in step. That is the whole point of
+the project, and it costs you a lerp.
+
+## Rendering: free, or your own
+
+**Free** — return a `ShapeView`. It draws every entity from its props, and a
+prototype gets a working picture without a line of paint code:
+
+```dart
+GameView createView(ViewContext c) => ShapeView();
+// entity props: shape (circle|box), r / w+h, color, spin
+```
+
+**Extend it** — keep the shapes and add your own layer, which is what Slingshot
+does for its rubber band:
+
+```dart
+class YourView extends ShapeView {
+  @override
+  void renderForeground(Canvas canvas, Frame frame) { ... }
+}
+```
+
+**Replace it** — implement `GameView.render` outright for full custom art. Load
+sprites in `load()`, which is awaited during the placement screen so nothing
+blocks a frame mid-round.
+
+**A HUD is Flutter widgets**, not canvas painting:
+
+```dart
+@override
+Widget? buildHud(BuildContext context, HudFrame frame) =>
+    Text('${frame.sharedState['caught']} / 10');
+```
+
+## Scoring
+
+Score belongs to the lobby and survives every round. Award it and nothing else:
+
+```dart
+context.scores.award(phoneId, 10);   // or a negative number
+context.scores.awardAll(5);          // co-operative
+```
+
+The platform shows standings in the lobby and on the results screen, and shows
+**nothing at all** until somebody scores — so a co-operative game that never
+awards is completely normal.
+
+## Five rules that will break the seam if you ignore them
+
+1. **`step(dt)` must be pure with respect to wall-clock time.** No
+   `DateTime.now()`, no timers. Accumulate `dt`. The platform decides when time
+   passes, and that is what keeps every screen agreeing.
+2. **`render` must not mutate game state.** It runs on every device at each
+   device's own frame rate. The host's sim is the only writer; a view is a pure
+   function of its `Frame`.
+3. **Award points in `step`, never in the `outcome` getter.** `outcome` is polled
+   more than once per tick, so awarding there double-charges. Latch it:
+   `if (!_awarded) { _awarded = true; scores.award(...); }`
+4. **An entity's `kind` and `props` are immutable.** Declared once when it
+   appears. Only the transform moves per tick, and only the transform is
+   interpolated.
+5. **Animate from `frame.timeMs`, not a local clock.** Two phones on separate
+   clocks pulse out of step.
+
+## Checklist for a new game
+
+```
+lib/games/your_game/
+  your_game.dart          implements MultiscreenGame — the four members
+  your_game_sim.dart      the rules (GameSim, or Forge2DGameSim)
+  your_game_view.dart     the pixels (ShapeView, or GameView)
+  your_game_config.dart   your tunables, as plain data
+```
+
+- [ ] Registered in `sdk/catalog.dart` (one import, one list entry)
+- [ ] `manifest.players` says the truth about your table
+- [ ] `planBoard` uses a helper, or a plan the compiler accepts
+- [ ] Nothing under `lib/sdk/` modified
+- [ ] `flutter analyze` clean, `flutter test` green
+- [ ] A test that drives the sim headlessly — see `test/hot_potato_test.dart`,
+      which plays a whole round with no host, no sockets and no rendering
+
+---
 
 ## Score
 
@@ -64,6 +380,80 @@ winning. A game calls `scores.award(phoneId, points)`; the platform does the
 rest, and shows nothing at all until somebody actually scores — both shipped
 games are co-operative, and Ball Bin is the only one that credits catches to
 individual phones.
+
+## Flood, and the first competitive board
+
+The two Flood variants are the project's first **competitive** games — two teams,
+one loses — and its first board that is not a strip. Built to
+[`lib/games/pusho-war-option-a-growing-power.md`](lib/games/pusho-war-option-a-growing-power.md)
+and [`lib/games/pusho-war-option-b-shrinking-field.md`](lib/games/pusho-war-option-b-shrinking-field.md).
+
+Phones stand upright in **two rows facing each other**, blue along the top and
+red along the bottom, so every player has one phone in front of them and
+teammates sit shoulder to shoulder:
+
+```
+  1v1                2v2                  3v3
+ ┌────┐            ┌────┬────┐        ┌────┬────┬────┐
+ │ B  │            │ B  │ B  │        │ B  │ B  │ B  │
+ ├────┤            ├────┼────┤        ├────┼────┼────┤
+ │ R  │            │ R  │ R  │        │ R  │ R  │ R  │
+ └────┘            └────┴────┘        └────┴────┴────┘
+```
+
+Tap anywhere on your phone and the waterline between the colours moves toward
+the other team. Because every phone draws the same boundary in world
+coordinates, that line runs unbroken across every seam — the same trick as the
+bird, on a board where the *whole picture* is the moving thing.
+
+The board is `Layouts.grid(rows: 2)`. It began as hand-written placements —
+`row` and `column` pack one axis and this needs two — but nothing in it was
+actually about flooding, so it moved into the SDK where any team-versus-team
+game can reach it. Two things it does that the single-axis helpers do not: the
+playfield intersects **within** a column (the strip both facing phones can see)
+and unions **across** columns, and each row is pulled toward the seam, so a
+shallower phone loses its far edge rather than its front line.
+
+What stayed behind in `FloodBoard` is only what is genuinely Flood's: the
+even-count rule, which row is which team, and where the line between them sits.
+
+The two variants share their board, teams, countdown and tap handling in
+`games/flood_common/`, and differ in exactly one method each:
+
+| | Tap strength | What wins | Feels like |
+| --- | --- | --- | --- |
+| **Flood** | grows with the clock — doubled at 15s | the raw boundary | a slow tug that suddenly runs away |
+| **Flood: Closing In** | flat all round | the boundary read through a field shrinking to 15% | fair mashing, mounting pressure |
+
+Neither has any entities. The world is one float, it moves in steps rather than
+smoothly, and it therefore lives in `sharedState` rather than the interpolated
+snapshot stream — a game that extends `GameSim` directly and never links a
+physics engine, which is the case §6 of the architecture doc says should be
+possible and this is the first game to actually prove.
+
+**An even number of phones is the premise**, not a preference, and the manifest
+says so: `PlayerCount.range(min: 2, max: 6, parity: CountParity.even)`. The
+lobby filters on it, so Flood is offered at 2, 4 and 6 and simply is not there
+at 3 or 5 — nobody taps Play on a round that cannot run. `planBoard` still
+throws on an odd table as a backstop, because the board is built from the
+assumption of two equal rows and a silent wrong answer there would be a game
+people can see is broken.
+
+### A float in `sharedState` is a 60 Hz stream
+
+Worth writing down, because it is invisible and the next game to skip entities
+will hit it. `sharedState` is diffed by the host every tick and sent *only when
+it changed* — which quietly stops being true the moment a value in it changes
+every tick. Flood's first version put the raw round clock in the map, so every
+diff differed, and an untouched board pushed a packet sixty times a second
+forever.
+
+The fix is to broadcast at the precision the screen can actually show: the
+countdown as the whole second the HUD prints, the boundary to a thousandth of
+the axis, the ramp and the closing field to a hundredth. An idle board went from
+600 messages per ten seconds to fewer than fifty, and nothing on screen looks any
+different. `flood_test.dart` pins it, because the failure mode is a network
+becoming busy rather than anything visibly breaking.
 
 Scanning the host's QR instead skips the code — it carries `ws://<ip>:<port>#<code>`,
 and standing in front of the screen is the same proof the code asks for. Typing
@@ -91,8 +481,11 @@ lib/
     ui/           role → lobby → placement → game → results
     catalog.dart  the playlist — the ONLY file in sdk/ that knows games/ exists
   games/
-    slingshot/    game + sim + view + config
-    ball_bin/     game + sim + view + config
+    slingshot/     game + sim + view + config
+    ball_bin/      game + sim + view + config
+    flood_common/  board, config, and the sim/view both variants share
+    flood/         Flood — growing tap power
+    flood_closing/ Flood: Closing In — shrinking field
   main.dart
 ```
 
@@ -186,7 +579,7 @@ across the gap are a live calibration check) and marks the dead zone.
 
 ## What is verified
 
-`flutter test` — 27 tests, all passing:
+`flutter test` — 160 tests, all passing:
 
 - **`layout_solver_test.dart`** — packing, bezel gaps, top alignment, the
   coverage map, transforms as exact inverses, and mixed-density phones drawing at
@@ -201,6 +594,16 @@ across the gap are a live calibration check) and marks the dead zone.
 - **`viewport_render_test.dart`** — the Flame camera resolves to the physically
   correct zoom (52.49 logical px per cm at 400dpi/dpr 3) and is pinned to this
   phone's world offset.
+- **`flood_test.dart`** — both Flood variants through the contract at 2, 4 and 6
+  phones: two equal rows with every blue screen above every red one, an odd
+  table refused, the countdown swallowing a head start, A's ramp doubling a tap
+  after one `rampWindow` while B's stays flat, B's shrinking field resolving a
+  three-tap lead with nobody touching anything again, and the `maxRoundLength`
+  backstop ending every round on time and awarding the marginal lead. Also
+  pins **which way the flood goes** — a team's taps must expand its own colour
+  onto the opponent's glass, and the sim is identical either way, so only a
+  test that asks the *view* where it would paint can tell. And the idle packet
+  rate; see below.
 
 Measured on a two-phone board, host + socket client: the bird crosses the seam
 1.05s into a flight that peaks 1.2 units above the sling and stays on screen the
@@ -247,9 +650,9 @@ each other.
 
 No TypeScript, no cloud, no dedicated server. No accounts or persistence. No
 mDNS/Nearby/Multipeer — discovery is 200 lines of UDP broadcast with a QR and a
-typed address behind it, and it never leaves the LAN. No freeform phone
-packing (v1 forces a left-to-right strip; the per-phone transform already handles
-different sizes, which was the part worth proving). No sensor-based placement
+typed address behind it, and it never leaves the LAN. No automatic freeform
+packing — a game that wants something the `Layouts` helpers cannot express
+writes its placements by hand, as Flood's 2×N grid does. No sensor-based placement
 verification. No game-definition loader — but game logic is kept as data in
 `game/game_config.dart` so that door stays open.
 
