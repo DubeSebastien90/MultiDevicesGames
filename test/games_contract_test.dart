@@ -72,6 +72,7 @@ void main() {
       expect(GameCatalog.byId('flood'), isNotNull);
       expect(GameCatalog.byId('floodclosing'), isNotNull);
       expect(GameCatalog.byId('guacamole'), isNotNull);
+      expect(GameCatalog.byId('pitch_cars'), isNotNull);
       expect(GameCatalog.byId('nope'), isNull);
     });
 
@@ -101,6 +102,7 @@ void main() {
       expect(GameCatalog.fingerprint, GameCatalog.fingerprint);
       expect(GameCatalog.fingerprint, contains('slingshot'));
       expect(GameCatalog.fingerprint, contains('ballbin'));
+      expect(GameCatalog.fingerprint, contains('pitch_cars'));
     });
   });
 
