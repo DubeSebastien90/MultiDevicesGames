@@ -611,45 +611,6 @@ delay slider**. Drag it to 0 and the bird stutters — that is the jitter the
 buffer normally hides. It also toggles the 1cm world grid (unbroken grid lines
 across the gap are a live calibration check) and marks the dead zone.
 
-## What is verified
-
-`flutter test` — 160 tests, all passing:
-
-- **`layout_solver_test.dart`** — packing, bezel gaps, top alignment, the
-  coverage map, transforms as exact inverses, and mixed-density phones drawing at
-  one physical scale.
-- **`snapshot_buffer_test.dart`** — interpolation, capped extrapolation, angle
-  wraparound, timeline restarts, and the frame-pacing property above.
-- **`end_to_end_test.dart`** — a real host with a real Forge2D world, its own
-  loopback viewport, and a second phone over an **actual WebSocket**: full
-  handshake, placement, launch, and flight. Asserts the bird crosses onto the
-  second phone, that both phones agree at the seam, and that the bird is
-  simulated *inside* the dead zone rather than stopped by it.
-- **`viewport_render_test.dart`** — the Flame camera resolves to the physically
-  correct zoom (52.49 logical px per cm at 400dpi/dpr 3) and is pinned to this
-  phone's world offset.
-- **`flood_test.dart`** — both Flood variants through the contract at 2, 4 and 6
-  phones: two equal rows with every blue screen above every red one, an odd
-  table refused, the countdown swallowing a head start, A's ramp doubling a tap
-  after one `rampWindow` while B's stays flat, B's shrinking field resolving a
-  three-tap lead with nobody touching anything again, and the `maxRoundLength`
-  backstop ending every round on time and awarding the marginal lead. Also
-  pins **which way the flood goes** — a team's taps must expand its own colour
-  onto the opponent's glass, and the sim is identical either way, so only a
-  test that asks the *view* where it would paint can tell. And the idle packet
-  rate; see below.
-
-Measured on a two-phone board, host + socket client: the bird crosses the seam
-1.05s into a flight that peaks 1.2 units above the sling and stays on screen the
-whole way, and the two phones disagree by **0.0005 world units (5µm)** while
-crossing.
-
-Both real builds compile: `flutter build windows` and `flutter build apk`.
-
-Not covered by tests: the actual physical experience on two phones on a table.
-That needs two phones, and it is the only thing that can truly validate the
-concept.
-
 ## Networking gotchas
 
 Both phones must be on the same WiFi, and that network must let devices talk to
