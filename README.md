@@ -339,7 +339,8 @@ The only lever you have is the plan you return:
 | What your plan does | What players see |
 | --- | --- |
 | Two screens within 40mm of each other, sharing some edge | A stripe on each facing edge, same colour, spanning only the length they share |
-| A screen with nothing near it — a ring, or `allowGaps: true` | One stripe on the edge facing the middle of the table, the same colour on every such phone |
+| Three or more screens touching nothing — a ring, or `allowGaps: true` | A neutral stripe on the edge facing the middle, **plus** a paired-colour stripe facing the neighbour on each side, so the order round the circle is unambiguous |
+| Two screens touching nothing | The neutral middle-facing stripe only. Two phones across a table are one relationship, not a loop |
 | A single phone alone | No stripe. There is nothing to line it up with |
 | A gap wider than 40mm without `allowGaps` | A validation error. The round refuses to start and the host is told which phone is stranded |
 

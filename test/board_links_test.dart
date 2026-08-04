@@ -161,22 +161,97 @@ void main() {
   });
 
   group('a ring', () {
-    test('has no joins, so every phone gets one inward stripe instead', () {
+    test('every phone is told the middle, and who is either side of it', () {
       final board = ring([phone('p1'), phone('p2'), phone('p3')]);
 
-      expect(board.links, hasLength(3));
-      expect(board.links.every((l) => l.partnerId == null), isTrue,
-          reason: 'nothing is touching in a ring');
-      expect(board.links.map((l) => l.phoneId).toSet(),
-          {'p1', 'p2', 'p3'});
+      // Three stripes each: the middle, the left neighbour, the right one.
+      // A line pointing at the centre says where to stand but nothing about
+      // the order to stand in, which is the one thing a circle has to agree on.
+      expect(board.links, hasLength(9));
+
+      for (final id in ['p1', 'p2', 'p3']) {
+        final mine = board.links.where((l) => l.phoneId == id).toList();
+        expect(mine, hasLength(3), reason: '$id should have three stripes');
+        expect(mine.where((l) => !l.isJoin), hasLength(1),
+            reason: 'exactly one unpaired "the middle is that way" stripe');
+
+        final partners = mine.where((l) => l.isJoin).map((l) => l.partnerId!);
+        expect(partners.toSet(), hasLength(2),
+            reason: 'two different neighbours, not the same one twice');
+        expect(partners, isNot(contains(id)));
+      }
     });
 
-    test('they all share one colour', () {
+    test('neighbours share a colour, the way joins do', () {
       final board = ring([for (var i = 0; i < 5; i++) phone('p$i')]);
-      expect(board.links.map((l) => l.colorIndex).toSet(), hasLength(1));
+      final paired = board.links.where((l) => l.isJoin).toList();
+
+      // Five phones, five neighbour pairs, two stripes each.
+      expect(paired, hasLength(10));
+      expect(paired.map((l) => l.colorIndex).toSet(), hasLength(5));
+
+      for (final link in paired) {
+        final other = paired.singleWhere(
+          (l) => l.phoneId == link.partnerId && l.partnerId == link.phoneId,
+        );
+        expect(other.colorIndex, link.colorIndex,
+            reason: 'both halves of a pair must match');
+      }
     });
 
-    test('each stripe is on the edge facing the middle', () {
+    test('the neighbours form one loop, not a chain or a tangle', () {
+      final board = ring([for (var i = 0; i < 5; i++) phone('p$i')]);
+
+      // Walk from any phone to a neighbour, never going back the way you came,
+      // and you must visit every phone and arrive where you started.
+      final byPhone = <String, List<String>>{};
+      for (final l in board.links.where((l) => l.isJoin)) {
+        byPhone.putIfAbsent(l.phoneId, () => []).add(l.partnerId!);
+      }
+
+      var previous = 'p0';
+      var current = byPhone['p0']!.first;
+      final visited = {'p0'};
+      while (current != 'p0') {
+        visited.add(current);
+        final next = byPhone[current]!.firstWhere((p) => p != previous);
+        previous = current;
+        current = next;
+      }
+      expect(visited, hasLength(5), reason: 'the loop must take in everyone');
+    });
+
+    test('the three stripes are on three different edges, at any size', () {
+      // The failure this pins: aiming each stripe straight at what it refers to
+      // put all three on the same edge, because on a ring of three a neighbour
+      // is only 30° off the direction of the middle — and on a ring of four,
+      // exactly 45°. Every phone showed one line, and the two counts most
+      // likely to be played were the two that broke.
+      for (var count = 3; count <= 6; count++) {
+        final board = ring([for (var i = 0; i < count; i++) phone('p$i')]);
+
+        for (final slice in board.slices) {
+          final mine =
+              board.links.where((l) => l.phoneId == slice.phoneId).toList();
+          expect(mine, hasLength(3), reason: '$count phones');
+
+          for (var i = 0; i < mine.length; i++) {
+            for (var j = i + 1; j < mine.length; j++) {
+              final dx = (mine[i].x1 + mine[i].x2) / 2 -
+                  (mine[j].x1 + mine[j].x2) / 2;
+              final dy = (mine[i].y1 + mine[i].y2) / 2 -
+                  (mine[j].y1 + mine[j].y2) / 2;
+              expect(math.sqrt(dx * dx + dy * dy), greaterThan(1.0),
+                  reason: 'with $count phones, ${slice.phoneId} drew '
+                      '"${mine[i].partnerId ?? 'the middle'}" and '
+                      '"${mine[j].partnerId ?? 'the middle'}" on the same edge');
+            }
+          }
+        }
+      }
+    });
+
+    test('the unpaired stripe is the one facing the middle', () {
       final board = ring([for (var i = 0; i < 5; i++) phone('p$i')]);
       final phones = board.phones;
       final midX =
@@ -186,7 +261,7 @@ void main() {
           phones.map((p) => p.worldCenterY).reduce((a, b) => a + b) /
               phones.length;
 
-      for (final link in board.links) {
+      for (final link in board.links.where((l) => !l.isJoin)) {
         final me = board.forPhone(link.phoneId)!;
         final stripeMidX = (link.x1 + link.x2) / 2;
         final stripeMidY = (link.y1 + link.y2) / 2;

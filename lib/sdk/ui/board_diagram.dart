@@ -280,7 +280,9 @@ class _LinkPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     for (final link in links) {
-      stroke.color = LinkPalette.of(link.colorIndex);
+      stroke.color = link.isJoin
+          ? LinkPalette.of(link.colorIndex)
+          : LinkPalette.inward;
       canvas.drawLine(
         Offset((link.x1 - left) * scale, (link.y1 - top) * scale),
         Offset((link.x2 - left) * scale, (link.y2 - top) * scale),

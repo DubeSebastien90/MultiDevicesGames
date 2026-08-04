@@ -128,7 +128,8 @@ class _EdgeStripePainter extends CustomPainter {
       // Pull the line a few pixels inside the panel, or half its width falls
       // off the glass.
       final inset = _towardCentre(a, b, size, 5);
-      stripe.color = LinkPalette.of(link.colorIndex);
+      stripe.color =
+          link.isJoin ? LinkPalette.of(link.colorIndex) : LinkPalette.inward;
       canvas.drawLine(a + inset, b + inset, stripe);
     }
   }
@@ -186,7 +187,9 @@ class _LinkLegend extends StatelessWidget {
                 width: 16,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: LinkPalette.of(link.colorIndex),
+                  color: link.isJoin
+                      ? LinkPalette.of(link.colorIndex)
+                      : LinkPalette.inward,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
