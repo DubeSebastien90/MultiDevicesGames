@@ -156,7 +156,15 @@ class HostSession extends ChangeNotifier {
       return 'Waiting for every phone to report its size…';
     }
     if (upcoming == null) {
-      return 'No game fits ${_phones.length} phone(s). '
+      // Say what would help, not just what is wrong. A parity rule in
+      // particular is baffling otherwise: four phones failing when three and
+      // five both work needs explaining.
+      final sizes = GameCatalog.playableTableSizes();
+      final nearest = sizes.where((n) => n > _phones.length).toList();
+      final advice = nearest.isEmpty
+          ? ''
+          : ' Try ${nearest.first} phone(s).';
+      return 'No game fits ${_phones.length} phone(s).$advice '
           '${GameCatalog.requirementSummary()}.';
     }
     return null;

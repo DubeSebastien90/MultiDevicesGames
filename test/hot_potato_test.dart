@@ -77,7 +77,7 @@ void main() {
     test('needs at least three phones', () {
       final two = LobbyInfo([phone('p1'), phone('p2')]);
       expect(() => Layouts.circle(two.phones), throwsA(isA<BoardPlanError>()));
-      expect(const HotPotatoGame().manifest.minPhones, 3);
+      expect(const HotPotatoGame().manifest.smallestTable, 3);
       expect(const HotPotatoGame().manifest.fits(2), isFalse);
     });
 

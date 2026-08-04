@@ -1,4 +1,5 @@
 import '../../sdk/contract/game.dart';
+import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
@@ -23,8 +24,7 @@ class HotPotatoGame implements MultiscreenGame {
     tagline: 'Swipe it to a neighbour before the fuse runs out.',
     goal: 'Holding it when it goes off costs you 10 points.',
     // Two phones would just be passing it back and forth across a table.
-    minPhones: 3,
-    maxPhones: 8,
+    players: PlayerCount.range(min: 3, max: 8),
   );
 
   /// A ring. Every phone turned outward to face the person it belongs to, and

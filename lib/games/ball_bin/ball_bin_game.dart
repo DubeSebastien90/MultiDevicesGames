@@ -1,4 +1,5 @@
 import '../../sdk/contract/game.dart';
+import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
@@ -18,8 +19,7 @@ class BallBinGame implements MultiscreenGame {
     tagline: 'Balls fall down the screens. Slide the bin and catch them.',
     goal: 'Catch 10 balls to win.',
     // One phone makes for a very short drop, and the game is about the fall.
-    minPhones: 2,
-    maxPhones: 5,
+    players: PlayerCount.range(min: 2, max: 5),
   );
 
   /// A tall well. Balls need somewhere to fall *from*, so the phones stack.
