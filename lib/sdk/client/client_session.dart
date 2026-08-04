@@ -427,7 +427,15 @@ class ClientSession extends ChangeNotifier {
   Future<void> _prepareView() async {
     final game = _game;
     final layout = _layout;
-    if (game == null || layout == null || _viewLoading) return;
+    if (game == null || layout == null) return;
+
+    // A build already running is not a reason to drop this request. Whatever
+    // arrived is newer, and silently returning here left the phone with no view
+    // and nothing to trigger another attempt.
+    if (_viewLoading) {
+      _viewWantedAgain = true;
+      return;
+    }
     if (_view != null) return;
 
     _viewLoading = true;
@@ -436,14 +444,29 @@ class ClientSession extends ChangeNotifier {
         ViewContext(phoneId: layout.phoneId, board: layout.board),
       );
       await view.load();
+
+      // The round can have moved on while that was loading. Adopting this view
+      // now would render the previous game's artwork over the current one.
+      if (!identical(_game, game)) {
+        view.dispose();
+        return;
+      }
       _view = view;
     } catch (e) {
       _message = 'Could not load ${game.manifest.title}: $e';
     } finally {
       _viewLoading = false;
       notifyListeners();
+      if (_viewWantedAgain) {
+        _viewWantedAgain = false;
+        unawaited(_prepareView());
+      }
     }
   }
+
+  /// A layout arrived while a view was still being built, so the build has to
+  /// happen again once this one lets go.
+  bool _viewWantedAgain = false;
 
   void _disposeView() {
     _view?.dispose();
