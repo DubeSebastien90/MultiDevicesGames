@@ -1,4 +1,6 @@
 import '../games/ball_bin/ball_bin_game.dart';
+import '../games/flood/flood_game.dart';
+import '../games/flood_closing/flood_closing_game.dart';
 import '../games/slingshot/slingshot_game.dart';
 import 'contract/game.dart';
 
@@ -17,6 +19,8 @@ class GameCatalog {
   static const playlist = <MultiscreenGame>[
     SlingshotGame(),
     BallBinGame(),
+    FloodGame(),
+    FloodClosingGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

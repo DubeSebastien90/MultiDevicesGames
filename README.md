@@ -52,6 +52,8 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | --- | --- | --- | --- |
 | **Slingshot** | `Layouts.row`, smallest first | wide and short | hitting the tower |
 | **Ball Bin** | `Layouts.column`, largest last | narrow and tall | catching 10 balls |
+| **Flood** | a hand-written 2×N grid, upright | two rows facing each other | flooding the other team off the board |
+| **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
 
 Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
@@ -64,6 +66,74 @@ winning. A game calls `scores.award(phoneId, points)`; the platform does the
 rest, and shows nothing at all until somebody actually scores — both shipped
 games are co-operative, and Ball Bin is the only one that credits catches to
 individual phones.
+
+## Flood, and the first competitive board
+
+The two Flood variants are the project's first **competitive** games — two teams,
+one loses — and its first board that is not a strip. Built to
+[`lib/games/pusho-war-option-a-growing-power.md`](lib/games/pusho-war-option-a-growing-power.md)
+and [`lib/games/pusho-war-option-b-shrinking-field.md`](lib/games/pusho-war-option-b-shrinking-field.md).
+
+Phones stand upright in **two rows facing each other**, blue along the top and
+red along the bottom, so every player has one phone in front of them and
+teammates sit shoulder to shoulder:
+
+```
+  1v1                2v2                  3v3
+ ┌────┐            ┌────┬────┐        ┌────┬────┬────┐
+ │ B  │            │ B  │ B  │        │ B  │ B  │ B  │
+ ├────┤            ├────┼────┤        ├────┼────┼────┤
+ │ R  │            │ R  │ R  │        │ R  │ R  │ R  │
+ └────┘            └────┴────┘        └────┴────┴────┘
+```
+
+Tap anywhere on your phone and the waterline between the colours moves toward
+the other team. Because every phone draws the same boundary in world
+coordinates, that line runs unbroken across every seam — the same trick as the
+bird, on a board where the *whole picture* is the moving thing.
+
+`Layouts.row`/`.column` pack along one axis and this is two at once, so
+`FloodBoard.plan` is written directly as placements — the path the SDK documents
+for "an L, a grid, a ring". Two things it does that the helpers do not: the
+playfield intersects **within** a column (the strip both facing phones can see)
+and unions **across** columns, and each row is aligned to the seam, so a
+shallower phone loses its far edge rather than its front line.
+
+The two variants share their board, teams, countdown and tap handling in
+`games/flood_common/`, and differ in exactly one method each:
+
+| | Tap strength | What wins | Feels like |
+| --- | --- | --- | --- |
+| **Flood** | grows with the clock — doubled at 15s | the raw boundary | a slow tug that suddenly runs away |
+| **Flood: Closing In** | flat all round | the boundary read through a field shrinking to 15% | fair mashing, mounting pressure |
+
+Neither has any entities. The world is one float, it moves in steps rather than
+smoothly, and it therefore lives in `sharedState` rather than the interpolated
+snapshot stream — a game that extends `GameSim` directly and never links a
+physics engine, which is the case §6 of the architecture doc says should be
+possible and this is the first game to actually prove.
+
+**An even number of phones is the premise**, not a preference: `planBoard`
+throws a `BoardPlanError` on an odd table and the host sees why on the lobby
+screen. The cleaner fix is a manifest that can express "even only", so the lobby
+never offers the game at three phones in the first place; that is deliberately
+left for later.
+
+### A float in `sharedState` is a 60 Hz stream
+
+Worth writing down, because it is invisible and the next game to skip entities
+will hit it. `sharedState` is diffed by the host every tick and sent *only when
+it changed* — which quietly stops being true the moment a value in it changes
+every tick. Flood's first version put the raw round clock in the map, so every
+diff differed, and an untouched board pushed a packet sixty times a second
+forever.
+
+The fix is to broadcast at the precision the screen can actually show: the
+countdown as the whole second the HUD prints, the boundary to a thousandth of
+the axis, the ramp and the closing field to a hundredth. An idle board went from
+600 messages per ten seconds to fewer than fifty, and nothing on screen looks any
+different. `flood_test.dart` pins it, because the failure mode is a network
+becoming busy rather than anything visibly breaking.
 
 Scanning the host's QR instead skips the code — it carries `ws://<ip>:<port>#<code>`,
 and standing in front of the screen is the same proof the code asks for. Typing
@@ -91,8 +161,11 @@ lib/
     ui/           role → lobby → placement → game → results
     catalog.dart  the playlist — the ONLY file in sdk/ that knows games/ exists
   games/
-    slingshot/    game + sim + view + config
-    ball_bin/     game + sim + view + config
+    slingshot/     game + sim + view + config
+    ball_bin/      game + sim + view + config
+    flood_common/  board, config, and the sim/view both variants share
+    flood/         Flood — growing tap power
+    flood_closing/ Flood: Closing In — shrinking field
   main.dart
 ```
 
@@ -186,7 +259,7 @@ across the gap are a live calibration check) and marks the dead zone.
 
 ## What is verified
 
-`flutter test` — 27 tests, all passing:
+`flutter test` — 118 tests, all passing:
 
 - **`layout_solver_test.dart`** — packing, bezel gaps, top alignment, the
   coverage map, transforms as exact inverses, and mixed-density phones drawing at
@@ -201,6 +274,16 @@ across the gap are a live calibration check) and marks the dead zone.
 - **`viewport_render_test.dart`** — the Flame camera resolves to the physically
   correct zoom (52.49 logical px per cm at 400dpi/dpr 3) and is pinned to this
   phone's world offset.
+- **`flood_test.dart`** — both Flood variants through the contract at 2, 4 and 6
+  phones: two equal rows with every blue screen above every red one, an odd
+  table refused, the countdown swallowing a head start, A's ramp doubling a tap
+  after one `rampWindow` while B's stays flat, B's shrinking field resolving a
+  three-tap lead with nobody touching anything again, and the `maxRoundLength`
+  backstop ending every round on time and awarding the marginal lead. Also
+  pins **which way the flood goes** — a team's taps must expand its own colour
+  onto the opponent's glass, and the sim is identical either way, so only a
+  test that asks the *view* where it would paint can tell. And the idle packet
+  rate; see below.
 
 Measured on a two-phone board, host + socket client: the bird crosses the seam
 1.05s into a flight that peaks 1.2 units above the sling and stays on screen the
@@ -247,9 +330,9 @@ each other.
 
 No TypeScript, no cloud, no dedicated server. No accounts or persistence. No
 mDNS/Nearby/Multipeer — discovery is 200 lines of UDP broadcast with a QR and a
-typed address behind it, and it never leaves the LAN. No freeform phone
-packing (v1 forces a left-to-right strip; the per-phone transform already handles
-different sizes, which was the part worth proving). No sensor-based placement
+typed address behind it, and it never leaves the LAN. No automatic freeform
+packing — a game that wants something the `Layouts` helpers cannot express
+writes its placements by hand, as Flood's 2×N grid does. No sensor-based placement
 verification. No game-definition loader — but game logic is kept as data in
 `game/game_config.dart` so that door stays open.
 
