@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+// JOIN CODE DISABLED — the keypad's digits-only formatter lived here.
+// import 'package:flutter/services.dart';
 
 import '../net/discovery.dart';
 import '../net/host_address.dart';
@@ -7,6 +8,9 @@ import 'scan_sheet.dart';
 
 /// Everything needed to get into a game: where, and the code to prove you were
 /// asked along.
+///
+/// JOIN CODE DISABLED — [code] is now always empty from this sheet, and the
+/// host ignores it. The field stays so the plumbing survives.
 class JoinRequest {
   const JoinRequest(this.uri, this.code);
 
@@ -14,7 +18,9 @@ class JoinRequest {
   final String code;
 }
 
-/// Browse the games being hosted on this WiFi, then enter the code.
+/// Browse the games being hosted on this WiFi and tap one to join.
+///
+/// JOIN CODE DISABLED — there used to be a keypad step after picking a game.
 ///
 /// Three ways in, all present on every device and in this order of ease:
 /// pick from the list, scan the host's QR, or type the address. The list is the
@@ -49,11 +55,14 @@ class _JoinSheetState extends State<JoinSheet> {
     super.dispose();
   }
 
-  /// A game picked off the list: we know the address, so only the code is left.
-  Future<void> _joinDiscovered(GameBeacon beacon) async {
-    final code = await _askForCode(beacon.name);
-    if (code == null || !mounted) return;
-    Navigator.of(context).pop(JoinRequest(beacon.uri, code));
+  /// A game picked off the list. Tapping it is the whole join.
+  // JOIN CODE DISABLED — was: ask for the code, then pop with it.
+  void _joinDiscovered(GameBeacon beacon) {
+    Navigator.of(context).pop(JoinRequest(beacon.uri, ''));
+
+    // final code = await _askForCode(beacon.name);
+    // if (code == null || !mounted) return;
+    // Navigator.of(context).pop(JoinRequest(beacon.uri, code));
   }
 
   /// The QR carries the code in its fragment, so a scan needs no keypad.
@@ -68,9 +77,12 @@ class _JoinSheetState extends State<JoinSheet> {
       _snack('That QR was not a game address.');
       return;
     }
-    final code = target.code ?? await _askForCode(null);
-    if (code == null || !mounted) return;
-    Navigator.of(context).pop(JoinRequest(target.uri, code));
+    // JOIN CODE DISABLED — the fragment is still parsed, just not required.
+    Navigator.of(context).pop(JoinRequest(target.uri, target.code ?? ''));
+
+    // final code = target.code ?? await _askForCode(null);
+    // if (code == null || !mounted) return;
+    // Navigator.of(context).pop(JoinRequest(target.uri, code));
   }
 
   Future<void> _typeAddress() async {
@@ -85,15 +97,19 @@ class _JoinSheetState extends State<JoinSheet> {
       _snack('Could not read "$raw" as an address.');
       return;
     }
-    final code = target.code ?? await _askForCode(null);
-    if (code == null || !mounted) return;
-    Navigator.of(context).pop(JoinRequest(target.uri, code));
+    // JOIN CODE DISABLED
+    Navigator.of(context).pop(JoinRequest(target.uri, target.code ?? ''));
+
+    // final code = target.code ?? await _askForCode(null);
+    // if (code == null || !mounted) return;
+    // Navigator.of(context).pop(JoinRequest(target.uri, code));
   }
 
-  Future<String?> _askForCode(String? gameName) => showDialog<String>(
-    context: context,
-    builder: (_) => _CodeDialog(gameName: gameName),
-  );
+  // JOIN CODE DISABLED
+  // Future<String?> _askForCode(String? gameName) => showDialog<String>(
+  //   context: context,
+  //   builder: (_) => _CodeDialog(gameName: gameName),
+  // );
 
   void _snack(String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -264,6 +280,9 @@ class _Searching extends StatelessWidget {
   }
 }
 
+// JOIN CODE DISABLED — kept whole, block-commented, so bringing the gate back
+// is deleting the two `/*` `*/` lines around it.
+/*
 /// The 5-digit keypad gate.
 class _CodeDialog extends StatefulWidget {
   const _CodeDialog({required this.gameName});
@@ -349,6 +368,7 @@ class _CodeDialogState extends State<_CodeDialog> {
     );
   }
 }
+*/
 
 /// The typed-address fallback, unchanged in spirit from v1.
 class _AddressDialog extends StatefulWidget {

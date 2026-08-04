@@ -38,10 +38,15 @@ class ViewportGame extends FlameGame {
     final l = session.layout;
     if (l == null || l == _appliedLayout) return;
     _appliedLayout = l;
+    // Centre-anchored and turned to match the phone. A screen laid at any
+    // angle on the table gets the world rotated to meet it, which is the one
+    // place arbitrary rotation is handled — the game paints in world
+    // coordinates and never knows.
     camera.viewfinder
-      ..anchor = Anchor.topLeft
+      ..anchor = Anchor.center
       ..zoom = l.logicalPxPerWorldUnit
-      ..position = Vector2(l.worldOffsetX, l.worldOffsetY);
+      ..angle = l.turnRadians
+      ..position = Vector2(l.worldCenterX, l.worldCenterY);
   }
 
   @override

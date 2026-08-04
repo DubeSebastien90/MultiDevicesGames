@@ -68,31 +68,34 @@ class Gaps {
 /// Which way up the phones lie within the board.
 ///
 /// The app itself is always portrait; this is purely about how the devices are
-/// put on the table. Both shipped games use [sideways], because a runway and a
-/// falling well both want the long edge running left-to-right.
+/// put on the table. The row and column helpers use [sideways], because a
+/// runway and a falling well both want the long edge running left-to-right.
 enum PhoneOrientation {
-  /// Long edge horizontal — the phone on its side. One quarter turn.
+  /// Long edge horizontal — the phone on its side. A quarter turn.
   sideways,
 
-  /// Long edge vertical — the phone as you normally hold it. No turn, so
-  /// nothing is rotated when drawing either.
+  /// Long edge vertical — the phone as you normally hold it. No turn.
   upright,
 }
 
-extension PhoneOrientationTurns on PhoneOrientation {
-  int get quarterTurns => this == PhoneOrientation.sideways ? 1 : 0;
+extension PhoneOrientationTurn on PhoneOrientation {
+  double get turnDeg => this == PhoneOrientation.sideways ? 90 : 0;
 }
 
 /// How phones line up across the packing axis.
-enum CrossAlign {
-  /// Top edges flush in a row, left edges flush in a column.
-  start,
+enum CrossAlign { start, center, end }
 
-  /// Centres line up.
-  center,
+/// Which way a phone lies in a ring.
+enum RingFacing {
+  /// Long edge along the rim, at right angles to the radius — phones laid like
+  /// tiles around a wheel. The circumference is spent on long edges, so more
+  /// phones fit and the ring reads as a ring.
+  tangential,
 
-  /// Bottom edges flush in a row, right edges flush in a column.
-  end,
+  /// Long edge pointing at the middle, like spokes. Each phone's own top edge
+  /// then points outward at its player, which reads more naturally on the
+  /// device but wastes rim.
+  radial,
 }
 
 /// Ready-made plans for the arrangements most games want.
@@ -110,17 +113,15 @@ class Layouts {
     CrossAlign align = CrossAlign.start,
     PhoneOrientation orientation = PhoneOrientation.sideways,
     String? instruction,
-  }) =>
-      _pack(
-        phones,
-        horizontal: true,
-        sort: sort,
-        gap: gap,
-        align: align,
-        orientation: orientation,
-        instruction:
-            instruction ?? _instructionFor(true, orientation, align),
-      );
+  }) => _pack(
+    phones,
+    horizontal: true,
+    sort: sort,
+    gap: gap,
+    align: align,
+    orientation: orientation,
+    instruction: instruction ?? _instructionFor(true, orientation, align),
+  );
 
   /// Top to bottom. A narrow, tall board — falling things, towers, ladders.
   static BoardPlan column(
@@ -130,142 +131,296 @@ class Layouts {
     CrossAlign align = CrossAlign.start,
     PhoneOrientation orientation = PhoneOrientation.sideways,
     String? instruction,
-  }) =>
-      _pack(
-        phones,
-        horizontal: false,
-        sort: sort,
-        gap: gap,
-        align: align,
-        orientation: orientation,
-        instruction:
-            instruction ?? _instructionFor(false, orientation, align),
-      );
+  }) => _pack(
+    phones,
+    horizontal: false,
+    sort: sort,
+    gap: gap,
+    align: align,
+    orientation: orientation,
+    instruction: instruction ?? _instructionFor(false, orientation, align),
+  );
 
-  /// A squarish block. Phones fill rows left to right, top to bottom.
+  /// A ring of phones around a table, each turned to face its own player.
   ///
-  /// The arrangement for a game where everyone has to *reach* everyone: a strip
-  /// of six phones is two metres of table and the far end is unplayable, while
-  /// the same six in a 3x2 block are all within arm's length of every seat.
+  /// Unlike a row or a column, nothing touches: the phones are islands with
+  /// space between them, and a game passing something around the ring sends it
+  /// across that space. So the plan declares [BoardPlan.allowGaps] and the
+  /// compiler stops treating the distance as a mistake.
   ///
-  /// Unlike [row] and [column] this asks for uniform phones and says so. A grid
-  /// of mismatched screens has no honest answer — a short phone in the top row
-  /// leaves a hole that is not a bezel gap and not playfield either, and every
-  /// choice about it is wrong in some game. Cells are therefore sized to the
-  /// *largest* footprint and smaller screens are centred in theirs, which keeps
-  /// the grid square and confines the error to a visible margin rather than
-  /// smearing it across the board.
+  /// By default each phone lies [RingFacing.tangential]: its long edge along
+  /// the rim, at right angles to its own radius, like tiles around a wheel.
+  /// That spends the circumference on long edges, so more phones fit and the
+  /// ring actually looks like one.
   ///
-  /// [columns] defaults to `ceil(sqrt(n))`, which is the squarest block for any
-  /// count: 4 phones make 2x2, 6 make 3x2, 9 make 3x3. A short final row is
-  /// centred, because a lone phone hanging off one end looks like a mistake.
-  static BoardPlan grid(
+  /// Either way this needs arbitrary angles rather than quarter turns — five
+  /// phones sit 72° apart.
+  ///
+  /// Order runs clockwise from the top, and the game's own passing order is
+  /// simply that order wrapping around.
+  static BoardPlan circle(
     List<PhoneSpec> phones, {
-    int? columns,
     PhoneSort sort = PhoneSort.joinOrder,
-    Gaps gap = Gaps.casingsTouching,
-    PhoneOrientation orientation = PhoneOrientation.upright,
+    RingFacing facing = RingFacing.tangential,
+
+    /// Clear space between neighbouring screens, as a fraction of the widest
+    /// phone. Enough that nobody's elbows collide.
+    double spacing = 0.6,
+
+    /// Force a particular ring size instead of the smallest that fits.
+    double? radiusMm,
     String? instruction,
   }) {
-    if (phones.isEmpty) {
-      throw const BoardPlanError('no phones to place');
+    if (phones.length < 3) {
+      throw const BoardPlanError(
+        'a circle needs at least 3 phones — with two you are just facing each '
+        'other',
+      );
     }
 
     final ordered = List.of(phones)..sort(sort.compare);
-    final turns = orientation.quarterTurns;
-    final n = ordered.length;
+    final count = ordered.length;
 
-    final cols = columns ?? math.max(1, math.sqrt(n).ceil());
-    if (cols < 1) {
-      throw const BoardPlanError('a grid needs at least one column');
-    }
-    final rows = (n / cols).ceil();
+    // What has to fit in the chord between two neighbours is whichever edge
+    // runs along the rim — the long one when the phones lie tangentially.
+    final tangential = facing == RingFacing.tangential;
+    final alongRim = ordered
+        .map((p) => tangential ? p.heightMm : p.widthMm)
+        .reduce(math.max);
+    final acrossRim = ordered
+        .map((p) => tangential ? p.widthMm : p.heightMm)
+        .reduce(math.max);
+    final neededChord = alongRim * (1 + spacing);
 
-    // One cell size for the whole grid, or the rows would not line up.
-    var cellW = 0.0;
-    var cellH = 0.0;
-    for (final p in ordered) {
-      final w = p.footprintWidthMm(turns);
-      final h = p.footprintHeightMm(turns);
-      if (w > cellW) cellW = w;
-      if (h > cellH) cellH = h;
-    }
-
-    // Gaps between neighbours vary with which two phones meet, but a grid needs
-    // one pitch. Take the largest so no two casings are asked to overlap.
-    var gapX = 0.0;
-    var gapY = 0.0;
-    for (final a in ordered) {
-      for (final b in ordered) {
-        if (identical(a, b)) continue;
-        final g = gap.between(a, b);
-        if (g > gapX) gapX = g;
-        if (g > gapY) gapY = g;
-      }
-    }
-    // A single phone has no neighbour to measure against.
-    if (n == 1) gapX = gapY = 0;
-
-    final pitchX = cellW + gapX;
-    final pitchY = cellH + gapY;
+    // chord = 2 R sin(pi / n)
+    final fitted = neededChord / (2 * math.sin(math.pi / count));
+    // Keep a hole in the middle even when there are only three phones, so the
+    // ring reads as a ring rather than a huddle.
+    final radius = radiusMm ?? math.max(fitted, acrossRim * 1.2);
 
     final placements = <PhonePlacement>[];
-    for (var i = 0; i < n; i++) {
-      final p = ordered[i];
-      final row = i ~/ cols;
-      final col = i % cols;
-
-      // Centre a short last row: with 5 phones in a 3-wide grid the pair below
-      // sits under the middle of the three, which is what people do anyway.
-      final inThisRow = math.min(cols, n - row * cols);
-      final rowInsetMm = (cols - inThisRow) * pitchX / 2;
-
-      // Centre each screen in its cell, so a smaller phone's margin is even
-      // rather than all on one side.
-      final dx = (cellW - p.footprintWidthMm(turns)) / 2;
-      final dy = (cellH - p.footprintHeightMm(turns)) / 2;
-
+    for (var i = 0; i < count; i++) {
+      // Start at the top of the ring and work clockwise.
+      final angle = -math.pi / 2 + (2 * math.pi * i) / count;
       placements.add(PhonePlacement(
-        p.phoneId,
-        xMm: rowInsetMm + col * pitchX + dx,
-        yMm: row * pitchY + dy,
-        quarterTurns: turns,
-        hint: _gridHint(row, col, rows, cols, inThisRow),
+        ordered[i].phoneId,
+        xMm: radius * math.cos(angle),
+        yMm: radius * math.sin(angle),
+        // Radial puts the phone's top edge along its own radius, pointing
+        // outward — turn zero already points "up", which is outward at the top
+        // of the ring, hence the extra quarter. Tangential adds another
+        // quarter, swinging the long edge round onto the rim.
+        turnDeg: angle * 180 / math.pi + (tangential ? 180 : 90),
+        hint: _ringHint(i, count),
       ));
     }
 
     return BoardPlan(
       placements,
+      allowGaps: true,
       instruction: instruction ??
-          'Lay the phones in a $cols x $rows block, '
-              '${orientation == PhoneOrientation.upright ? 'upright' : 'on their sides'}, '
-              'casings touching — everyone should be able to reach the middle.',
-      // Deliberately no declared bounds: every cell is backed by a screen, so
-      // the bounding box *is* the playfield and the compiler's default is
-      // already right. Hugging a band the way a row does would cut off rows.
+          'Sit in a circle and put your phone on the table in front of you, '
+              'screen facing you. $count phones, evenly spaced.',
     );
   }
 
-  static String _gridHint(
-    int row,
-    int col,
+  static String _ringHint(int index, int count) {
+    if (index == 0) return 'at the top of the circle';
+    final oClock = (index * 12 / count).round() % 12;
+    return '${oClock == 0 ? 12 : oClock} o\'clock in the circle';
+  }
+
+  /// A block of phones, [rows] deep and as many columns as it takes.
+  ///
+  /// The two-axis helper. `row` and `column` pack along one axis and stop; this
+  /// fills a rectangle, which is what a game wants when players face each other
+  /// across a table rather than sitting in a line or a ring:
+  ///
+  /// ```
+  ///   rows: 2, four phones      rows: 2, six phones
+  ///  ┌────┬────┐               ┌────┬────┬────┐
+  ///  │ 1  │ 2  │               │ 1  │ 2  │ 3  │
+  ///  ├────┼────┤               ├────┼────┼────┤
+  ///  │ 3  │ 4  │               │ 4  │ 5  │ 6  │
+  ///  └────┴────┘               └────┴────┴────┘
+  /// ```
+  ///
+  /// Filled row by row, so the first `columns` phones are the top row. A game
+  /// wanting two teams asks for `rows: 2` and reads the rows off the compiled
+  /// board — the top half is one side, the bottom half the other.
+  ///
+  /// Mismatched phones are handled the way a table handles them: a column is as
+  /// wide as its widest phone and every screen in it is centred, a row is as
+  /// deep as its deepest. With [seamAlign] on, each row is then pushed *toward*
+  /// the seam it shares with its neighbour, so a shallower phone gives up its
+  /// far edge rather than its front line — which matters when the game happens
+  /// at the seam, and is why this is not simply nested `row` calls.
+  ///
+  /// The playfield hugs what every facing pair can actually see: within a
+  /// column it is the narrower phone's width, and across columns those bands
+  /// join up. Treating a wider phone's overhang as playfield would invent a
+  /// dead zone that is not a real gap between screens.
+  static BoardPlan grid(
+    List<PhoneSpec> phones, {
+    required int rows,
+    PhoneSort sort = PhoneSort.joinOrder,
+    Gaps gap = Gaps.casingsTouching,
+    PhoneOrientation orientation = PhoneOrientation.upright,
+
+    /// Pull each row toward the seam it shares with the next, so screens meet
+    /// edge to edge there whatever their depth. Off, rows are top-aligned.
+    bool seamAlign = true,
+    String? instruction,
+  }) {
+    if (phones.isEmpty) {
+      throw const BoardPlanError('no phones to place');
+    }
+    if (rows < 1) {
+      throw BoardPlanError('a grid needs at least one row, not $rows');
+    }
+    if (phones.length % rows != 0) {
+      throw BoardPlanError(
+        'a grid of $rows rows needs a multiple of $rows phones, '
+        'not ${phones.length}',
+      );
+    }
+
+    final ordered = List.of(phones)..sort(sort.compare);
+    final columns = ordered.length ~/ rows;
+    final turn = orientation.turnDeg;
+    final sideways = orientation == PhoneOrientation.sideways;
+
+    // Footprints, not panels: a phone put on its side covers the board the
+    // other way round, and every measurement below is about the board.
+    double widthOf(PhoneSpec p) => sideways ? p.heightMm : p.widthMm;
+    double heightOf(PhoneSpec p) => sideways ? p.widthMm : p.heightMm;
+
+    /// The phone at (row, column), reading row by row.
+    PhoneSpec at(int row, int column) => ordered[row * columns + column];
+
+    // A column is as wide as its widest phone; a row as deep as its deepest.
+    final columnWidths = [
+      for (var c = 0; c < columns; c++)
+        [for (var r = 0; r < rows; r++) widthOf(at(r, c))].reduce(math.max),
+    ];
+    final rowDepths = [
+      for (var r = 0; r < rows; r++)
+        [for (var c = 0; c < columns; c++) heightOf(at(r, c))].reduce(math.max),
+    ];
+
+    // Every column shares one seam line between two rows, so the widest bezel
+    // pair across that seam sets it — that is the phones physically touching.
+    final rowGaps = [
+      for (var r = 0; r < rows - 1; r++)
+        [
+          for (var c = 0; c < columns; c++)
+            gap.between(at(r, c), at(r + 1, c)),
+        ].reduce(math.max),
+    ];
+
+    // Where each row's band starts, walking down through depths and seams.
+    final rowTops = <double>[];
+    var y = 0.0;
+    for (var r = 0; r < rows; r++) {
+      rowTops.add(y);
+      y += rowDepths[r];
+      if (r < rows - 1) y += rowGaps[r];
+    }
+    final totalDepth = y;
+
+    // Column x positions, and the same for the horizontal gaps.
+    final columnLefts = <double>[];
+    var x = 0.0;
+    for (var c = 0; c < columns; c++) {
+      columnLefts.add(x);
+      x += columnWidths[c];
+      if (c < columns - 1) {
+        x += [
+          for (var r = 0; r < rows; r++) gap.between(at(r, c), at(r, c + 1)),
+        ].reduce(math.max);
+      }
+    }
+
+    final placements = <PhonePlacement>[];
+    var playLeft = double.infinity;
+    var playRight = double.negativeInfinity;
+
+    for (var c = 0; c < columns; c++) {
+      // Within a column, the playfield is the narrowest phone's band: the strip
+      // every row can see.
+      var columnLeft = double.negativeInfinity;
+      var columnRight = double.infinity;
+
+      for (var r = 0; r < rows; r++) {
+        final spec = at(r, c);
+        final w = widthOf(spec);
+        final h = heightOf(spec);
+        final left = columnLefts[c] + (columnWidths[c] - w) / 2;
+
+        // Toward the seam: the top row sits on its bottom edge, the bottom row
+        // on its top, and a middle row cannot favour both so it centres.
+        final double top;
+        if (!seamAlign || rows == 1) {
+          top = rowTops[r];
+        } else if (r == 0) {
+          top = rowTops[r] + (rowDepths[r] - h);
+        } else if (r == rows - 1) {
+          top = rowTops[r];
+        } else {
+          top = rowTops[r] + (rowDepths[r] - h) / 2;
+        }
+
+        placements.add(PhonePlacement(
+          spec.phoneId,
+          // Placements are the centre of the lit area, not a corner.
+          xMm: left + w / 2,
+          yMm: top + h / 2,
+          turnDeg: turn,
+          hint: _gridHint(r, c, rows, columns),
+        ));
+
+        if (left > columnLeft) columnLeft = left;
+        if (left + w < columnRight) columnRight = left + w;
+      }
+
+      // Columns sit side by side, so each one adds ground.
+      if (columnLeft < playLeft) playLeft = columnLeft;
+      if (columnRight > playRight) playRight = columnRight;
+    }
+
+    return BoardPlan(
+      placements,
+      instruction: instruction ?? _gridInstruction(rows, columns, orientation),
+      bounds: BoardBoundsMm(
+        leftMm: playLeft,
+        topMm: 0,
+        widthMm: playRight - playLeft,
+        heightMm: totalDepth,
+      ),
+    );
+  }
+
+  static String _gridHint(int row, int column, int rows, int columns) {
+    final rowWord = rows == 2
+        ? (row == 0 ? 'top row' : 'bottom row')
+        : 'row ${row + 1} of $rows';
+    if (columns == 1) return rowWord;
+    return '$rowWord, ${column + 1} of $columns from the left';
+  }
+
+  static String _gridInstruction(
     int rows,
-    int cols,
-    int inThisRow,
+    int columns,
+    PhoneOrientation orientation,
   ) {
-    if (rows == 1) return _hintFor(col, cols, true);
-    final vertical = row == 0
-        ? 'top row'
-        : row == rows - 1
-            ? 'bottom row'
-            : 'row ${row + 1}';
-    if (inThisRow == 1) return '$vertical, on your own in the middle';
-    final horizontal = col == 0
-        ? 'far left'
-        : col == inThisRow - 1
-            ? 'far right'
-            : 'position ${col + 1} from the left';
-    return '$vertical, $horizontal';
+    final pose = orientation == PhoneOrientation.sideways
+        ? 'on their sides'
+        : 'upright';
+    if (rows == 2) {
+      return 'Two rows facing each other, $pose, long edges touching — '
+          '$columns phone(s) per row.';
+    }
+    return 'A block $columns wide and $rows deep, $pose, edges touching.';
   }
 
   static BoardPlan _pack(
@@ -282,20 +437,21 @@ class Layouts {
     }
 
     final ordered = List.of(phones)..sort(sort.compare);
-    final turns = orientation.quarterTurns;
+    final turn = orientation.turnDeg;
+    final sideways = orientation == PhoneOrientation.sideways;
 
     // Footprints, not panels: a phone put on its side covers the board the
     // other way round, and every measurement below is about the board.
-    double alongSize(PhoneSpec p) => horizontal
-        ? p.footprintWidthMm(turns)
-        : p.footprintHeightMm(turns);
-    double acrossSize(PhoneSpec p) => horizontal
-        ? p.footprintHeightMm(turns)
-        : p.footprintWidthMm(turns);
+    double footprintAlong(PhoneSpec p) => horizontal
+        ? (sideways ? p.heightMm : p.widthMm)
+        : (sideways ? p.widthMm : p.heightMm);
+    double footprintAcross(PhoneSpec p) => horizontal
+        ? (sideways ? p.widthMm : p.heightMm)
+        : (sideways ? p.heightMm : p.widthMm);
 
-    // Phones sit inside a lane as deep as the *largest* of them, so no screen
-    // is ever placed at a negative offset.
-    final lane = ordered.map(acrossSize).reduce((a, b) => a > b ? a : b);
+    // Phones sit inside a lane as deep as the largest of them, so no screen is
+    // ever placed at a negative offset.
+    final lane = ordered.map(footprintAcross).reduce(math.max);
 
     double offsetFor(double size) => switch (align) {
       CrossAlign.start => 0.0,
@@ -315,20 +471,23 @@ class Layouts {
 
     for (var i = 0; i < ordered.length; i++) {
       final p = ordered[i];
-      final offset = offsetFor(acrossSize(p));
+      final across = footprintAcross(p);
+      final along = footprintAlong(p);
+      final offset = offsetFor(across);
 
       if (offset > bandStart) bandStart = offset;
-      if (offset + acrossSize(p) < bandEnd) bandEnd = offset + acrossSize(p);
+      if (offset + across < bandEnd) bandEnd = offset + across;
 
+      // Centre, not corner.
       placements.add(PhonePlacement(
         p.phoneId,
-        xMm: horizontal ? cursor : offset,
-        yMm: horizontal ? offset : cursor,
-        quarterTurns: turns,
+        xMm: horizontal ? cursor + along / 2 : offset + across / 2,
+        yMm: horizontal ? offset + across / 2 : cursor + along / 2,
+        turnDeg: turn,
         hint: _hintFor(i, ordered.length, horizontal),
       ));
 
-      cursor += alongSize(p);
+      cursor += along;
       if (i < ordered.length - 1) {
         cursor += gap.between(p, ordered[i + 1]);
       }
@@ -368,7 +527,6 @@ class Layouts {
     CrossAlign align,
   ) {
     final sideways = orientation == PhoneOrientation.sideways;
-    // In a row the touching edges run across the row, and vice versa.
     final touching = (horizontal == sideways) ? 'short' : 'long';
     final pose = sideways ? 'on their sides' : 'upright';
     final verb = horizontal

@@ -52,15 +52,15 @@ class GameOutcome {
 class PhoneSlice {
   const PhoneSlice(
     this.phoneId,
-    this.viewport, {
+    this.screen, {
     this.label = '',
     this.color,
   });
 
   final String phoneId;
 
-  /// What that screen physically covers, in world units.
-  final WorldRect viewport;
+  /// Where that screen sits, turn included.
+  final ScreenRect screen;
 
   /// Human name, for diagrams: 'Pixel 7'.
   final String label;
@@ -70,16 +70,22 @@ class PhoneSlice {
   /// the same shade without asking anyone.
   final PlayerColor? color;
 
+  /// Axis-aligned extent, for culling and framing.
+  WorldRect get viewport => screen.bounds;
+
+  /// Exact: is this world point on that screen?
+  bool contains(double x, double y) => screen.contains(x, y);
+
   Map<String, dynamic> toJson() => {
     'phoneId': phoneId,
     'label': label,
     if (color != null) 'color': color!.id,
-    'rect': viewport.toJson(),
+    'screen': screen.toJson(),
   };
 
   static PhoneSlice fromJson(Map<String, dynamic> j) => PhoneSlice(
     j['phoneId'] as String,
-    WorldRect.fromJson(j['rect'] as Map<String, dynamic>),
+    ScreenRect.fromJson(j['screen'] as Map<String, dynamic>),
     label: (j['label'] as String?) ?? '',
     color: PlayerPalette.byId(j['color'] as String?),
   );
@@ -141,7 +147,7 @@ class BoardContext {
   /// per-phone scoring needs: the ball landed here, so whose was it?
   String? phoneAt(double x, double y) {
     for (final slice in slices) {
-      if (slice.viewport.contains(x, y)) return slice.phoneId;
+      if (slice.contains(x, y)) return slice.phoneId;
     }
     return null;
   }

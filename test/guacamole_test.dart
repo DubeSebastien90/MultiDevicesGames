@@ -6,6 +6,7 @@ import 'package:multiscreen_slingshot/games/guacamole/guacamole_game.dart';
 import 'package:multiscreen_slingshot/games/guacamole/guacamole_sim.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
+import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
@@ -86,37 +87,48 @@ void main() {
       final ratio = board.width / board.height;
       expect(ratio, greaterThan(1 / 3));
       expect(ratio, lessThan(3.0));
-      expect(started.board.instruction, contains('2 x 2'));
+      expect(started.board.instruction, contains('Two rows'));
 
       // And concretely: two phone-widths across, two phone-heights down.
       expect(board.width, lessThan(board.height),
           reason: 'portrait phones make a portrait block');
     });
 
-    test('a short last row is centred', () {
-      // Five phones in a 3-wide grid: two below, tucked under the middle.
+    test('an odd table is refused rather than fudged', () {
+      // Two rows cannot be split evenly five ways, and the manifest says so
+      // before anyone is asked to move a phone.
+      expect(const GuacamoleGame().manifest.fits(5), isFalse);
+
+      // And the layout itself refuses, so the rule holds even if a future
+      // manifest were to loosen.
       final lobby = LobbyInfo([
         for (var i = 0; i < 5; i++) phone('p${i + 1}', PlayerPalette.all[i]),
       ]);
-      final plan = Layouts.grid(lobby.phones);
-      final rows = <double, List<double>>{};
-      for (final p in plan.placements) {
-        rows.putIfAbsent(p.yMm, () => []).add(p.xMm);
+      expect(
+        () => Layouts.grid(lobby.phones, rows: 2),
+        throwsA(isA<BoardPlanError>()),
+      );
+    });
+
+    test('two rows, evenly split, whatever the table size', () {
+      for (final n in [4, 6, 8]) {
+        final lobby = LobbyInfo([
+          for (var i = 0; i < n; i++) phone('p${i + 1}', PlayerPalette.all[i]),
+        ]);
+        final plan = Layouts.grid(lobby.phones, rows: 2);
+
+        final byRow = <double, int>{};
+        for (final p in plan.placements) {
+          byRow[p.yMm] = (byRow[p.yMm] ?? 0) + 1;
+        }
+        expect(byRow, hasLength(2), reason: '$n phones should make two rows');
+        expect(byRow.values.every((c) => c == n ~/ 2), isTrue,
+            reason: '$n phones should split $byRow evenly');
       }
-
-      expect(rows, hasLength(2));
-      final top = rows.entries.first.value..sort();
-      final bottom = rows.entries.last.value..sort();
-      expect(top, hasLength(3));
-      expect(bottom, hasLength(2));
-
-      // The short row's centre lines up with the full row's centre.
-      double mean(List<double> xs) => xs.reduce((a, b) => a + b) / xs.length;
-      expect(mean(bottom), closeTo(mean(top), 0.01));
     });
 
     test('every phone gets exactly four holes', () {
-      for (final n in [4, 5, 6, 8]) {
+      for (final n in [4, 6, 8]) {
         final started = start(n);
         expect(
           started.sim.holes,

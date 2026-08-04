@@ -14,6 +14,7 @@ import '../catalog.dart';
 import '../contract/entity.dart';
 import '../contract/game.dart';
 import '../contract/sim.dart';
+import '../layout/board_audit.dart';
 import '../layout/board_compiler.dart';
 import '../layout/board_plan.dart';
 import '../layout/phone_spec.dart';
@@ -26,6 +27,39 @@ import '../score/scoreboard.dart';
 /// between: the game's `planBoard` already decided the arrangement, better than
 /// a host squinting at a diagram could.
 enum HostPhase { idle, lobby, placing, playing, finished }
+
+/// How a round was started, which decides where it ends.
+enum RoundMode {
+  /// From the **Play** button: win one and the next begins, forever.
+  playlist,
+
+  /// From the games list: play that one, then back to the lobby.
+  oneOff,
+}
+
+/// One entry in the lobby's list of games.
+///
+/// The eligibility check is answered once, here, rather than being re-derived
+/// by whatever draws the list — so the reason a game is greyed out and the
+/// reason it cannot be started are guaranteed to be the same reason.
+class GameOffer {
+  const GameOffer({
+    required this.game,
+    required this.playable,
+    required this.reason,
+  });
+
+  final MultiscreenGame game;
+
+  /// Whether this table can start it right now.
+  final bool playable;
+
+  /// Why not, when it does not fit the phone count: 'needs 3+ phones'. Null
+  /// when the game itself is fine and only the lobby is not ready.
+  final String? reason;
+
+  GameManifest get manifest => game.manifest;
+}
 
 /// One connected phone, from the host's point of view.
 class PhoneRecord {
@@ -72,9 +106,13 @@ class HostSession extends ChangeNotifier {
        _joinCode = joinCode ?? generateJoinCode(),
        _advertise = advertise;
 
-  /// A stranger gets this many wrong guesses before we stop answering them.
-  static const int _maxWrongGuesses = 5;
-  static const Duration _lockout = Duration(seconds: 30);
+  // JOIN CODE DISABLED — the lockout only means something with a code to get
+  // wrong.
+  //
+  // /// A stranger gets this many wrong guesses before we stop answering them.
+  // static const int _maxWrongGuesses = 5;
+  // static const Duration _lockout = Duration(seconds: 30);
+
   static const Duration _joinDeadline = Duration(seconds: 15);
 
   final HostTransport _transport;
@@ -86,8 +124,9 @@ class HostSession extends ChangeNotifier {
   final _phones = <PhoneRecord>[];
   final _subs = <StreamSubscription<dynamic>>[];
   final _pending = <PhoneRecord, Timer>{};
-  final _wrongGuesses = <String, int>{};
-  final _lockedOut = <String, DateTime>{};
+  // JOIN CODE DISABLED
+  // final _wrongGuesses = <String, int>{};
+  // final _lockedOut = <String, DateTime>{};
 
   /// The session standings, shared by every game.
   final scores = Scoreboard();
@@ -103,6 +142,10 @@ class HostSession extends ChangeNotifier {
 
   /// Position in the playlist. Only ever goes up; the catalog wraps.
   int _gameIndex = 0;
+
+  /// Whether the current round chains into the next game or returns to the
+  /// lobby. Set when the round starts and never guessed at afterwards.
+  RoundMode _mode = RoundMode.playlist;
   MultiscreenGame? _game;
   GameOutcome? _outcome;
 
@@ -128,10 +171,6 @@ class HostSession extends ChangeNotifier {
   /// The game being set up or played.
   MultiscreenGame? get game => _game;
 
-  /// What the playlist serves up after this round.
-  MultiscreenGame? get nextGame =>
-      GameCatalog.playableFrom(_gameIndex + 1, _phones.length);
-
   String? get qrPayload => _address == null ? null : '$_address#$_joinCode';
   String? get discoveryFailure => _beacon?.failure;
 
@@ -144,6 +183,16 @@ class HostSession extends ChangeNotifier {
   /// starts, and this says why on the host's own screen.
   String? get planError => _planError;
   String? _planError;
+
+  /// A full record of the last board that was laid out — measurements, plan,
+  /// compiled geometry, and the reason every pair of screens was or was not
+  /// joined. Readable from any browser at the host's own address.
+  String? get lastAudit => _lastAudit;
+  String? _lastAudit;
+
+  /// The one-line verdict from that audit, for the host's own screen.
+  String? get lastAuditSummary => _lastAuditSummary;
+  String? _lastAuditSummary;
 
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming =>
@@ -162,7 +211,15 @@ class HostSession extends ChangeNotifier {
       return 'Waiting for every phone to report its size…';
     }
     if (upcoming == null) {
-      return 'No game fits ${_phones.length} phone(s). '
+      // Say what would help, not just what is wrong. A parity rule in
+      // particular is baffling otherwise: four phones failing when three and
+      // five both work needs explaining.
+      final sizes = GameCatalog.playableTableSizes();
+      final nearest = sizes.where((n) => n > _phones.length).toList();
+      final advice = nearest.isEmpty
+          ? ''
+          : ' Try ${nearest.first} phone(s).';
+      return 'No game fits ${_phones.length} phone(s).$advice '
           '${GameCatalog.requirementSummary()}.';
     }
     return null;
@@ -176,6 +233,14 @@ class HostSession extends ChangeNotifier {
     _address = uri;
     _phase = HostPhase.lobby;
     _subs.add(_transport.onPeer.listen(_attachPeer));
+
+    // Make the audit readable from any browser on the same WiFi. The only way
+    // to get diagnostics off a phone that is hosting.
+    final ws = _transport;
+    if (ws is WebSocketHostTransport) {
+      ws.diagnostics = () =>
+          _lastAudit ?? 'MultiDevicesGame host — no board laid out yet';
+    }
 
     if (_advertise) {
       final beacon = DiscoveryBroadcaster(
@@ -203,12 +268,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    final remote = link.debugName;
-    final until = _lockedOut[remote];
-    if (until != null && DateTime.now().isBefore(until)) {
-      _reject(link, 'Too many wrong codes. Wait a moment and try again.');
-      return;
-    }
+    // JOIN CODE DISABLED — nothing can be locked out while nothing is checked.
+    // final remote = link.debugName;
+    // final until = _lockedOut[remote];
+    // if (until != null && DateTime.now().isBefore(until)) {
+    //   _reject(link, 'Too many wrong codes. Wait a moment and try again.');
+    //   return;
+    // }
 
     final record = PhoneRecord(link: link);
 
@@ -226,9 +292,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
+    // Still worth waiting on with the code gate open: the join message is also
+    // what carries the app fingerprint, so a peer that never sends one has not
+    // proved it can render this build.
     _pending[record] = Timer(_joinDeadline, () {
       if (_pending.remove(record) != null) {
-        _reject(link, 'No join code was sent.');
+        // JOIN CODE DISABLED — was 'No join code was sent.'
+        _reject(link, 'That phone never finished joining.');
       }
     });
   }
@@ -250,33 +320,43 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    final offered = (msg['code'] as String?)?.trim() ?? '';
-    if (_codeMatches(offered)) {
-      _wrongGuesses.remove(record.link.debugName);
-      _admit(record);
-      return;
-    }
+    // JOIN CODE DISABLED — anyone on this WiFi who finds the beacon is let in.
+    // The code is still generated, still sent by clients and still in the QR;
+    // it is simply not checked. To bring the door policy back, delete the
+    // `_admit` below and uncomment the block under it, then the four other
+    // `JOIN CODE DISABLED` markers (`grep -rn "JOIN CODE DISABLED"`).
+    _admit(record);
 
-    final remote = record.link.debugName;
-    final wrong = (_wrongGuesses[remote] ?? 0) + 1;
-    _wrongGuesses[remote] = wrong;
-    if (wrong >= _maxWrongGuesses) {
-      _lockedOut[remote] = DateTime.now().add(_lockout);
-      _wrongGuesses.remove(remote);
-    }
-    _reject(record.link, 'Wrong code.');
+    // final offered = (msg['code'] as String?)?.trim() ?? '';
+    // if (_codeMatches(offered)) {
+    //   _wrongGuesses.remove(record.link.debugName);
+    //   _admit(record);
+    //   return;
+    // }
+    //
+    // final remote = record.link.debugName;
+    // final wrong = (_wrongGuesses[remote] ?? 0) + 1;
+    // _wrongGuesses[remote] = wrong;
+    // if (wrong >= _maxWrongGuesses) {
+    //   _lockedOut[remote] = DateTime.now().add(_lockout);
+    //   _wrongGuesses.remove(remote);
+    // }
+    // _reject(record.link, 'Wrong code.');
   }
 
-  /// Constant-time-ish compare. The timing of a 5-digit string comparison is
-  /// not a realistic attack over WiFi, but there is no reason to leak it.
-  bool _codeMatches(String offered) {
-    if (offered.length != _joinCode.length) return false;
-    var diff = 0;
-    for (var i = 0; i < offered.length; i++) {
-      diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
-    }
-    return diff == 0;
-  }
+  // JOIN CODE DISABLED — unused while the gate is open, so it is commented out
+  // rather than left to trip the analyzer.
+  //
+  // /// Constant-time-ish compare. The timing of a 5-digit string comparison is
+  // /// not a realistic attack over WiFi, but there is no reason to leak it.
+  // bool _codeMatches(String offered) {
+  //   if (offered.length != _joinCode.length) return false;
+  //   var diff = 0;
+  //   for (var i = 0; i < offered.length; i++) {
+  //     diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
+  //   }
+  //   return diff == 0;
+  // }
 
   void _admit(PhoneRecord record) {
     record.authenticated = true;
@@ -425,14 +505,47 @@ class HostSession extends ChangeNotifier {
 
   // ----------------------------------------------------------- the round
 
-  /// Choose the game, plan the board, and send everyone to their places.
+  /// Which way the current round was started.
+  RoundMode get mode => _mode;
+
+  /// What comes after this round — null for a one-off, or when nothing else
+  /// fits the table.
+  MultiscreenGame? get nextGame => _mode == RoundMode.oneOff
+      ? null
+      : GameCatalog.playableFrom(_gameIndex + 1, _phones.length);
+
+  /// One game, then back to the lobby. The games list.
   ///
-  /// Everything between "Play" and "placing" happens here, with no screen in
-  /// between: the game already knows where the phones go.
+  /// Everything between the tap and the placement screen happens here, with no
+  /// screen in between: the game already knows where the phones go.
+  void startGame(MultiscreenGame game) {
+    if (!canStart) return;
+    if (!game.manifest.fits(_phones.length)) return;
+    final index = GameCatalog.playlist
+        .indexWhere((g) => g.manifest.id == game.manifest.id);
+    if (index < 0) return;
+    _mode = RoundMode.oneOff;
+    _startGame(index);
+  }
+
+  /// The never-ending playlist. The **Play** button.
   void startRound() {
     if (!canStart) return;
+    _mode = RoundMode.playlist;
     _startGame(GameCatalog.playableIndexFrom(_gameIndex, _phones.length)!);
   }
+
+  /// Every game, with whether this table can play it. The lobby's list.
+  List<GameOffer> get offers => [
+    for (final game in GameCatalog.playlist)
+      GameOffer(
+        game: game,
+        playable: canStart && game.manifest.fits(_phones.length),
+        reason: game.manifest.fits(_phones.length)
+            ? null
+            : game.manifest.requirement(),
+      ),
+  ];
 
   void _startGame(int index) {
     _gameIndex = index;
@@ -447,8 +560,10 @@ class HostSession extends ChangeNotifier {
     ]);
 
     final BoardLayout solved;
+    final BoardPlan plan;
     try {
-      solved = const BoardCompiler().compile(game.planBoard(lobby), lobby);
+      plan = game.planBoard(lobby);
+      solved = const BoardCompiler().compile(plan, lobby);
     } on BoardPlanError catch (e) {
       // The game's plan is unusable. Nobody is asked to rearrange a table for
       // a round that cannot run.
@@ -457,6 +572,19 @@ class HostSession extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    // Record what just happened, before anyone is told anything. Four phones on
+    // a table produce measurements no synthetic test will guess, and this is
+    // how those numbers get read rather than inferred from stripe colours.
+    final audit = BoardAudit.of(
+      gameId: game.manifest.id,
+      lobby: lobby,
+      plan: plan,
+      board: solved,
+    );
+    _lastAudit = BoardAudit.toPrettyJson(audit);
+    _lastAuditSummary = audit['summary'] as String?;
+    debugPrint('=== board audit ===\n$_lastAudit');
 
     _layout = solved;
     _phase = HostPhase.placing;
@@ -475,6 +603,9 @@ class HostSession extends ChangeNotifier {
         // the game actually chose rather than a guess reconstructed from the
         // lobby's join order.
         'slices': [for (final s in solved.slices) s.toJson()],
+        // Coloured stripes marking which edge meets which neighbour. Computed
+        // once by the compiler; every phone draws the same answer.
+        'links': [for (final l in solved.links) l.toJson()],
         'instruction': solved.instruction,
         ..._gameFields,
       });
@@ -490,7 +621,26 @@ class HostSession extends ChangeNotifier {
     if (solved == null || game == null) return;
 
     scores.beginRound();
-    final sim = game.createSim(solved.contextFor(scores));
+
+    // A game whose sim will not build is reported, not left hanging.
+    //
+    // `planBoard` is guarded where it runs, but a game can also refuse at
+    // `createSim` — it is the first place a game sees the *compiled* board,
+    // and the first place it can discover the table is not one it can play on.
+    // Without this the exception escapes mid-transition, the phase never
+    // advances, and every phone sits on the placement screen forever with
+    // nothing on any screen to say why.
+    final GameSim sim;
+    try {
+      sim = game.createSim(solved.contextFor(scores));
+    } catch (e) {
+      _planError = '${game.manifest.title}: $e';
+      _phase = HostPhase.lobby;
+      _game = null;
+      _layout = null;
+      notifyListeners();
+      return;
+    }
     _sim = sim;
     _phase = HostPhase.playing;
     _stepCount = 0;
@@ -608,6 +758,8 @@ class HostSession extends ChangeNotifier {
       'won': outcome.won,
       'summary': outcome.summary,
       ..._gameFields,
+      // Present only on a playlist round. Its absence is how every phone knows
+      // this one ends at the lobby.
       if (next != null) ...{
         'nextTitle': next.manifest.title,
         'nextTagline': next.manifest.tagline,
@@ -634,8 +786,8 @@ class HostSession extends ChangeNotifier {
     }
   }
 
-  /// On to the next game, which means a new board and so a fresh trip through
-  /// placement.
+  /// On to the next game in the playlist, which means a new board and so a
+  /// fresh trip through placement.
   void advanceToNextGame() {
     if (_phase != HostPhase.finished) return;
     _sim?.dispose();
@@ -683,6 +835,7 @@ class HostSession extends ChangeNotifier {
       p.confirmed = false;
     }
     _phase = HostPhase.lobby;
+    _mode = RoundMode.playlist;
     _broadcastLobby();
     _updateBeacon();
     notifyListeners();

@@ -1,21 +1,26 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
-import '../model/coverage_map.dart';
 import '../model/phone_layout.dart';
+import '../contract/sim.dart' show PhoneSlice;
+import '../layout/board_links.dart';
 import 'board_diagram.dart';
+import 'hold_to_confirm.dart';
+import 'link_palette.dart';
 
-/// "Place yourself here", then Confirm.
+/// "Place yourself here" — the picture, the colours, and a ring you hold.
 ///
-/// This screen also carries the game's identity — title, goal, and the one-line
-/// instruction its `planBoard` produced. There is no separate arrangement step
-/// any more, so this is the first and only time people are told what they are
-/// about to play and where to stand for it.
+/// Stripped to two pieces of information on purpose: the diagram of the board
+/// the game compiled, and the legend naming the colours on this phone's edges.
+/// Everything that used to be here — title, goal, "phone 2 of 4", a paragraph of
+/// instruction — was text people skip while holding a phone in each hand. The
+/// diagram says all of it.
 ///
 /// Nothing measures whether the phones are actually where the host thinks they
-/// are — Confirm is a human promise, not a sensor reading. What this screen can
-/// do is make a wrong promise *visible*: the guide lines are drawn in world
-/// coordinates, so on correctly placed phones they run unbroken across the gap.
+/// are: confirming is a human promise, not a sensor reading. What this screen can
+/// do is make a wrong promise *visible*, which is what the coloured stripes along
+/// the real screen edges are for — line yours up with your neighbour's and the
+/// board is right.
 class PlacementView extends StatelessWidget {
   const PlacementView({super.key, required this.controller});
 
@@ -25,254 +30,187 @@ class PlacementView extends StatelessWidget {
   Widget build(BuildContext context) {
     final client = controller.client!;
     final layout = client.layout;
-    final theme = Theme.of(context);
 
     if (layout == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // Confirmation state still comes from the lobby list, but *positions* come
-    // from the compiled board — join order says nothing about where a game
-    // decided to put anybody.
+    // Confirmation state comes from the lobby list, but *positions* come from
+    // the compiled board — join order says nothing about where a game decided to
+    // put anybody.
     final confirmedIds = <String>{
       for (final p in client.lobbyPhones)
         if ((p['confirmed'] as bool?) ?? false) p['phoneId'] as String,
     };
-    final confirmed = confirmedIds.contains(client.phoneId);
-    final manifest = client.manifest;
+
+    final diagram = BoardDiagram(
+      slices: client.slices,
+      board: layout.board,
+      links: client.allLinks,
+      meId: client.phoneId,
+      confirmed: confirmedIds,
+    );
+
+    final legend = client.myLinks.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _LinkLegend(links: client.myLinks, slices: client.slices),
+          );
 
     return Scaffold(
-      // Turned to match the board, like the gameplay surface. You read this
-      // card *after* putting the phone down, so on a sideways phone an upright
-      // card would be lying on its side under your thumb.
-      body: RotatedBox(
-        quarterTurns: layout.screenQuarterTurns,
-        child: Stack(
-          children: [
-            // The alignment guide fills the screen, edge to edge, because the
-            // millimetres at the edges are the ones that matter.
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _AlignmentGuidePainter(
-                  layout: layout,
-                  coverage: client.coverage,
-                ),
+      // Deliberately not turned: you read your own phone the way you hold it,
+      // whatever angle its slot in the board happens to be.
+      body: Stack(
+        children: [
+          // The stripes hug the real glass edges, so this fills the screen.
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _EdgeStripePainter(layout: layout, links: client.myLinks),
+            ),
+          ),
+
+          // The hold target is the whole screen — no button to find while your
+          // hands are busy.
+          HoldToConfirm(
+            confirmed: confirmedIds.contains(client.phoneId),
+            onConfirmed: client.confirmPlacement,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [diagram, legend],
+            ),
+          ),
+
+          // Outside the Listener above, so holding this cannot confirm a
+          // position on the way out.
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: SafeArea(
+              child: TextButton(
+                onPressed: controller.leave,
+                child: const Text('Leave'),
               ),
             ),
-            SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Card(
-                      color: theme.colorScheme.surface.withValues(alpha: 0.92),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (manifest != null) ...[
-                              Text(
-                                manifest.title,
-                                style: theme.textTheme.titleLarge,
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                manifest.goal,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            Text(
-                              'Phone ${layout.index + 1} of ${layout.total}',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: theme.colorScheme.primary,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              layout.placement,
-                              style: theme.textTheme.titleMedium,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 12),
-                            BoardDiagram(
-                              slices: client.slices,
-                              board: layout.board,
-                              meId: client.phoneId,
-                              confirmed: confirmedIds,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              client.instruction ??
-                                  'Push the phones together until the casings '
-                                      'touch. The guide lines should continue '
-                                      'straight across the gap.',
-                              style: theme.textTheme.bodySmall,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 14),
-                            if (confirmed)
-                              Column(
-                                children: [
-                                  const Icon(Icons.check_circle, size: 28),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Waiting for the others…',
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                                ],
-                              )
-                            else
-                              FilledButton.icon(
-                                onPressed: client.confirmPlacement,
-                                icon: const Icon(Icons.check),
-                                label: const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 12),
-                                  child: Text('In place — confirm'),
-                                ),
-                              ),
-                            const SizedBox(height: 4),
-                            TextButton(
-                              onPressed: controller.leave,
-                              child: const Text('Leave'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Guide lines drawn in *world* coordinates, so on correctly placed phones they
-/// run unbroken across the physical gap.
+/// This phone's edge stripes, hugging the real screen edge.
 ///
-/// The rules that expose a misalignment must run *across* the seams, and the
-/// seams can now run either way — a row has vertical ones, a column horizontal,
-/// a grid both. So the guide is derived from the seams themselves rather than
-/// from any declared axis: draw the wrong set and a badly placed board looks
-/// perfect.
-class _AlignmentGuidePainter extends CustomPainter {
-  _AlignmentGuidePainter({required this.layout, required this.coverage});
+/// Drawn thick and inset just enough to stay on the glass, because the point is
+/// to push two phones together and see one continuous band of colour.
+class _EdgeStripePainter extends CustomPainter {
+  _EdgeStripePainter({required this.layout, required this.links});
 
   final PhoneLayout layout;
-  final CoverageMap? coverage;
+
+  /// The most actionable thing on the screen: line the colours up with your
+  /// neighbours' and the board is right.
+  final List<EdgeMarker> links;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final board = layout.board;
-    final pxPerWorld = layout.logicalPxPerWorldUnit;
-
-    double toLocalX(double wx) => (wx - layout.worldOffsetX) * pxPerWorld;
-    double toLocalY(double wy) => (wy - layout.worldOffsetY) * pxPerWorld;
-
     canvas.drawRect(
       Offset.zero & size,
       Paint()..color = const Color(0xFF101733),
     );
 
-    final line = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = const Color(0x40FFFFFF);
-    final major = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = const Color(0x26FFFFFF);
-
-    final seams = coverage?.seamRects() ?? const [];
-
-    // A seam taller than it is wide runs vertically, so horizontal rules cross
-    // it. With no seams at all (one phone), draw both sets.
-    final hasVertical = seams.isEmpty || seams.any((s) => s.height > s.width);
-    final hasHorizontal = seams.isEmpty || seams.any((s) => s.width > s.height);
-
-    if (hasVertical) {
-      for (final f in const [0.2, 0.5, 0.8]) {
-        final y = toLocalY(board.top + board.height * f);
-        canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
-      }
-      for (var wx = 0.0; wx <= board.right; wx += 5) {
-        final x = toLocalX(wx);
-        if (x < -20 || x > size.width + 20) continue;
-        canvas.drawLine(Offset(x, 0), Offset(x, size.height), major);
-        _label(canvas, '${wx.toInt()}cm', Offset(x + 4, 4));
-      }
-    }
-    if (hasHorizontal) {
-      for (final f in const [0.2, 0.5, 0.8]) {
-        final x = toLocalX(board.left + board.width * f);
-        canvas.drawLine(Offset(x, 0), Offset(x, size.height), line);
-      }
-      for (var wy = 0.0; wy <= board.bottom; wy += 5) {
-        final y = toLocalY(wy);
-        if (y < -20 || y > size.height + 20) continue;
-        canvas.drawLine(Offset(0, y), Offset(size.width, y), major);
-        _label(canvas, '${wy.toInt()}cm', Offset(4, y + 4));
-      }
+    /// Where a world point lands on this screen, turn included.
+    Offset toScreen(double wx, double wy) {
+      final px = layout.worldToPhysicalPx(wx, wy);
+      final dpr = layout.devicePixelRatio;
+      return Offset(px.x / dpr, px.y / dpr);
     }
 
-    // A circle straddling each seam. Correctly placed, the two halves read as
-    // one circle with the gap cut out of its middle.
-    final ring = Paint()
+    final stripe = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..color = const Color(0x99FF6B4A);
-    for (final seam in seams) {
-      final vertical = seam.height > seam.width;
-      final center = Offset(toLocalX(seam.centerX), toLocalY(seam.centerY));
-      final radius = (vertical ? seam.height : seam.width) * 0.32 * pxPerWorld;
-      if (radius <= 0) continue;
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
 
-      // Skip seams nowhere near this screen.
-      if (center.dx < -radius * 2 ||
-          center.dx > size.width + radius * 2 ||
-          center.dy < -radius * 2 ||
-          center.dy > size.height + radius * 2) {
-        continue;
-      }
-
-      canvas.drawCircle(center, radius, ring);
-      // A bar through the middle, perpendicular to the seam, so the two halves
-      // have something to line up against.
-      canvas.drawLine(
-        vertical
-            ? Offset(center.dx - radius * 1.4, center.dy)
-            : Offset(center.dx, center.dy - radius * 1.4),
-        vertical
-            ? Offset(center.dx + radius * 1.4, center.dy)
-            : Offset(center.dx, center.dy + radius * 1.4),
-        ring,
-      );
+    for (final link in links) {
+      final a = toScreen(link.x1, link.y1);
+      final b = toScreen(link.x2, link.y2);
+      // Pull the line a few pixels inside the panel, or half its width falls
+      // off the glass.
+      final inset = _towardCentre(a, b, size, 5);
+      stripe.color = LinkPalette.of(link.colorIndex);
+      canvas.drawLine(a + inset, b + inset, stripe);
     }
   }
 
-  void _label(Canvas canvas, String text, Offset at) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: const TextStyle(color: Color(0x66FFFFFF), fontSize: 10),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(canvas, at);
+  /// A small nudge from a screen-edge segment toward the middle of the screen,
+  /// so a stroke centred on the very edge is not half invisible.
+  Offset _towardCentre(Offset a, Offset b, Size size, double by) {
+    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    final to = Offset(size.width / 2 - mid.dx, size.height / 2 - mid.dy);
+    final len = to.distance;
+    return len < 1e-6 ? Offset.zero : to / len * by;
   }
 
   @override
-  bool shouldRepaint(_AlignmentGuidePainter old) =>
-      old.layout != layout || old.coverage != coverage;
+  bool shouldRepaint(_EdgeStripePainter old) =>
+      old.layout != layout || old.links != links;
+}
+
+/// Names every stripe on this phone's edges: which colour joins which
+/// neighbour.
+///
+/// The stripes alone tell you to line colours up; this tells you *who* with,
+/// which is the difference between "match the red" and "match the red with
+/// phone 2". It also happens to make a wrong board diagnosable at a glance —
+/// if a colour is listed but no stripe is visible, the two halves of that join
+/// disagree.
+class _LinkLegend extends StatelessWidget {
+  const _LinkLegend({required this.links, required this.slices});
+
+  final List<EdgeMarker> links;
+  final List<PhoneSlice> slices;
+
+  /// Where a phone sits in the board's reading order, 1-based.
+  int? _positionOf(String phoneId) {
+    for (final (i, s) in slices.indexed) {
+      if (s.phoneId == phoneId) return i + 1;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 12,
+      runSpacing: 4,
+      children: [
+        for (final link in links)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: LinkPalette.of(link.colorIndex),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                link.partnerId == null
+                    ? 'the middle'
+                    : 'phone ${_positionOf(link.partnerId!) ?? "?"}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
 }

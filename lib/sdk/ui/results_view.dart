@@ -20,6 +20,11 @@ class ResultsView extends StatelessWidget {
 
     final won = host?.outcome?.won ?? result?.won ?? true;
     final summary = host?.outcome?.summary ?? result?.summary;
+    final title = host?.game?.manifest.title ?? result?.title;
+
+    // A playlist round chains into the next game; one started from the games
+    // list ends here. The host knows directly; a joiner reads it from whether
+    // the outcome carried a next game at all.
     final next = host?.nextGame?.manifest;
     final nextTitle = next?.title ?? result?.nextTitle;
     final nextTagline = next?.tagline ?? result?.nextTagline ?? '';
@@ -49,6 +54,16 @@ class ResultsView extends StatelessWidget {
                     style: theme.textTheme.headlineMedium,
                     textAlign: TextAlign.center,
                   ),
+                  if (title != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                   if (summary != null) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -67,60 +82,35 @@ class ResultsView extends StatelessWidget {
                   ),
                   if (nextTitle != null) ...[
                     const SizedBox(height: 18),
-                    Card(
-                      margin: EdgeInsets.zero,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            Text(
-                              'Up next',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(nextTitle, style: theme.textTheme.titleLarge),
-                            if (nextTagline.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                nextTagline,
-                                style: theme.textTheme.bodySmall,
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                            if (nextInstruction.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                nextInstruction,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                    _UpNext(
+                      title: nextTitle,
+                      tagline: nextTagline,
+                      instruction: nextInstruction,
                     ),
                   ],
                   const SizedBox(height: 20),
                   if (host != null)
                     FilledButton.icon(
-                      onPressed: host.advanceToNextGame,
-                      icon: const Icon(Icons.arrow_forward),
+                      onPressed: nextTitle == null
+                          ? host.returnToLobby
+                          : host.advanceToNextGame,
+                      icon: Icon(
+                        nextTitle == null ? Icons.list : Icons.arrow_forward,
+                      ),
                       label: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
                           nextTitle == null
-                              ? 'Back to the lobby'
+                              ? 'Back to the games'
                               : 'Set up $nextTitle',
                         ),
                       ),
                     )
                   else
                     Text(
-                      'Waiting for the host to start the next one…',
+                      nextTitle == null
+                          ? 'Waiting for the host to pick the next game…'
+                          : 'Waiting for the host to start the next one…',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -135,6 +125,64 @@ class ResultsView extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// What the playlist serves up next, and how to rearrange for it.
+///
+/// Absent entirely on a one-off round, which is what makes the two ways of
+/// playing feel different: the playlist tells you to pick your phone up again,
+/// the games list hands you back the menu.
+class _UpNext extends StatelessWidget {
+  const _UpNext({
+    required this.title,
+    required this.tagline,
+    required this.instruction,
+  });
+
+  final String title;
+  final String tagline;
+  final String instruction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              'Up next',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(title, style: theme.textTheme.titleLarge),
+            if (tagline.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                tagline,
+                style: theme.textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (instruction.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                instruction,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
         ),
       ),
     );

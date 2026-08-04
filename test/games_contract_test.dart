@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_sim.dart';
@@ -55,10 +56,21 @@ Entity entityOf(GameSim sim, String id) =>
 
 void main() {
   group('the catalog', () {
-    test('offers every game and wraps', () {
-      expect(GameCatalog.playlist, hasLength(3));
+    test('offers every registered game and wraps', () {
+      // Counted from the playlist rather than written down: registering a game
+      // is meant to be one import and one list entry, and a hardcoded length
+      // here made it one import, one list entry and a test to go and fix.
+      expect(GameCatalog.playlist, isNotEmpty);
+      for (final game in GameCatalog.playlist) {
+        expect(GameCatalog.byId(game.manifest.id), same(game),
+            reason: 'every registered game must be reachable by its own id');
+      }
+
       expect(GameCatalog.byId('slingshot'), isNotNull);
       expect(GameCatalog.byId('ballbin'), isNotNull);
+      expect(GameCatalog.byId('hotpotato'), isNotNull);
+      expect(GameCatalog.byId('flood'), isNotNull);
+      expect(GameCatalog.byId('floodclosing'), isNotNull);
       expect(GameCatalog.byId('guacamole'), isNotNull);
       expect(GameCatalog.byId('nope'), isNull);
     });
@@ -167,8 +179,8 @@ void main() {
           .compile(const BallBinGame().planBoard(lobby), lobby);
 
       expect(board.phones.last.phoneId, 'big');
-      expect(board.phones.last.worldOffsetY,
-          greaterThan(board.phones.first.worldOffsetY));
+      expect(board.phones.last.topEdge,
+          greaterThan(board.phones.first.topEdge));
     });
 
     test('a player who tracks the balls wins, and gets the points', () {
@@ -313,4 +325,12 @@ void _chaseLowestBall(GameSim sim) {
     worldY: bin.y,
     phase: TouchPhase.move,
   ));
+}
+
+/// Left/top edge of a compiled screen, which is what these expectations were
+/// originally written against. The layout itself is centre-based now, because a
+/// screen that can be turned has no meaningful axis-aligned corner.
+extension EdgeReadout on PhoneLayout {
+  double get leftEdge => viewport.left;
+  double get topEdge => viewport.top;
 }

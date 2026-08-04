@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../layout/board_links.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
 import '../model/phone_layout.dart';
@@ -27,33 +28,40 @@ enum ClientPhase {
   disconnected,
 }
 
-/// A round that ended, and what the playlist serves up next.
+/// A round that ended, and what follows it.
+///
+/// [nextTitle] is null when the round was a one-off started from the games
+/// list. Its absence is how every phone knows this ends at the lobby rather
+/// than chaining into another game.
 class RoundResult {
   const RoundResult({
     required this.won,
     required this.title,
     required this.summary,
-    required this.nextTitle,
-    required this.nextTagline,
-    required this.nextInstruction,
+    this.nextTitle,
+    this.nextTagline,
+    this.nextInstruction,
   });
 
   final bool won;
   final String title;
   final String? summary;
-  final String nextTitle;
-  final String nextTagline;
+
+  final String? nextTitle;
+  final String? nextTagline;
 
   /// How to rearrange the phones for what is coming.
-  final String nextInstruction;
+  final String? nextInstruction;
+
+  bool get hasNext => nextTitle != null;
 
   static RoundResult fromJson(Map<String, dynamic> j) => RoundResult(
     won: j['won'] as bool? ?? true,
     title: (j['gameTitle'] as String?) ?? 'That round',
     summary: j['summary'] as String?,
-    nextTitle: (j['nextTitle'] as String?) ?? 'Next game',
-    nextTagline: (j['nextTagline'] as String?) ?? '',
-    nextInstruction: (j['nextInstruction'] as String?) ?? '',
+    nextTitle: j['nextTitle'] as String?,
+    nextTagline: j['nextTagline'] as String?,
+    nextInstruction: j['nextInstruction'] as String?,
   );
 }
 
@@ -137,6 +145,15 @@ class ClientSession extends ChangeNotifier {
   /// `planBoard` decided it. What the placement diagram draws.
   List<PhoneSlice> get slices => _slices;
   List<PhoneSlice> _slices = const [];
+
+  /// The edge stripes for *this* phone — where its screen meets its neighbours.
+  /// Match the colours up and the board is right.
+  List<EdgeMarker> get myLinks => _myLinks;
+  List<EdgeMarker> _myLinks = const [];
+
+  /// Every screen's stripes, for the schema.
+  List<EdgeMarker> get allLinks => _allLinks;
+  List<EdgeMarker> _allLinks = const [];
 
   Future<void> connect() async {
     try {
@@ -291,7 +308,18 @@ class ClientSession extends ChangeNotifier {
       me: layout,
       board: _board ?? layout.board,
       coverage: _coverage ??
-          CoverageMap(liveRects: [layout.viewport], board: layout.board),
+          CoverageMap(
+            screens: [
+              ScreenRect(
+                centerX: layout.worldCenterX,
+                centerY: layout.worldCenterY,
+                width: layout.halfWidth * 2,
+                height: layout.halfHeight * 2,
+                turnRadians: layout.turnRadians,
+              ),
+            ],
+            board: layout.board,
+          ),
     );
   }
 
@@ -333,6 +361,13 @@ class ClientSession extends ChangeNotifier {
           for (final s in (msg['slices'] as List?) ?? const [])
             PhoneSlice.fromJson(s as Map<String, dynamic>),
         ];
+        final everyLink = [
+          for (final l in (msg['links'] as List?) ?? const [])
+            EdgeMarker.fromJson(l as Map<String, dynamic>),
+        ];
+        _allLinks = everyLink;
+        _myLinks =
+            everyLink.where((l) => l.phoneId == _layout!.phoneId).toList();
         _adoptGame(msg['game'] as String?);
         _phase = ClientPhase.placing;
         _result = null;

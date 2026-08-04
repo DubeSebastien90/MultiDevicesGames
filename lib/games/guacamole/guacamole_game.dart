@@ -1,4 +1,5 @@
 import '../../sdk/contract/game.dart';
+import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
@@ -29,8 +30,16 @@ class GuacamoleGame implements MultiscreenGame {
     goal: 'Most points when the minute is up.',
     // Below four the reaching-across-the-table game does not happen, and the
     // colours stop being the point. The ceiling is the palette.
-    minPhones: 4,
-    maxPhones: PlayerPalette.size,
+    //
+    // Even, because the board is two rows and [Layouts.grid] will not split an
+    // odd table between them. Five people wanting to play is a real situation,
+    // but a 3-and-2 block puts somebody at a corner nobody else can reach, and
+    // refusing is more honest than pretending that is the same game.
+    players: PlayerCount.range(
+      min: 4,
+      max: PlayerPalette.size,
+      parity: CountParity.even,
+    ),
   );
 
   /// A block, not a strip.
@@ -45,6 +54,10 @@ class GuacamoleGame implements MultiscreenGame {
   @override
   BoardPlan planBoard(LobbyInfo lobby) => Layouts.grid(
     lobby.phones,
+    // Two rows facing each other across the table, however many are playing.
+    // Four phones make a 2x2; eight make a 4x2 that is still one lunge deep.
+    // A third row would put the middle of the board out of everyone's reach.
+    rows: 2,
     sort: PhoneSort.joinOrder,
     orientation: PhoneOrientation.upright,
     gap: Gaps.casingsTouching,

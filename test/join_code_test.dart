@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
+import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
@@ -9,8 +12,9 @@ import 'package:multiscreen_slingshot/sdk/net/host_address.dart';
 import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
 import 'package:multiscreen_slingshot/sdk/net/websocket_transport.dart';
 
-/// The door policy: the name is public, the code is not, and only the code
-/// gets you in.
+/// The door policy — currently: there isn't one. The code is still generated
+/// and still travels, but the host does not check it, so anyone who can reach
+/// the socket becomes a phone. See `JOIN CODE DISABLED` in `host_session.dart`.
 DeviceMetrics phone(String label) => DeviceMetrics(
   activePxWidth: 2400,
   activePxHeight: 1080,
@@ -54,6 +58,111 @@ void main() {
     joinCode: code,
   );
 
+  group('the lobby offers games the table can actually play', () {
+    test('nothing is offered before a phone has reported its size', () async {
+      // Fresh host, nobody in: every entry is unplayable and the lobby says
+      // why once rather than on each row.
+      //
+      // Counted from the playlist, not written out, so registering a game is
+      // still one import and one list entry.
+      expect(host.offers, hasLength(GameCatalog.playlist.length));
+      expect(host.offers.every((o) => !o.playable), isTrue);
+      expect(host.blockedReason, isNotNull);
+      expect(host.canStart, isFalse);
+    });
+
+    test('one phone unlocks the one-phone game and no other', () async {
+      final client = joiner(code: host.joinCode);
+      await client.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      final byId = {for (final o in host.offers) o.manifest.id: o};
+      expect(byId['slingshot']!.playable, isTrue);
+      expect(byId['slingshot']!.reason, isNull);
+
+      // The others stay in the list, greyed, saying what they need — a game
+      // silently missing tells you nothing.
+      expect(byId['ballbin']!.playable, isFalse);
+      expect(byId['ballbin']!.reason, contains('2'));
+      expect(byId['hotpotato']!.playable, isFalse);
+      expect(byId['hotpotato']!.reason, contains('3'));
+
+      client.dispose();
+    });
+
+    test('picking an ineligible game does nothing', () async {
+      final client = joiner(code: host.joinCode);
+      await client.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      // Hot Potato needs three. The tap is refused rather than starting a
+      // round the board could not be laid out for.
+      host.startGame(const HotPotatoGame());
+      expect(host.phase, HostPhase.lobby);
+
+      host.startGame(const SlingshotGame());
+      expect(host.phase, HostPhase.placing);
+      expect(host.game!.manifest.id, 'slingshot');
+
+      client.dispose();
+    });
+
+    test('the two ways to play end in different places', () async {
+      final client = joiner(code: host.joinCode);
+      await client.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      // Play: the never-ending playlist, so a round knows what follows it.
+      host.startRound();
+      expect(host.mode, RoundMode.playlist);
+      expect(host.game!.manifest.id, 'slingshot');
+
+      host.returnToLobby();
+      await waitFor('back', () => client.phase == ClientPhase.lobby);
+
+      // The games list: one round, and nothing queued behind it.
+      host.startGame(const SlingshotGame());
+      expect(host.mode, RoundMode.oneOff);
+      expect(host.nextGame, isNull,
+          reason: 'a one-off has nothing after it, by construction');
+
+      client.dispose();
+    });
+
+    test('returning to the lobby forgets the one-off mode', () async {
+      final client = joiner(code: host.joinCode);
+      await client.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      host.startGame(const SlingshotGame());
+      expect(host.mode, RoundMode.oneOff);
+
+      // Otherwise a later Play would inherit the one-off ending and stop after
+      // a single game.
+      host.returnToLobby();
+      expect(host.mode, RoundMode.playlist);
+
+      client.dispose();
+    });
+
+    test('a reason is only given when the game itself does not fit', () async {
+      final client = joiner(code: host.joinCode);
+      await client.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      for (final offer in host.offers) {
+        // Either it fits and has no complaint, or it does not and says so.
+        expect(offer.reason == null, offer.manifest.fits(1));
+      }
+      client.dispose();
+    });
+  });
+
   test('a host has a 5-digit code and a name', () {
     expect(host.joinCode, matches(RegExp(r'^\d{5}$')));
     expect(host.name, 'kitchen table');
@@ -72,6 +181,32 @@ void main() {
     client.dispose();
   });
 
+  // JOIN CODE DISABLED — the door is open, so what used to be turned away is
+  // now let in. These three assert the *current* behaviour; the originals are
+  // kept below them, ready to come back with the gate.
+  test('with the gate open, the wrong code still gets you in', () async {
+    final wrong = host.joinCode == '00000' ? '11111' : '00000';
+    final client = joiner(code: wrong);
+    await client.connect();
+
+    await waitFor('welcomed', () => client.phase == ClientPhase.lobby);
+    expect(client.phoneId, 'p1');
+    expect(host.phones.length, 1);
+
+    client.dispose();
+  });
+
+  test('with the gate open, no code at all gets you in', () async {
+    final client = joiner();
+    await client.connect();
+
+    await waitFor('welcomed', () => client.phase == ClientPhase.lobby);
+    expect(host.phones.length, 1);
+
+    client.dispose();
+  });
+
+  /* JOIN CODE DISABLED — restore these when the gate closes again.
   test('a wrong code is turned away and never becomes a phone', () async {
     final wrong = host.joinCode == '00000' ? '11111' : '00000';
     final client = joiner(code: wrong);
@@ -110,6 +245,7 @@ void main() {
     expect(accepted.phoneId, 'p1');
     accepted.dispose();
   });
+  */
 
   test('the host own screen skips the gate', () async {
     final loopback = LoopbackPair();
