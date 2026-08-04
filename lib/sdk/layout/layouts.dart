@@ -230,6 +230,199 @@ class Layouts {
     return '${oClock == 0 ? 12 : oClock} o\'clock in the circle';
   }
 
+  /// A block of phones, [rows] deep and as many columns as it takes.
+  ///
+  /// The two-axis helper. `row` and `column` pack along one axis and stop; this
+  /// fills a rectangle, which is what a game wants when players face each other
+  /// across a table rather than sitting in a line or a ring:
+  ///
+  /// ```
+  ///   rows: 2, four phones      rows: 2, six phones
+  ///  ┌────┬────┐               ┌────┬────┬────┐
+  ///  │ 1  │ 2  │               │ 1  │ 2  │ 3  │
+  ///  ├────┼────┤               ├────┼────┼────┤
+  ///  │ 3  │ 4  │               │ 4  │ 5  │ 6  │
+  ///  └────┴────┘               └────┴────┴────┘
+  /// ```
+  ///
+  /// Filled row by row, so the first `columns` phones are the top row. A game
+  /// wanting two teams asks for `rows: 2` and reads the rows off the compiled
+  /// board — the top half is one side, the bottom half the other.
+  ///
+  /// Mismatched phones are handled the way a table handles them: a column is as
+  /// wide as its widest phone and every screen in it is centred, a row is as
+  /// deep as its deepest. With [seamAlign] on, each row is then pushed *toward*
+  /// the seam it shares with its neighbour, so a shallower phone gives up its
+  /// far edge rather than its front line — which matters when the game happens
+  /// at the seam, and is why this is not simply nested `row` calls.
+  ///
+  /// The playfield hugs what every facing pair can actually see: within a
+  /// column it is the narrower phone's width, and across columns those bands
+  /// join up. Treating a wider phone's overhang as playfield would invent a
+  /// dead zone that is not a real gap between screens.
+  static BoardPlan grid(
+    List<PhoneSpec> phones, {
+    required int rows,
+    PhoneSort sort = PhoneSort.joinOrder,
+    Gaps gap = Gaps.casingsTouching,
+    PhoneOrientation orientation = PhoneOrientation.upright,
+
+    /// Pull each row toward the seam it shares with the next, so screens meet
+    /// edge to edge there whatever their depth. Off, rows are top-aligned.
+    bool seamAlign = true,
+    String? instruction,
+  }) {
+    if (phones.isEmpty) {
+      throw const BoardPlanError('no phones to place');
+    }
+    if (rows < 1) {
+      throw BoardPlanError('a grid needs at least one row, not $rows');
+    }
+    if (phones.length % rows != 0) {
+      throw BoardPlanError(
+        'a grid of $rows rows needs a multiple of $rows phones, '
+        'not ${phones.length}',
+      );
+    }
+
+    final ordered = List.of(phones)..sort(sort.compare);
+    final columns = ordered.length ~/ rows;
+    final turn = orientation.turnDeg;
+    final sideways = orientation == PhoneOrientation.sideways;
+
+    // Footprints, not panels: a phone put on its side covers the board the
+    // other way round, and every measurement below is about the board.
+    double widthOf(PhoneSpec p) => sideways ? p.heightMm : p.widthMm;
+    double heightOf(PhoneSpec p) => sideways ? p.widthMm : p.heightMm;
+
+    /// The phone at (row, column), reading row by row.
+    PhoneSpec at(int row, int column) => ordered[row * columns + column];
+
+    // A column is as wide as its widest phone; a row as deep as its deepest.
+    final columnWidths = [
+      for (var c = 0; c < columns; c++)
+        [for (var r = 0; r < rows; r++) widthOf(at(r, c))].reduce(math.max),
+    ];
+    final rowDepths = [
+      for (var r = 0; r < rows; r++)
+        [for (var c = 0; c < columns; c++) heightOf(at(r, c))].reduce(math.max),
+    ];
+
+    // Every column shares one seam line between two rows, so the widest bezel
+    // pair across that seam sets it — that is the phones physically touching.
+    final rowGaps = [
+      for (var r = 0; r < rows - 1; r++)
+        [
+          for (var c = 0; c < columns; c++)
+            gap.between(at(r, c), at(r + 1, c)),
+        ].reduce(math.max),
+    ];
+
+    // Where each row's band starts, walking down through depths and seams.
+    final rowTops = <double>[];
+    var y = 0.0;
+    for (var r = 0; r < rows; r++) {
+      rowTops.add(y);
+      y += rowDepths[r];
+      if (r < rows - 1) y += rowGaps[r];
+    }
+    final totalDepth = y;
+
+    // Column x positions, and the same for the horizontal gaps.
+    final columnLefts = <double>[];
+    var x = 0.0;
+    for (var c = 0; c < columns; c++) {
+      columnLefts.add(x);
+      x += columnWidths[c];
+      if (c < columns - 1) {
+        x += [
+          for (var r = 0; r < rows; r++) gap.between(at(r, c), at(r, c + 1)),
+        ].reduce(math.max);
+      }
+    }
+
+    final placements = <PhonePlacement>[];
+    var playLeft = double.infinity;
+    var playRight = double.negativeInfinity;
+
+    for (var c = 0; c < columns; c++) {
+      // Within a column, the playfield is the narrowest phone's band: the strip
+      // every row can see.
+      var columnLeft = double.negativeInfinity;
+      var columnRight = double.infinity;
+
+      for (var r = 0; r < rows; r++) {
+        final spec = at(r, c);
+        final w = widthOf(spec);
+        final h = heightOf(spec);
+        final left = columnLefts[c] + (columnWidths[c] - w) / 2;
+
+        // Toward the seam: the top row sits on its bottom edge, the bottom row
+        // on its top, and a middle row cannot favour both so it centres.
+        final double top;
+        if (!seamAlign || rows == 1) {
+          top = rowTops[r];
+        } else if (r == 0) {
+          top = rowTops[r] + (rowDepths[r] - h);
+        } else if (r == rows - 1) {
+          top = rowTops[r];
+        } else {
+          top = rowTops[r] + (rowDepths[r] - h) / 2;
+        }
+
+        placements.add(PhonePlacement(
+          spec.phoneId,
+          // Placements are the centre of the lit area, not a corner.
+          xMm: left + w / 2,
+          yMm: top + h / 2,
+          turnDeg: turn,
+          hint: _gridHint(r, c, rows, columns),
+        ));
+
+        if (left > columnLeft) columnLeft = left;
+        if (left + w < columnRight) columnRight = left + w;
+      }
+
+      // Columns sit side by side, so each one adds ground.
+      if (columnLeft < playLeft) playLeft = columnLeft;
+      if (columnRight > playRight) playRight = columnRight;
+    }
+
+    return BoardPlan(
+      placements,
+      instruction: instruction ?? _gridInstruction(rows, columns, orientation),
+      bounds: BoardBoundsMm(
+        leftMm: playLeft,
+        topMm: 0,
+        widthMm: playRight - playLeft,
+        heightMm: totalDepth,
+      ),
+    );
+  }
+
+  static String _gridHint(int row, int column, int rows, int columns) {
+    final rowWord = rows == 2
+        ? (row == 0 ? 'top row' : 'bottom row')
+        : 'row ${row + 1} of $rows';
+    if (columns == 1) return rowWord;
+    return '$rowWord, ${column + 1} of $columns from the left';
+  }
+
+  static String _gridInstruction(
+    int rows,
+    int columns,
+    PhoneOrientation orientation,
+  ) {
+    final pose = orientation == PhoneOrientation.sideways
+        ? 'on their sides'
+        : 'upright';
+    if (rows == 2) {
+      return 'Two rows facing each other, $pose, long edges touching — '
+          '$columns phone(s) per row.';
+    }
+    return 'A block $columns wide and $rows deep, $pose, edges touching.';
+  }
+
   static BoardPlan _pack(
     List<PhoneSpec> phones, {
     required bool horizontal,

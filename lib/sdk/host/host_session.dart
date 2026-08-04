@@ -558,7 +558,26 @@ class HostSession extends ChangeNotifier {
     if (solved == null || game == null) return;
 
     scores.beginRound();
-    final sim = game.createSim(solved.contextFor(scores));
+
+    // A game whose sim will not build is reported, not left hanging.
+    //
+    // `planBoard` is guarded where it runs, but a game can also refuse at
+    // `createSim` — it is the first place a game sees the *compiled* board,
+    // and the first place it can discover the table is not one it can play on.
+    // Without this the exception escapes mid-transition, the phase never
+    // advances, and every phone sits on the placement screen forever with
+    // nothing on any screen to say why.
+    final GameSim sim;
+    try {
+      sim = game.createSim(solved.contextFor(scores));
+    } catch (e) {
+      _planError = '${game.manifest.title}: $e';
+      _phase = HostPhase.lobby;
+      _game = null;
+      _layout = null;
+      notifyListeners();
+      return;
+    }
     _sim = sim;
     _phase = HostPhase.playing;
     _stepCount = 0;
