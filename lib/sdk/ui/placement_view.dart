@@ -73,27 +73,15 @@ class PlacementView extends StatelessWidget {
             ),
           ),
 
-          // The hold target is the whole screen — no button to find while your
-          // hands are busy.
+          // The hold target is the whole screen, and now the only thing on it:
+          // no button to find, and nothing to hit by accident while your hands
+          // are busy holding phones against each other.
           HoldToConfirm(
             confirmed: confirmedIds.contains(client.phoneId),
             onConfirmed: client.confirmPlacement,
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [diagram, legend],
-            ),
-          ),
-
-          // Outside the Listener above, so holding this cannot confirm a
-          // position on the way out.
-          Positioned(
-            right: 4,
-            bottom: 4,
-            child: SafeArea(
-              child: TextButton(
-                onPressed: controller.leave,
-                child: const Text('Leave'),
-              ),
             ),
           ),
         ],
