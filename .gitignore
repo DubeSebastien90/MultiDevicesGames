@@ -47,3 +47,5 @@ app.*.map.json
 .claude/
 superpowers/
 .superpowers/
+
+.vscode/
