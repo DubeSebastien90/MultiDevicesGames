@@ -12,7 +12,9 @@
       "Bash(cd:*)",
       "Bash(flutter pub:*)",
       "Bash(flutter analyze:*)",
-      "Bash(flutter test *)"
+      "Bash(flutter test *)",
+      "Bash(python -c ' *)",
+      "Bash(python -)"
     ]
   }
 }
