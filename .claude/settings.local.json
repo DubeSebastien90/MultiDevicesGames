@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/charl/Documents/Hackathons/MultiDevicesGames/$LOCALAPPDATA/Android/Sdk/**)",
+      "Read(//c/Users/charl/Documents/Hackathons/MultiDevicesGames/$HOME/AppData/Local/Android/Sdk/**)",
+      "Read(//c/Users/charl/Documents/Hackathons/MultiDevicesGames/$LOCALAPPDATA/Android/Sdk/build-tools/*/**)",
+      "Bash(C:/Users/charl/develop/flutter/bin/flutter.bat doctor:*)",
+      "Bash(C:/Users/charl/develop/flutter/bin/flutter.bat build:*)",
+      "Bash(./gradlew assembleDebug --stacktrace)",
+      "Bash(./gradlew assembleDebug --info)",
+      "Bash(C:/Users/charl/develop/flutter/bin/flutter.bat config:*)",
+      "Bash(cd:*)",
+      "Bash(flutter pub:*)",
+      "Bash(flutter analyze:*)"
+    ]
+  }
+}
