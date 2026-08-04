@@ -261,8 +261,9 @@ class _NameDialogState extends State<_NameDialog> {
           ),
           const SizedBox(height: 8),
           Text(
-            'This is how your friends will spot your game in their list. '
-            'You will get a 5-digit code to let them in.',
+            // JOIN CODE DISABLED — second sentence was: 'You will get a
+            // 5-digit code to let them in.'
+            'This is how your friends will spot your game in their list.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

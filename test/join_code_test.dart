@@ -12,8 +12,9 @@ import 'package:multiscreen_slingshot/sdk/net/host_address.dart';
 import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
 import 'package:multiscreen_slingshot/sdk/net/websocket_transport.dart';
 
-/// The door policy: the name is public, the code is not, and only the code
-/// gets you in.
+/// The door policy — currently: there isn't one. The code is still generated
+/// and still travels, but the host does not check it, so anyone who can reach
+/// the socket becomes a phone. See `JOIN CODE DISABLED` in `host_session.dart`.
 DeviceMetrics phone(String label) => DeviceMetrics(
   activePxWidth: 2400,
   activePxHeight: 1080,
@@ -180,6 +181,32 @@ void main() {
     client.dispose();
   });
 
+  // JOIN CODE DISABLED — the door is open, so what used to be turned away is
+  // now let in. These three assert the *current* behaviour; the originals are
+  // kept below them, ready to come back with the gate.
+  test('with the gate open, the wrong code still gets you in', () async {
+    final wrong = host.joinCode == '00000' ? '11111' : '00000';
+    final client = joiner(code: wrong);
+    await client.connect();
+
+    await waitFor('welcomed', () => client.phase == ClientPhase.lobby);
+    expect(client.phoneId, 'p1');
+    expect(host.phones.length, 1);
+
+    client.dispose();
+  });
+
+  test('with the gate open, no code at all gets you in', () async {
+    final client = joiner();
+    await client.connect();
+
+    await waitFor('welcomed', () => client.phase == ClientPhase.lobby);
+    expect(host.phones.length, 1);
+
+    client.dispose();
+  });
+
+  /* JOIN CODE DISABLED — restore these when the gate closes again.
   test('a wrong code is turned away and never becomes a phone', () async {
     final wrong = host.joinCode == '00000' ? '11111' : '00000';
     final client = joiner(code: wrong);
@@ -218,6 +245,7 @@ void main() {
     expect(accepted.phoneId, 'p1');
     accepted.dispose();
   });
+  */
 
   test('the host own screen skips the gate', () async {
     final loopback = LoopbackPair();

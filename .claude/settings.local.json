@@ -11,7 +11,8 @@
       "Bash(C:/Users/charl/develop/flutter/bin/flutter.bat config:*)",
       "Bash(cd:*)",
       "Bash(flutter pub:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(flutter test *)"
     ]
   }
 }

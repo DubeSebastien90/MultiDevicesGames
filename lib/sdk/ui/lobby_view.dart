@@ -388,23 +388,26 @@ class _HostPanel extends StatelessWidget {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Give them this code',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      SelectableText(
-                        host.joinCode,
-                        style: theme.textTheme.displaySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          letterSpacing: 8,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
+                      // JOIN CODE DISABLED — showing a code nobody is asked for
+                      // would just be a puzzle. The QR beside this still works;
+                      // it carries the address, which is the part that matters.
+                      // const SizedBox(height: 12),
+                      // Text(
+                      //   'Give them this code',
+                      //   style: theme.textTheme.labelMedium?.copyWith(
+                      //     color: theme.colorScheme.onSurfaceVariant,
+                      //   ),
+                      // ),
+                      // const SizedBox(height: 2),
+                      // SelectableText(
+                      //   host.joinCode,
+                      //   style: theme.textTheme.displaySmall?.copyWith(
+                      //     fontFamily: 'monospace',
+                      //     letterSpacing: 8,
+                      //     fontWeight: FontWeight.w600,
+                      //     color: theme.colorScheme.primary,
+                      //   ),
+                      // ),
                     ],
                   ),
                 ),
