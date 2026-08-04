@@ -39,6 +39,43 @@ PhoneSpec phone(String id) => PhoneSpec(
   return (sim: sim, board: board, scores: scores);
 }
 
+/// Aims the current turn's car toward the forward tangent of its own
+/// position on the track and releases a full pull, then runs the sim until
+/// the turn advances (or the step budget runs out).
+void _flickForward(PitchCarsSim sim) {
+  final phoneId = sim.currentTurn;
+  final car = sim.entities.firstWhere((e) => e.id == phoneId);
+  final s = sim.track.progressAt(car.x, car.y);
+  final tangent = sim.track.tangentAt(s);
+
+  sim.onTouch(TouchEvent(
+    phoneId: phoneId,
+    worldX: car.x,
+    worldY: car.y,
+    phase: TouchPhase.down,
+  ));
+  sim.onTouch(TouchEvent(
+    phoneId: phoneId,
+    worldX: car.x - tangent.x * PitchCarsConfig.maxPull,
+    worldY: car.y - tangent.y * PitchCarsConfig.maxPull,
+    phase: TouchPhase.move,
+  ));
+  sim.onTouch(TouchEvent(
+    phoneId: phoneId,
+    worldX: car.x - tangent.x * PitchCarsConfig.maxPull,
+    worldY: car.y - tangent.y * PitchCarsConfig.maxPull,
+    phase: TouchPhase.up,
+  ));
+
+  var steps = 0;
+  while (sim.outcome == null &&
+      sim.currentTurn == phoneId &&
+      steps < PlatformConfig.simHz * 10) {
+    sim.step(1 / PlatformConfig.simHz);
+    steps++;
+  }
+}
+
 void main() {
   group('PitchCarsSim — turns and input', () {
     test('the first turn belongs to the first phone in join order', () {
@@ -151,6 +188,75 @@ void main() {
 
       sim.step(1 / PlatformConfig.simHz);
       expect(sim.currentTurn, firstTurn);
+    });
+  });
+
+  group('PitchCarsSim — off track and winning', () {
+    test('once a launched car settles, it is always back on the track', () {
+      final started = start(2, seed: 5);
+      final sim = started.sim;
+      final firstTurn = sim.currentTurn;
+      final car = sim.entities.firstWhere((e) => e.id == firstTurn);
+
+      // Aim hard sideways, across the ribbon rather than along it — the
+      // shot most likely to leave the track.
+      final s = sim.track.progressAt(car.x, car.y);
+      final tangent = sim.track.tangentAt(s);
+      final sidewaysX = -tangent.y;
+      final sidewaysY = tangent.x;
+
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x,
+        worldY: car.y,
+        phase: TouchPhase.down,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x - sidewaysX * PitchCarsConfig.maxPull,
+        worldY: car.y - sidewaysY * PitchCarsConfig.maxPull,
+        phase: TouchPhase.move,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x - sidewaysX * PitchCarsConfig.maxPull,
+        worldY: car.y - sidewaysY * PitchCarsConfig.maxPull,
+        phase: TouchPhase.up,
+      ));
+
+      var steps = 0;
+      while (sim.currentTurn == firstTurn && steps < PlatformConfig.simHz * 10) {
+        sim.step(1 / PlatformConfig.simHz);
+        steps++;
+      }
+
+      final settled = sim.entities.firstWhere((e) => e.id == firstTurn);
+      expect(sim.track.isOnTrack(settled.x, settled.y), isTrue,
+          reason: 'a car that left the track must be reset back onto it');
+    });
+
+    test('repeated forward flicks eventually reach the finish and award a point', () {
+      final started = start(2, seed: 7);
+      final sim = started.sim;
+
+      var turns = 0;
+      while (sim.outcome == null && turns < 300) {
+        _flickForward(sim);
+        turns++;
+      }
+
+      expect(sim.outcome, isNotNull, reason: 'nobody finished the race');
+      expect(sim.outcome!.won, isTrue);
+      expect(started.scores.isUsed, isTrue);
+      expect(started.scores.view.ranked.first.total, 1);
+    });
+
+    test('a fresh race is not already won', () {
+      final started = start(2, seed: 9);
+      for (var i = 0; i < 60; i++) {
+        started.sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(started.sim.outcome, isNull);
     });
   });
 }

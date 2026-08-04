@@ -28,7 +28,7 @@ class PitchCarsConfig {
   static const double maxPull = 3.0;
 
   /// Impulse magnitude per world unit of pull.
-  static const double impulsePerPull = 5.0;
+  static const double impulsePerPull = 0.8;
 
   /// Auto-advance-the-turn triggers, once a flick has been launched.
   static const double restSpeed = 0.3;

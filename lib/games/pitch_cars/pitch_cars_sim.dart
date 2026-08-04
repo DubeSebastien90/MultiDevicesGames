@@ -210,7 +210,18 @@ class PitchCarsSim extends Forge2DGameSim {
   @override
   void step(double dt) {
     super.step(dt);
-    if (_winner != null || !_moving) return;
+    if (_winner != null) return;
+
+    _resolveOffTrack();
+    _updateProgress();
+
+    if (_winner != null && !_awarded) {
+      _awarded = true;
+      context.scores.award(_winner!, 1);
+      return;
+    }
+
+    if (!_moving) return;
 
     final elapsed = Duration(microseconds: (dt * 1e6).round());
     _sinceLaunch += elapsed;
@@ -226,6 +237,54 @@ class PitchCarsSim extends Forge2DGameSim {
       _endTurn();
     }
   }
+
+  /// A car off the track is reset immediately: to where it was before this
+  /// turn's flick if it left under its own power, or to the last on-track
+  /// point it passed through if another car's collision sent it there. The
+  /// asymmetry is deliberate — it punishes a reckless flick harder than
+  /// being a sabotage victim.
+  void _resolveOffTrack() {
+    for (final id in _order) {
+      final car = carOf(id);
+      final pos = car.position;
+      if (track.isOnTrack(pos.x, pos.y)) {
+        _lastOnTrack[id] = pos.clone();
+        continue;
+      }
+      final selfFault = id == currentTurn && _lastHitBy[id] == null;
+      final resetTo = selfFault ? _preTurnPosition : (_lastOnTrack[id] ?? _preTurnPosition);
+      car
+        ..setTransform(resetTo.clone(), car.angle)
+        ..linearVelocity = Vector2.zero()
+        ..angularVelocity = 0;
+      _lastHitBy[id] = null;
+    }
+  }
+
+  /// Unwraps each car's raw (positional, wrap-ambiguous) track progress into
+  /// a monotonic cumulative distance travelled, so a loop's "just finished a
+  /// lap" is distinguishable from "still at the start".
+  void _updateProgress() {
+    for (final id in _order) {
+      final pos = carOf(id).position;
+      final raw = track.progressAt(pos.x, pos.y);
+      final prevRaw = _rawProgress[id] ?? 0.0;
+      var delta = raw - prevRaw;
+      if (track.closed) {
+        if (delta < -track.length / 2) delta += track.length;
+        if (delta > track.length / 2) delta -= track.length;
+      }
+      _progress[id] = (_progress[id] ?? 0.0) + delta;
+      _rawProgress[id] = raw;
+
+      if (_winner == null && _progress[id]! >= track.length - 1e-6) {
+        _winner = id;
+      }
+    }
+  }
+
+  String get _winnerLabel =>
+      context.slices.firstWhere((s) => s.phoneId == _winner).label;
 
   void _endTurn() {
     _moving = false;
@@ -248,10 +307,15 @@ class PitchCarsSim extends Forge2DGameSim {
   Map<String, Object?> get sharedState => {
         'currentTurn': _winner == null ? currentTurn : null,
         'winner': _winner,
+        for (final id in _order)
+          'progress_$id': track.length < 1e-9
+              ? 0.0
+              : double.parse(((_progress[id] ?? 0) / track.length).clamp(0.0, 1.0).toStringAsFixed(3)),
       };
 
   @override
-  GameOutcome? get outcome => null; // finished in Task 4
+  GameOutcome? get outcome =>
+      _winner == null ? null : GameOutcome.won(summary: '$_winnerLabel wins the race');
 
   @override
   void reset() {
