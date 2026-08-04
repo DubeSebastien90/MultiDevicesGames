@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import '../model/coverage_map.dart';
 import '../model/phone_layout.dart';
+import '../contract/sim.dart' show PhoneSlice;
+import '../layout/board_links.dart';
 import 'board_diagram.dart';
+import 'link_palette.dart';
 
 /// "Place yourself here", then Confirm.
 ///
@@ -43,11 +46,9 @@ class PlacementView extends StatelessWidget {
     final manifest = client.manifest;
 
     return Scaffold(
-      // Turned to match the board, like the gameplay surface. You read this
-      // card *after* putting the phone down, so on a sideways phone an upright
-      // card would be lying on its side under your thumb.
       // Deliberately not turned: you read your own phone the way you hold it,
-      // whatever angle its slot in the board happens to be.
+      // whatever angle its slot in the board happens to be. The camera handles
+      // the board's rotation; doing it here too would turn everything twice.
       body: Stack(
         children: [
           // The alignment guide fills the screen, edge to edge, because the
@@ -57,6 +58,7 @@ class PlacementView extends StatelessWidget {
               painter: _AlignmentGuidePainter(
                 layout: layout,
                 coverage: client.coverage,
+                links: client.myLinks,
               ),
             ),
           ),
@@ -106,9 +108,17 @@ class PlacementView extends StatelessWidget {
                           BoardDiagram(
                             slices: client.slices,
                             board: layout.board,
+                            links: client.allLinks,
                             meId: client.phoneId,
                             confirmed: confirmedIds,
                           ),
+                          if (client.myLinks.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _LinkLegend(
+                              links: client.myLinks,
+                              slices: client.slices,
+                            ),
+                          ],
                           const SizedBox(height: 12),
                           Text(
                             client.instruction ??
@@ -167,10 +177,18 @@ class PlacementView extends StatelessWidget {
 /// from any declared axis: draw the wrong set and a badly placed board looks
 /// perfect.
 class _AlignmentGuidePainter extends CustomPainter {
-  _AlignmentGuidePainter({required this.layout, required this.coverage});
+  _AlignmentGuidePainter({
+    required this.layout,
+    required this.coverage,
+    required this.links,
+  });
 
   final PhoneLayout layout;
   final CoverageMap? coverage;
+
+  /// This phone's edge stripes. The most actionable thing on the screen: line
+  /// the colours up with your neighbours' and the board is right.
+  final List<EdgeMarker> links;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -275,6 +293,23 @@ class _AlignmentGuidePainter extends CustomPainter {
 
     canvas.restore();
 
+    // The edge stripes, hugging the real screen edge. Drawn thick and inset
+    // just enough to be visible, since the point is to hold two phones
+    // together and see one continuous band of colour.
+    final stripe = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    for (final link in links) {
+      final a = toScreen(link.x1, link.y1);
+      final b = toScreen(link.x2, link.y2);
+      // Pull the line a few pixels inside the panel, or half its width falls
+      // off the glass.
+      final inset = _towardCentre(a, b, size, 5);
+      stripe.color = LinkPalette.of(link.colorIndex);
+      canvas.drawLine(a + inset, b + inset, stripe);
+    }
+
     // Distance markers last and unrotated: they are labels for a person, not
     // part of the world, and a sideways '15cm' helps nobody.
     for (var w = 0.0; w <= math.max(board.right, board.bottom); w += 5) {
@@ -287,6 +322,15 @@ class _AlignmentGuidePainter extends CustomPainter {
         _label(canvas, '${w.toInt()}cm', at + const Offset(4, 4));
       }
     }
+  }
+
+  /// A small nudge from a screen-edge segment toward the middle of the screen,
+  /// so a stroke centred on the very edge is not half invisible.
+  Offset _towardCentre(Offset a, Offset b, Size size, double by) {
+    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    final to = Offset(size.width / 2 - mid.dx, size.height / 2 - mid.dy);
+    final len = to.distance;
+    return len < 1e-6 ? Offset.zero : to / len * by;
   }
 
   void _label(Canvas canvas, String text, Offset at) {
@@ -302,5 +346,64 @@ class _AlignmentGuidePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AlignmentGuidePainter old) =>
-      old.layout != layout || old.coverage != coverage;
+      old.layout != layout || old.coverage != coverage || old.links != links;
+}
+
+/// Names every stripe on this phone's edges: which colour joins which
+/// neighbour.
+///
+/// The stripes alone tell you to line colours up; this tells you *who* with,
+/// which is the difference between "match the red" and "match the red with
+/// phone 2". It also happens to make a wrong board diagnosable at a glance —
+/// if a colour is listed but no stripe is visible, the two halves of that join
+/// disagree.
+class _LinkLegend extends StatelessWidget {
+  const _LinkLegend({required this.links, required this.slices});
+
+  final List<EdgeMarker> links;
+  final List<PhoneSlice> slices;
+
+  /// Where a phone sits in the board's reading order, 1-based.
+  int? _positionOf(String phoneId) {
+    for (final (i, s) in slices.indexed) {
+      if (s.phoneId == phoneId) return i + 1;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 12,
+      runSpacing: 4,
+      children: [
+        for (final link in links)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: LinkPalette.of(link.colorIndex),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                link.partnerId == null
+                    ? 'the middle'
+                    : 'phone ${_positionOf(link.partnerId!) ?? "?"}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
 }

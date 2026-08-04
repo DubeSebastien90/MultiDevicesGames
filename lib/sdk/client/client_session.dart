@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../layout/board_links.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
 import '../model/phone_layout.dart';
@@ -143,6 +144,15 @@ class ClientSession extends ChangeNotifier {
   /// `planBoard` decided it. What the placement diagram draws.
   List<PhoneSlice> get slices => _slices;
   List<PhoneSlice> _slices = const [];
+
+  /// The edge stripes for *this* phone — where its screen meets its neighbours.
+  /// Match the colours up and the board is right.
+  List<EdgeMarker> get myLinks => _myLinks;
+  List<EdgeMarker> _myLinks = const [];
+
+  /// Every screen's stripes, for the schema.
+  List<EdgeMarker> get allLinks => _allLinks;
+  List<EdgeMarker> _allLinks = const [];
 
   Future<void> connect() async {
     try {
@@ -318,6 +328,13 @@ class ClientSession extends ChangeNotifier {
           for (final s in (msg['slices'] as List?) ?? const [])
             PhoneSlice.fromJson(s as Map<String, dynamic>),
         ];
+        final everyLink = [
+          for (final l in (msg['links'] as List?) ?? const [])
+            EdgeMarker.fromJson(l as Map<String, dynamic>),
+        ];
+        _allLinks = everyLink;
+        _myLinks =
+            everyLink.where((l) => l.phoneId == _layout!.phoneId).toList();
         _adoptGame(msg['game'] as String?);
         _phase = ClientPhase.placing;
         _result = null;

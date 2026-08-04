@@ -6,6 +6,7 @@ import '../model/phone_layout.dart';
 import '../model/world_rect.dart';
 import '../platform_config.dart';
 import '../score/scoreboard.dart';
+import 'board_links.dart';
 import 'board_plan.dart';
 import 'phone_spec.dart';
 
@@ -16,6 +17,7 @@ class BoardLayout {
     required this.coverage,
     required this.mmToWorld,
     required this.slices,
+    required this.links,
     required this.instruction,
   });
 
@@ -27,6 +29,10 @@ class BoardLayout {
   /// every phone ended up — what a sim asks "whose screen is this?" against,
   /// and what the placement diagram is drawn from.
   final List<PhoneSlice> slices;
+
+  /// Where each screen meets its neighbours, as coloured edge stripes. Computed
+  /// once here so no two phones can disagree about which edge is red.
+  final List<EdgeMarker> links;
 
   /// The game's one-line "put your phones like this".
   final String instruction;
@@ -66,7 +72,12 @@ class BoardCompiler {
 
   /// How far apart two screens may be before a board is considered broken —
   /// unless the plan says it means it (see [BoardPlan.allowGaps]).
-  static const double _reachMm = 40.0;
+  ///
+  /// Derived from [BoardLinks.maxJoinGap] rather than chosen separately, so
+  /// "close enough to be connected" and "close enough to be joined" are the
+  /// same judgement. When they were two numbers, a gap between them passed
+  /// validation and then produced no connectors.
+  double get _reachMm => BoardLinks.maxJoinGap / mmToWorld;
 
   BoardLayout compile(BoardPlan plan, LobbyInfo lobby) {
     _validate(plan, lobby);
@@ -145,6 +156,7 @@ class BoardCompiler {
       ),
       mmToWorld: mmToWorld,
       slices: slices,
+      links: BoardLinks.of(slices),
       instruction: plan.instruction ?? 'Arrange the phones as shown.',
     );
   }
@@ -212,8 +224,10 @@ class BoardCompiler {
     bool touches(PhonePlacement a, PhonePlacement b) {
       final ba = _Box.of(a, lobby.byId(a.phoneId)!);
       final bb = _Box.of(b, lobby.byId(b.phoneId)!);
-      final gapX = ba.left > bb.left ? ba.left - bb.right : bb.left - ba.right;
-      final gapY = ba.top > bb.top ? ba.top - bb.bottom : bb.top - ba.bottom;
+      // Same measurement as the join test, from the same function — not a
+      // second implementation that happens to agree today.
+      final gapX = BoardLinks.separation(ba.left, ba.right, bb.left, bb.right);
+      final gapY = BoardLinks.separation(ba.top, ba.bottom, bb.top, bb.bottom);
       return gapX <= _reachMm && gapY <= _reachMm;
     }
 
