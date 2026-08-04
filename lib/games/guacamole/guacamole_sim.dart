@@ -413,18 +413,50 @@ class GuacamoleSim implements GameSim {
       if (s.color != null) s.phoneId: s.color!.id,
   };
 
+  /// Built once: `outcome` is polled several times a tick and this one carries
+  /// a line per phone.
+  GameOutcome? _outcome;
+
   @override
   GameOutcome? get outcome {
     if (_elapsed < GuacamoleConfig.roundSeconds) return null;
 
-    // Everybody played the same round; "won" is not really the shape of this
-    // game, so the summary names the leader and the platform shows standings.
-    final leader = context.scores.view.leader;
-    return GameOutcome.won(
-      summary: leader == null
-          ? 'a dead heat'
-          : '${leader.label} won with ${leader.total}',
+    // Everybody played the same round and nobody is eliminated, so this is not
+    // a win or a loss — it is what you personally managed. Each phone gets its
+    // own tally under the platform's "Well played!", and the standings card
+    // below it does the comparing.
+    return _outcome ??= GameOutcome.perPhone(
+      {for (final id in context.phoneIds) id: _tallyFor(id)},
+      summary: _roundLeader(),
     );
+  }
+
+  /// One point per squish, so the round's score *is* the count.
+  String _tallyFor(String phoneId) {
+    final n = context.scores.view.roundDelta(phoneId);
+    if (n == 0) return 'Not a single avocado';
+    return 'You squished $n avocado${n == 1 ? '' : 's'}';
+  }
+
+  /// Who did best **this round**.
+  ///
+  /// Deliberately from the round's own deltas rather than the session leader:
+  /// by the third game of a playlist the phone with the highest total may have
+  /// squished nothing at all here, and announcing it as the winner of a round
+  /// it lost is worse than saying nothing.
+  String _roundLeader() {
+    final view = context.scores.view;
+    final ranked = [
+      for (final id in context.phoneIds) (id: id, squished: view.roundDelta(id)),
+    ]..sort((a, b) => b.squished.compareTo(a.squished));
+
+    if (ranked.isEmpty || ranked.first.squished == 0) return 'nobody scored';
+    if (ranked.length > 1 && ranked[0].squished == ranked[1].squished) {
+      return 'a dead heat';
+    }
+    final best = ranked.first;
+    final label = view.entryFor(best.id)?.label ?? best.id;
+    return '$label squished the most, ${best.squished}';
   }
 
   @override
@@ -435,6 +467,8 @@ class GuacamoleSim implements GameSim {
     _bag.clear();
     _elapsed = 0;
     _sinceSpawn = 0;
+    // The latched verdict belongs to the round that just ended.
+    _outcome = null;
   }
 
   @override

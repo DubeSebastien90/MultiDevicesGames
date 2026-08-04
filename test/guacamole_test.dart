@@ -341,6 +341,61 @@ void main() {
       expect(started.sim.outcome, isNotNull, reason: 'never ended');
     });
 
+    test('everyone is told what they personally managed', () {
+      final started = start(4);
+
+      // One phone squishes; the rest do not.
+      run(started.sim, 2);
+      final mole = firstLiveMole(started.sim)!;
+      final scorer = started.sim.context.phoneOfColor(mole.owner)!;
+      started.sim.onTouch(TouchEvent(
+        phoneId: scorer,
+        worldX: mole.hole.centerX,
+        worldY: mole.hole.centerY,
+        phase: TouchPhase.down,
+      ));
+
+      run(started.sim, GuacamoleConfig.roundSeconds);
+      final outcome = started.sim.outcome!;
+
+      // Nobody is eliminated and nobody "wins" — it is what you managed. So
+      // every phone gets its own line under the platform's "Well played!".
+      expect(outcome.kind, OutcomeKind.personal);
+      expect(outcome.winners, isNull);
+      expect(outcome.lines, hasLength(4));
+      expect(outcome.lines![scorer], contains('1 avocado'));
+
+      for (final s in started.board.slices.where((s) => s.phoneId != scorer)) {
+        expect(outcome.lines![s.phoneId], 'Not a single avocado');
+      }
+
+      // Polled repeatedly, as the platform does: one verdict, built once.
+      expect(identical(started.sim.outcome, outcome), isTrue);
+    });
+
+    test('the summary names who did best in *this* round', () {
+      final started = start(4);
+      run(started.sim, 2);
+      final mole = firstLiveMole(started.sim)!;
+      final scorer = started.sim.context.phoneOfColor(mole.owner)!;
+
+      // A lead carried in from earlier games. The line must be about the round
+      // just played, not the session — by the third game of a playlist the
+      // phone with the highest total may have squished nothing here.
+      started.scores.award('p4', 99);
+      started.scores.beginRound();
+
+      started.sim.onTouch(TouchEvent(
+        phoneId: scorer,
+        worldX: mole.hole.centerX,
+        worldY: mole.hole.centerY,
+        phase: TouchPhase.down,
+      ));
+      run(started.sim, GuacamoleConfig.roundSeconds);
+
+      expect(started.sim.outcome!.summary, contains('phone $scorer'));
+    });
+
     test('moles get faster as the round wears on', () {
       final early = start(4);
       run(early.sim, 1);
