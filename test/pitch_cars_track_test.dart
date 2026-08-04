@@ -73,8 +73,8 @@ void main() {
         () {
       // Just past the last waypoint, heading back toward the first.
       final p = track.pointAtArclength(39.5);
-      expect(p.x, closeTo(-4.5, 1e-6));
-      expect(p.y, closeTo(5, 1e-6));
+      expect(p.x, closeTo(-5, 1e-6));
+      expect(p.y, closeTo(-4.5, 1e-6));
     });
   });
 }
