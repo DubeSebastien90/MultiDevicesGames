@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
@@ -60,7 +61,10 @@ void main() {
     test('nothing is offered before a phone has reported its size', () async {
       // Fresh host, nobody in: every entry is unplayable and the lobby says
       // why once rather than on each row.
-      expect(host.offers, hasLength(3));
+      //
+      // Counted from the playlist, not written out, so registering a game is
+      // still one import and one list entry.
+      expect(host.offers, hasLength(GameCatalog.playlist.length));
       expect(host.offers.every((o) => !o.playable), isTrue);
       expect(host.blockedReason, isNotNull);
       expect(host.canStart, isFalse);
