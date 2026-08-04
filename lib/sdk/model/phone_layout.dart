@@ -19,6 +19,7 @@ class PhoneLayout {
     required this.activePxHeight,
     required this.board,
     required this.placement,
+    this.quarterTurns = 0,
   });
 
   final String phoneId;
@@ -37,14 +38,35 @@ class PhoneLayout {
 
   final double dpi;
   final double devicePixelRatio;
+
+  /// The lit area in physical pixels **as this phone will draw it** — already
+  /// swapped when the game placed the phone on its side.
+  ///
+  /// That swap is why the transforms below need no rotation term of their own:
+  /// the phone turns its whole surface to match the board, so by the time
+  /// anything is drawn its pixel axes and the world axes point the same way.
   final double activePxWidth;
   final double activePxHeight;
+
+  /// How far this phone is turned within the board, clockwise, in 90° steps.
+  /// The app never rotates; this is the game's placement, and the phone rotates
+  /// what it draws to match.
+  final int quarterTurns;
 
   /// The whole board, for context (drawing out-of-board areas, clamping).
   final WorldRect board;
 
   /// Human instruction, e.g. "right of phone 1, top edges aligned".
   final String placement;
+
+  /// How far to turn this phone's widget tree so the board reads upright.
+  ///
+  /// The **opposite** of [quarterTurns], and the reason is worth spelling out.
+  /// A phone laid on the table turned one step clockwise has its own "up"
+  /// pointing to the board's right; anything drawn normally would therefore
+  /// appear on its side to somebody standing at the table. Turning the surface
+  /// back by the same amount cancels that out.
+  int get screenQuarterTurns => (4 - (quarterTurns % 4)) % 4;
 
   /// World units per physical pixel.
   double get worldPerPhysicalPx => (25.4 / dpi) * mmToWorld;
@@ -89,6 +111,7 @@ class PhoneLayout {
     'activePx': {'w': activePxWidth, 'h': activePxHeight},
     'board': board.toJson(),
     'placement': placement,
+    'turns': quarterTurns,
   };
 
   static PhoneLayout fromJson(Map<String, dynamic> j) {
@@ -107,6 +130,7 @@ class PhoneLayout {
       activePxHeight: (px['h'] as num).toDouble(),
       board: WorldRect.fromJson(j['board'] as Map<String, dynamic>),
       placement: j['placement'] as String,
+      quarterTurns: (j['turns'] as num?)?.toInt() ?? 0,
     );
   }
 }

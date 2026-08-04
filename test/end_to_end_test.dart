@@ -15,11 +15,12 @@ import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 /// This covers every step except the pixels — transport, the join gate, board
 /// planning, the calibration handshake, entity spawn/despawn, the sim loop, the
 /// scoreboard, and the interpolated playback both phones render from.
-DeviceMetrics landscapePhone(String label) => DeviceMetrics(
-  activePxWidth: 2400,
-  activePxHeight: 1080,
-  widthMm: 152.4, // 400 dpi
-  heightMm: 68.58,
+DeviceMetrics portraitPhone(String label) => DeviceMetrics(
+  // The app is locked portrait, so a phone measures itself short-edge-first.
+  activePxWidth: 1080,
+  activePxHeight: 2400,
+  widthMm: 68.58, // 400 dpi
+  heightMm: 152.4,
   bezelMm: 3,
   devicePixelRatio: 3,
   label: label,
@@ -58,7 +59,7 @@ void main() {
     loopback = LoopbackPair();
     phone1 = ClientSession(
       transport: loopback.transport,
-      metrics: landscapePhone('host phone'),
+      metrics: portraitPhone('host phone'),
     );
     await phone1.connect();
     host.addLocalPeer(loopback.peer);
@@ -68,7 +69,7 @@ void main() {
     final local = address.replace(host: '127.0.0.1');
     phone2 = ClientSession(
       transport: WebSocketTransport(local),
-      metrics: landscapePhone('joined phone'),
+      metrics: portraitPhone('joined phone'),
       joinCode: host.joinCode,
     );
     await phone2.connect();

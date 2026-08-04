@@ -42,111 +42,117 @@ class PlacementView extends StatelessWidget {
     final manifest = client.manifest;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // The alignment guide fills the screen, edge to edge, because the
-          // millimetres at the edges are the ones that matter.
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _AlignmentGuidePainter(
-                layout: layout,
-                coverage: client.coverage,
+      // Turned to match the board, like the gameplay surface. You read this
+      // card *after* putting the phone down, so on a sideways phone an upright
+      // card would be lying on its side under your thumb.
+      body: RotatedBox(
+        quarterTurns: layout.screenQuarterTurns,
+        child: Stack(
+          children: [
+            // The alignment guide fills the screen, edge to edge, because the
+            // millimetres at the edges are the ones that matter.
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _AlignmentGuidePainter(
+                  layout: layout,
+                  coverage: client.coverage,
+                ),
               ),
             ),
-          ),
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Card(
-                    color: theme.colorScheme.surface.withValues(alpha: 0.92),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (manifest != null) ...[
+            SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Card(
+                      color: theme.colorScheme.surface.withValues(alpha: 0.92),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (manifest != null) ...[
+                              Text(
+                                manifest.title,
+                                style: theme.textTheme.titleLarge,
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                manifest.goal,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                             Text(
-                              manifest.title,
-                              style: theme.textTheme.titleLarge,
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              manifest.goal,
-                              style: theme.textTheme.bodySmall?.copyWith(
+                              'Phone ${layout.index + 1} of ${layout.total}',
+                              style: theme.textTheme.labelLarge?.copyWith(
                                 color: theme.colorScheme.primary,
                               ),
                               textAlign: TextAlign.center,
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              layout.placement,
+                              style: theme.textTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                            ),
                             const SizedBox(height: 12),
-                          ],
-                          Text(
-                            'Phone ${layout.index + 1} of ${layout.total}',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.colorScheme.primary,
+                            BoardDiagram(
+                              slices: client.slices,
+                              board: layout.board,
+                              meId: client.phoneId,
+                              confirmed: confirmedIds,
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            layout.placement,
-                            style: theme.textTheme.titleMedium,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                          BoardDiagram(
-                            slices: client.slices,
-                            board: layout.board,
-                            meId: client.phoneId,
-                            confirmed: confirmedIds,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            client.instruction ??
-                                'Push the phones together until the casings '
-                                    'touch. The guide lines should continue '
-                                    'straight across the gap.',
-                            style: theme.textTheme.bodySmall,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 14),
-                          if (confirmed)
-                            Column(
-                              children: [
-                                const Icon(Icons.check_circle, size: 28),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Waiting for the others…',
-                                  style: theme.textTheme.bodyMedium,
+                            const SizedBox(height: 12),
+                            Text(
+                              client.instruction ??
+                                  'Push the phones together until the casings '
+                                      'touch. The guide lines should continue '
+                                      'straight across the gap.',
+                              style: theme.textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 14),
+                            if (confirmed)
+                              Column(
+                                children: [
+                                  const Icon(Icons.check_circle, size: 28),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Waiting for the others…',
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                ],
+                              )
+                            else
+                              FilledButton.icon(
+                                onPressed: client.confirmPlacement,
+                                icon: const Icon(Icons.check),
+                                label: const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                  child: Text('In place — confirm'),
                                 ),
-                              ],
-                            )
-                          else
-                            FilledButton.icon(
-                              onPressed: client.confirmPlacement,
-                              icon: const Icon(Icons.check),
-                              label: const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 12),
-                                child: Text('In place — confirm'),
                               ),
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: controller.leave,
+                              child: const Text('Leave'),
                             ),
-                          const SizedBox(height: 4),
-                          TextButton(
-                            onPressed: controller.leave,
-                            child: const Text('Leave'),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -229,8 +235,7 @@ class _AlignmentGuidePainter extends CustomPainter {
     for (final seam in seams) {
       final vertical = seam.height > seam.width;
       final center = Offset(toLocalX(seam.centerX), toLocalY(seam.centerY));
-      final radius =
-          (vertical ? seam.height : seam.width) * 0.32 * pxPerWorld;
+      final radius = (vertical ? seam.height : seam.width) * 0.32 * pxPerWorld;
       if (radius <= 0) continue;
 
       // Skip seams nowhere near this screen.

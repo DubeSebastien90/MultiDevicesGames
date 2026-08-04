@@ -100,8 +100,12 @@ class BoardCompiler {
       var maxY = -double.infinity;
       for (final placement in ordered) {
         final spec = lobby.byId(placement.phoneId)!;
-        final right = placement.xMm - minX + spec.widthMm;
-        final bottom = placement.yMm - minY + spec.heightMm;
+        final right = placement.xMm -
+            minX +
+            spec.footprintWidthMm(placement.quarterTurns);
+        final bottom = placement.yMm -
+            minY +
+            spec.footprintHeightMm(placement.quarterTurns);
         maxX = right > maxX ? right : maxX;
         maxY = bottom > maxY ? bottom : maxY;
       }
@@ -131,8 +135,9 @@ class BoardCompiler {
         mmToWorld: mmToWorld,
         dpi: spec.dpi,
         devicePixelRatio: spec.devicePixelRatio,
-        activePxWidth: spec.activePxWidth,
-        activePxHeight: spec.activePxHeight,
+        activePxWidth: spec.footprintPxWidth(placement.quarterTurns),
+        activePxHeight: spec.footprintPxHeight(placement.quarterTurns),
+        quarterTurns: placement.quarterTurns,
         board: board,
         placement: placement.hint ?? _defaultHint(i, ordered.length),
       );
@@ -197,10 +202,15 @@ class BoardCompiler {
         final sa = lobby.byId(a.phoneId)!;
         final sb = lobby.byId(b.phoneId)!;
 
-        final overlapX = a.xMm < b.xMm + sb.widthMm - _epsilonMm &&
-            b.xMm < a.xMm + sa.widthMm - _epsilonMm;
-        final overlapY = a.yMm < b.yMm + sb.heightMm - _epsilonMm &&
-            b.yMm < a.yMm + sa.heightMm - _epsilonMm;
+        final aw = sa.footprintWidthMm(a.quarterTurns);
+        final ah = sa.footprintHeightMm(a.quarterTurns);
+        final bw = sb.footprintWidthMm(b.quarterTurns);
+        final bh = sb.footprintHeightMm(b.quarterTurns);
+
+        final overlapX = a.xMm < b.xMm + bw - _epsilonMm &&
+            b.xMm < a.xMm + aw - _epsilonMm;
+        final overlapY = a.yMm < b.yMm + bh - _epsilonMm &&
+            b.yMm < a.yMm + ah - _epsilonMm;
 
         if (overlapX && overlapY) {
           throw BoardPlanError(
@@ -225,11 +235,11 @@ class BoardCompiler {
       final sa = lobby.byId(a.phoneId)!;
       final sb = lobby.byId(b.phoneId)!;
       final gapX = a.xMm > b.xMm
-          ? a.xMm - (b.xMm + sb.widthMm)
-          : b.xMm - (a.xMm + sa.widthMm);
+          ? a.xMm - (b.xMm + sb.footprintWidthMm(b.quarterTurns))
+          : b.xMm - (a.xMm + sa.footprintWidthMm(a.quarterTurns));
       final gapY = a.yMm > b.yMm
-          ? a.yMm - (b.yMm + sb.heightMm)
-          : b.yMm - (a.yMm + sa.heightMm);
+          ? a.yMm - (b.yMm + sb.footprintHeightMm(b.quarterTurns))
+          : b.yMm - (a.yMm + sa.footprintHeightMm(a.quarterTurns));
       return gapX <= reachMm && gapY <= reachMm;
     }
 

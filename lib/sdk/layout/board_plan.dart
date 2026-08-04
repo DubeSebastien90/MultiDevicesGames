@@ -8,15 +8,27 @@ class PhonePlacement {
     this.phoneId, {
     required this.xMm,
     required this.yMm,
+    this.quarterTurns = 0,
     this.hint,
   });
 
   final String phoneId;
 
-  /// Top-left lit pixel, in board millimetres. The board's origin is wherever
-  /// the plan puts it; the compiler normalises so the top-left is (0, 0).
+  /// Top-left corner of this screen's footprint, in board millimetres. The
+  /// board's origin is wherever the plan puts it; the compiler normalises so
+  /// the top-left is (0, 0).
   final double xMm;
   final double yMm;
+
+  /// How far this phone is turned within the board, clockwise, in 90° steps.
+  ///
+  /// The app itself is locked portrait and never rotates. This is the game
+  /// saying "put this phone on its side", and the phone then rotates what it
+  /// draws so the world reads upright to whoever is standing at the table.
+  ///
+  /// An odd number of turns swaps the screen's footprint: a phone 68mm wide
+  /// and 152mm tall occupies 152 x 68 of the board.
+  final int quarterTurns;
 
   /// Optional line shown on that phone's placement screen: 'below the big one'.
   /// The platform writes a sensible default when this is null.

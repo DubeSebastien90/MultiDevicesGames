@@ -1,16 +1,22 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart' show PhoneSlice;
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
+import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 
 /// The layout half of the SDK contract: a game decides where phones go, the
 /// platform compiles that into a board or refuses.
+///
+/// A panel is always described **portrait** — width is the short edge — because
+/// the app is locked portrait and how a phone lies on the table is the game's
+/// decision, not the device's. So this is a 68.58 x 152.4mm phone, which turned
+/// on its side covers 152.4 x 68.58 of a board.
 PhoneSpec phone(
   String id, {
-  double widthMm = 152.4, // 400 dpi
-  double heightMm = 68.58,
+  double widthMm = 68.58, // short edge, 400 dpi
+  double heightMm = 152.4, // long edge
   double bezelMm = 3,
 }) =>
     PhoneSpec(
@@ -98,8 +104,8 @@ void main() {
 
   group('the game decides the order', () {
     test('smallest first puts the little phone at the start', () {
-      final small = phone('small', widthMm: 100, heightMm: 50);
-      final big = phone('big', widthMm: 200, heightMm: 90);
+      final small = phone('small', widthMm: 50, heightMm: 100);
+      final big = phone('big', widthMm: 90, heightMm: 200);
       final lobby = lobbyOf([big, small]); // joined in the wrong order
 
       final board = compiler.compile(
@@ -112,8 +118,8 @@ void main() {
     });
 
     test('largest last is how the ball bin wants its well', () {
-      final small = phone('small', widthMm: 100, heightMm: 50);
-      final big = phone('big', widthMm: 200, heightMm: 90);
+      final small = phone('small', widthMm: 50, heightMm: 100);
+      final big = phone('big', widthMm: 90, heightMm: 200);
       final lobby = lobbyOf([big, small]);
 
       final board = compiler.compile(
@@ -140,8 +146,8 @@ void main() {
 
     test('a mixed board is only as wide as its smallest screen', () {
       final lobby = lobbyOf([
-        phone('p1', heightMm: 60),
-        phone('p2', heightMm: 80),
+        phone('p1', widthMm: 60),
+        phone('p2', widthMm: 80),
       ]);
       final board = compiler.compile(Layouts.row(lobby.phones), lobby);
 
@@ -158,8 +164,8 @@ void main() {
         phone('c'),
         phone('d'),
       ]);
-      const dx = 152.4 + 6;
-      const dy = 68.58 + 6;
+      const dx = 68.58 + 6;
+      const dy = 152.4 + 6;
 
       final board = compiler.compile(
         const BoardPlan([
@@ -171,8 +177,8 @@ void main() {
         lobby,
       );
 
-      expect(board.board.width, closeTo((dx + 152.4) * 0.1, 1e-9));
-      expect(board.board.height, closeTo((dy + 68.58) * 0.1, 1e-9));
+      expect(board.board.width, closeTo((dx + 68.58) * 0.1, 1e-9));
+      expect(board.board.height, closeTo((dy + 152.4) * 0.1, 1e-9));
 
       // Two vertical seams and two horizontal ones — a shape no enum could
       // have described.
@@ -187,8 +193,8 @@ void main() {
       final board = compiler.compile(
         const BoardPlan([
           // Deliberately off in negative space.
-          PhonePlacement('p1', xMm: -500, yMm: -200),
-          PhonePlacement('p2', xMm: -500 + 158.4, yMm: -200),
+          PhonePlacement('p1', xMm: -500, yMm: -200, quarterTurns: 1),
+          PhonePlacement('p2', xMm: -500 + 158.4, yMm: -200, quarterTurns: 1),
         ]),
         lobby,
       );
@@ -202,7 +208,8 @@ void main() {
       final lobby = lobbyOf([phone('p1'), phone('p2')]);
       // Nudge the second phone a centimetre further out than the helper put it.
       final plan = Layouts.row(lobby.phones).withPlacement(
-        const PhonePlacement('p2', xMm: 168.4, yMm: 0, hint: 'a bit further'),
+        const PhonePlacement('p2',
+            xMm: 168.4, yMm: 0, quarterTurns: 1, hint: 'a bit further'),
       );
       final board = compiler.compile(plan, lobby);
 
@@ -225,13 +232,136 @@ void main() {
     });
   });
 
+  group('turning a phone within the board', () {
+    test('a sideways phone covers the board the other way round', () {
+      final lobby = lobbyOf([phone('p1')]);
+
+      final upright = compiler.compile(
+        Layouts.row(lobby.phones, orientation: PhoneOrientation.upright),
+        lobby,
+      );
+      final sideways = compiler.compile(
+        Layouts.row(lobby.phones, orientation: PhoneOrientation.sideways),
+        lobby,
+      );
+
+      // Same panel, footprint swapped.
+      expect(upright.board.width, closeTo(6.858, 1e-9));
+      expect(upright.board.height, closeTo(15.24, 1e-9));
+      expect(sideways.board.width, closeTo(15.24, 1e-9));
+      expect(sideways.board.height, closeTo(6.858, 1e-9));
+    });
+
+    test('the pixel dimensions swap with it, so the scale stays true', () {
+      final lobby = lobbyOf([phone('p1')]);
+      final sideways = compiler.compile(Layouts.row(lobby.phones), lobby);
+      final me = sideways.phones.single;
+
+      // The phone will turn its own surface, so by the time anything is drawn
+      // its pixel axes point the same way as the world's.
+      expect(me.quarterTurns, 1);
+      expect(me.activePxWidth, closeTo(152.4 * 400 / 25.4, 1e-6));
+      expect(me.activePxHeight, closeTo(68.58 * 400 / 25.4, 1e-6));
+
+      // One world unit is still one centimetre of real glass.
+      expect(me.viewport.width, closeTo(15.24, 1e-9));
+      expect(me.viewport.height, closeTo(6.858, 1e-9));
+    });
+
+    test('the widget turns the opposite way, to cancel the placement', () {
+      final lobby = lobbyOf([phone('p1')]);
+      final sideways = compiler.compile(Layouts.row(lobby.phones), lobby);
+      final upright = compiler.compile(
+        Layouts.row(lobby.phones, orientation: PhoneOrientation.upright),
+        lobby,
+      );
+
+      // Turned one step clockwise on the table, so the surface turns one step
+      // back — otherwise everything would read on its side.
+      expect(sideways.phones.single.quarterTurns, 1);
+      expect(sideways.phones.single.screenQuarterTurns, 3);
+
+      // Nothing to cancel when the phone is left upright.
+      expect(upright.phones.single.quarterTurns, 0);
+      expect(upright.phones.single.screenQuarterTurns, 0);
+    });
+
+    test('the transforms stay exact inverses when turned', () {
+      // The property the seam depends on. It survives rotation because the
+      // rotation is absorbed into the pixel dimensions rather than added as a
+      // term here.
+      final lobby = lobbyOf([phone('p1'), phone('p2')]);
+      for (final orientation in PhoneOrientation.values) {
+        final board = compiler.compile(
+          Layouts.row(lobby.phones, orientation: orientation),
+          lobby,
+        );
+        for (final p in board.phones) {
+          for (final px in const [0.0, 137.0, 900.0]) {
+            final world = p.physicalPxToWorld(px, px / 2);
+            final back = p.worldToPhysicalPx(world.x, world.y);
+            expect(back.x, closeTo(px, 1e-9), reason: '$orientation');
+            expect(back.y, closeTo(px / 2, 1e-9), reason: '$orientation');
+          }
+        }
+      }
+    });
+
+    test('it survives the wire, so each phone knows how to turn itself', () {
+      final lobby = lobbyOf([phone('p1')]);
+      final board = compiler.compile(Layouts.row(lobby.phones), lobby);
+      final round = PhoneLayout.fromJson(board.phones.single.toJson());
+
+      expect(round.quarterTurns, 1);
+      expect(round.screenQuarterTurns, 3);
+      expect(round.activePxWidth, closeTo(152.4 * 400 / 25.4, 1e-6));
+    });
+
+    test('a board may mix orientations', () {
+      // A row of sideways phones with one left upright beside them — the shape
+      // that argues for per-phone turns rather than one setting for the board.
+      final lobby = lobbyOf([phone('a'), phone('b')]);
+      final board = compiler.compile(
+        const BoardPlan([
+          PhonePlacement('a', xMm: 0, yMm: 0, quarterTurns: 1),
+          PhonePlacement('b', xMm: 158.4, yMm: 0),
+        ]),
+        lobby,
+      );
+
+      final a = board.forPhone('a')!;
+      final b = board.forPhone('b')!;
+      expect(a.viewport.width, closeTo(15.24, 1e-9));
+      expect(a.viewport.height, closeTo(6.858, 1e-9));
+      expect(b.viewport.width, closeTo(6.858, 1e-9));
+      expect(b.viewport.height, closeTo(15.24, 1e-9));
+      expect(a.screenQuarterTurns, 3);
+      expect(b.screenQuarterTurns, 0);
+    });
+
+    test('the instruction says which way up, not just which way along', () {
+      final lobby = lobbyOf([phone('p1'), phone('p2')]);
+
+      final sideways = Layouts.row(lobby.phones).instruction!;
+      final upright = Layouts.row(
+        lobby.phones,
+        orientation: PhoneOrientation.upright,
+      ).instruction!;
+
+      expect(sideways, contains('on their sides'));
+      expect(sideways, contains('short edges touching'));
+      expect(upright, contains('upright'));
+      expect(upright, contains('long edges touching'));
+    });
+  });
+
   group('the compiled slices are what the placement diagram draws', () {
     test('they follow the board, not the order phones joined in', () {
       // The bug this guards: the diagram used to be built from the lobby's
       // join order, so it showed the wrong arrangement the moment a game
       // sorted its phones — and both shipped games do.
-      final small = phone('small', widthMm: 100, heightMm: 50);
-      final big = phone('big', widthMm: 200, heightMm: 90);
+      final small = phone('small', widthMm: 50, heightMm: 100);
+      final big = phone('big', widthMm: 90, heightMm: 200);
       final lobby = lobbyOf([big, small]); // joined big-first
 
       final board = compiler.compile(
@@ -287,8 +417,8 @@ void main() {
 
     test('a grid keeps its two dimensions', () {
       final lobby = lobbyOf([phone('a'), phone('b'), phone('c'), phone('d')]);
-      const dx = 152.4 + 6;
-      const dy = 68.58 + 6;
+      const dx = 68.58 + 6;
+      const dy = 152.4 + 6;
       final board = compiler.compile(
         const BoardPlan([
           PhonePlacement('a', xMm: 0, yMm: 0),
@@ -447,9 +577,9 @@ void main() {
 
     test('join order is honoured when the game asks for it', () {
       final lobby = lobbyOf([
-        phone('a', widthMm: 100, heightMm: 60),
-        phone('b', widthMm: 140, heightMm: 60),
-        phone('c', widthMm: 120, heightMm: 60),
+        phone('a', widthMm: 60, heightMm: 100),
+        phone('b', widthMm: 60, heightMm: 140),
+        phone('c', widthMm: 60, heightMm: 120),
       ]);
       final board = compiler.compile(
         Layouts.row(lobby.phones, sort: PhoneSort.joinOrder),
@@ -489,13 +619,13 @@ void main() {
         PhoneSpec(
           phoneId: 'p2',
           label: 'dense',
-          widthMm: 152.4,
-          heightMm: 68.58,
+          widthMm: 68.58,
+          heightMm: 152.4,
           bezelMm: 3,
           dpi: 800,
           devicePixelRatio: 4,
-          activePxWidth: 152.4 * 800 / 25.4,
-          activePxHeight: 68.58 * 800 / 25.4,
+          activePxWidth: 68.58 * 800 / 25.4,
+          activePxHeight: 152.4 * 800 / 25.4,
         ),
       ]);
       final board = compiler.compile(Layouts.row(lobby.phones), lobby);

@@ -63,6 +63,24 @@ class Gaps {
   static double _zero(PhoneSpec a, PhoneSpec b) => 0;
 }
 
+/// Which way up the phones lie within the board.
+///
+/// The app itself is always portrait; this is purely about how the devices are
+/// put on the table. Both shipped games use [sideways], because a runway and a
+/// falling well both want the long edge running left-to-right.
+enum PhoneOrientation {
+  /// Long edge horizontal — the phone on its side. One quarter turn.
+  sideways,
+
+  /// Long edge vertical — the phone as you normally hold it. No turn, so
+  /// nothing is rotated when drawing either.
+  upright,
+}
+
+extension PhoneOrientationTurns on PhoneOrientation {
+  int get quarterTurns => this == PhoneOrientation.sideways ? 1 : 0;
+}
+
 /// How phones line up across the packing axis.
 enum CrossAlign {
   /// Top edges flush in a row, left edges flush in a column.
@@ -88,6 +106,7 @@ class Layouts {
     PhoneSort sort = PhoneSort.joinOrder,
     Gaps gap = Gaps.casingsTouching,
     CrossAlign align = CrossAlign.start,
+    PhoneOrientation orientation = PhoneOrientation.sideways,
     String? instruction,
   }) =>
       _pack(
@@ -96,9 +115,9 @@ class Layouts {
         sort: sort,
         gap: gap,
         align: align,
-        instruction: instruction ??
-            'Lay the phones side by side in a row, short edges touching, '
-                '${_alignWord(align, true)}.',
+        orientation: orientation,
+        instruction:
+            instruction ?? _instructionFor(true, orientation, align),
       );
 
   /// Top to bottom. A narrow, tall board — falling things, towers, ladders.
@@ -107,6 +126,7 @@ class Layouts {
     PhoneSort sort = PhoneSort.joinOrder,
     Gaps gap = Gaps.casingsTouching,
     CrossAlign align = CrossAlign.start,
+    PhoneOrientation orientation = PhoneOrientation.sideways,
     String? instruction,
   }) =>
       _pack(
@@ -115,9 +135,9 @@ class Layouts {
         sort: sort,
         gap: gap,
         align: align,
-        instruction: instruction ??
-            'Stack the phones one above the other, long edges touching, '
-                '${_alignWord(align, false)}.',
+        orientation: orientation,
+        instruction:
+            instruction ?? _instructionFor(false, orientation, align),
       );
 
   static BoardPlan _pack(
@@ -126,6 +146,7 @@ class Layouts {
     required PhoneSort sort,
     required Gaps gap,
     required CrossAlign align,
+    required PhoneOrientation orientation,
     required String instruction,
   }) {
     if (phones.isEmpty) {
@@ -133,8 +154,16 @@ class Layouts {
     }
 
     final ordered = List.of(phones)..sort(sort.compare);
+    final turns = orientation.quarterTurns;
 
-    double acrossSize(PhoneSpec p) => horizontal ? p.heightMm : p.widthMm;
+    // Footprints, not panels: a phone put on its side covers the board the
+    // other way round, and every measurement below is about the board.
+    double alongSize(PhoneSpec p) => horizontal
+        ? p.footprintWidthMm(turns)
+        : p.footprintHeightMm(turns);
+    double acrossSize(PhoneSpec p) => horizontal
+        ? p.footprintHeightMm(turns)
+        : p.footprintWidthMm(turns);
 
     // Phones sit inside a lane as deep as the *largest* of them, so no screen
     // is ever placed at a negative offset.
@@ -167,10 +196,11 @@ class Layouts {
         p.phoneId,
         xMm: horizontal ? cursor : offset,
         yMm: horizontal ? offset : cursor,
+        quarterTurns: turns,
         hint: _hintFor(i, ordered.length, horizontal),
       ));
 
-      cursor += horizontal ? p.widthMm : p.heightMm;
+      cursor += alongSize(p);
       if (i < ordered.length - 1) {
         cursor += gap.between(p, ordered[i + 1]);
       }
@@ -197,6 +227,27 @@ class Layouts {
     }
     if (index == 0) return 'top — everyone else goes below you';
     return 'below phone $index, left edges aligned';
+  }
+
+  /// The line everyone reads before moving a phone.
+  ///
+  /// Which edges end up touching depends on both the packing axis *and* which
+  /// way up the phones lie: a row of phones on their sides meets at the short
+  /// edges, the same row standing upright meets at the long ones.
+  static String _instructionFor(
+    bool horizontal,
+    PhoneOrientation orientation,
+    CrossAlign align,
+  ) {
+    final sideways = orientation == PhoneOrientation.sideways;
+    // In a row the touching edges run across the row, and vice versa.
+    final touching = (horizontal == sideways) ? 'short' : 'long';
+    final pose = sideways ? 'on their sides' : 'upright';
+    final verb = horizontal
+        ? 'Lay the phones $pose side by side in a row'
+        : 'Stack the phones $pose one above the other';
+    return '$verb, $touching edges touching, '
+        '${_alignWord(align, horizontal)}.';
   }
 
   static String _alignWord(CrossAlign align, bool horizontal) =>

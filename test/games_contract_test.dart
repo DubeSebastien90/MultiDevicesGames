@@ -19,13 +19,14 @@ import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 PhoneSpec phone(String id) => PhoneSpec(
   phoneId: id,
   label: 'phone $id',
-  widthMm: 152.4,
-  heightMm: 68.58,
+  // Portrait: the panel as the device is held. Both games turn it sideways.
+  widthMm: 68.58,
+  heightMm: 152.4,
   bezelMm: 3,
   dpi: 400,
   devicePixelRatio: 3,
-  activePxWidth: 2400,
-  activePxHeight: 1080,
+  activePxWidth: 1080,
+  activePxHeight: 2400,
 );
 
 /// Everything the platform does between "game chosen" and "sim running".
@@ -151,13 +152,13 @@ void main() {
         PhoneSpec(
           phoneId: 'small',
           label: 'small',
-          widthMm: 120,
-          heightMm: 55,
+          widthMm: 55,
+          heightMm: 120,
           bezelMm: 3,
           dpi: 400,
           devicePixelRatio: 3,
-          activePxWidth: 1890,
-          activePxHeight: 866,
+          activePxWidth: 866,
+          activePxHeight: 1890,
         ),
         phone('big'),
       ]);
