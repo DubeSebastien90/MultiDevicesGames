@@ -258,7 +258,18 @@ class ClientSession extends ChangeNotifier {
       me: layout,
       board: _board ?? layout.board,
       coverage: _coverage ??
-          CoverageMap(liveRects: [layout.viewport], board: layout.board),
+          CoverageMap(
+            screens: [
+              ScreenRect(
+                centerX: layout.worldCenterX,
+                centerY: layout.worldCenterY,
+                width: layout.halfWidth * 2,
+                height: layout.halfHeight * 2,
+                turnRadians: layout.turnRadians,
+              ),
+            ],
+            board: layout.board,
+          ),
     );
   }
 

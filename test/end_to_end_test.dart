@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
@@ -113,8 +114,8 @@ void main() {
     // Identical phones, so the game's sort is a no-op and join order stands.
     expect(phone1.layout!.index, 0);
     expect(phone2.layout!.index, 1);
-    expect(phone1.layout!.worldOffsetX, closeTo(0, 1e-9));
-    expect(phone2.layout!.worldOffsetX, closeTo(15.24 + 0.6, 1e-9));
+    expect(phone1.layout!.leftEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.leftEdge, closeTo(15.24 + 0.6, 1e-9));
     expect(phone2.layout!.placement, contains('right of phone 1'));
 
     // Both were told what they are about to play, and how to stand for it.
@@ -169,7 +170,7 @@ void main() {
       () async {
     await _startPlaying(host, phone1, phone2);
 
-    final seamX = phone2.layout!.worldOffsetX; // first lit pixel of phone 2
+    final seamX = phone2.layout!.leftEdge; // first lit pixel of phone 2
     final anchorX = phone1.sharedState['anchorX']! as double;
     final anchorY = phone1.sharedState['anchorY']! as double;
 
@@ -304,13 +305,13 @@ void main() {
       'new layouts delivered',
       () => phone1.layout != null &&
           phone2.layout != null &&
-          phone1.layout!.worldOffsetY != phone2.layout!.worldOffsetY,
+          phone1.layout!.topEdge != phone2.layout!.topEdge,
     );
 
     // Stacked this time: same phones, board rotated a quarter turn.
-    expect(phone1.layout!.worldOffsetX, closeTo(0, 1e-9));
-    expect(phone2.layout!.worldOffsetX, closeTo(0, 1e-9));
-    expect(phone2.layout!.worldOffsetY, closeTo(6.858 + 0.6, 1e-9));
+    expect(phone1.layout!.leftEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.leftEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.topEdge, closeTo(6.858 + 0.6, 1e-9));
     expect(phone2.layout!.placement, contains('below phone 1'));
 
     // And it really plays: confirm through and the bin game starts.
@@ -449,4 +450,12 @@ Future<void> _startPlaying(
     () => phone1.buffer.bufferedSnapshots > 3 &&
         phone2.buffer.bufferedSnapshots > 3,
   );
+}
+
+/// Left/top edge of a compiled screen, which is what these expectations were
+/// originally written against. The layout itself is centre-based now, because a
+/// screen that can be turned has no meaningful axis-aligned corner.
+extension EdgeReadout on PhoneLayout {
+  double get leftEdge => viewport.left;
+  double get topEdge => viewport.top;
 }

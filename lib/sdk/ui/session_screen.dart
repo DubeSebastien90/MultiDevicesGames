@@ -43,7 +43,7 @@ class SessionScreen extends StatelessWidget {
           // phones can leave phone 1 at the same offset it had in a row.
           key: ValueKey(
             '${client.manifest?.id}-${client.phoneId}-'
-            '${client.layout?.worldOffsetX}-${client.layout?.worldOffsetY}-'
+            '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}-'
             '${client.layout?.total}',
           ),
           controller: controller,

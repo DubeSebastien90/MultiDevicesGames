@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart' show PhoneSlice;
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
@@ -44,9 +45,9 @@ void main() {
       // The numbers the original slingshot board was tuned against.
       expect(board.board.width, closeTo(15.24 * 2 + 0.6, 1e-9));
       expect(board.board.height, closeTo(6.858, 1e-9));
-      expect(board.phones[0].worldOffsetX, closeTo(0, 1e-9));
-      expect(board.phones[1].worldOffsetX, closeTo(15.24 + 0.6, 1e-9));
-      expect(board.phones.every((p) => p.worldOffsetY == 0), isTrue);
+      expect(board.phones[0].leftEdge, closeTo(0, 1e-9));
+      expect(board.phones[1].leftEdge, closeTo(15.24 + 0.6, 1e-9));
+      expect(board.phones.every((p) => p.topEdge.abs() < 1e-9), isTrue);
       expect(board.phones[1].placement, contains('right of phone 1'));
     });
 
@@ -82,10 +83,10 @@ void main() {
       expect(board.board.width, closeTo(15.24, 1e-9));
       expect(board.board.height, closeTo(6.858 * 3 + 0.6 * 2, 1e-9));
 
-      expect(board.phones[0].worldOffsetY, closeTo(0, 1e-9));
-      expect(board.phones[1].worldOffsetY, closeTo(6.858 + 0.6, 1e-9));
-      expect(board.phones[2].worldOffsetY, closeTo((6.858 + 0.6) * 2, 1e-9));
-      expect(board.phones.every((p) => p.worldOffsetX == 0), isTrue);
+      expect(board.phones[0].topEdge, closeTo(0, 1e-9));
+      expect(board.phones[1].topEdge, closeTo(6.858 + 0.6, 1e-9));
+      expect(board.phones[2].topEdge, closeTo((6.858 + 0.6) * 2, 1e-9));
+      expect(board.phones.every((p) => p.leftEdge.abs() < 1e-9), isTrue);
       expect(board.phones[1].placement, contains('below phone 1'));
     });
 
@@ -129,7 +130,7 @@ void main() {
 
       expect(board.phones.first.phoneId, 'small');
       expect(board.phones.last.phoneId, 'big');
-      expect(board.phones.last.worldOffsetY, greaterThan(0));
+      expect(board.phones.last.topEdge, greaterThan(0));
     });
 
     test('a custom comparator works too', () {
@@ -193,27 +194,28 @@ void main() {
       final board = compiler.compile(
         const BoardPlan([
           // Deliberately off in negative space.
-          PhonePlacement('p1', xMm: -500, yMm: -200, quarterTurns: 1),
-          PhonePlacement('p2', xMm: -500 + 158.4, yMm: -200, quarterTurns: 1),
+          PhonePlacement('p1', xMm: -500, yMm: -200, turnDeg: 90),
+          PhonePlacement('p2', xMm: -500 + 158.4, yMm: -200, turnDeg: 90),
         ]),
         lobby,
       );
 
       expect(board.board.left, 0);
       expect(board.board.top, 0);
-      expect(board.phones.first.worldOffsetX, closeTo(0, 1e-9));
+      expect(board.phones.first.leftEdge, closeTo(0, 1e-9));
     });
 
     test('a helper result can be adjusted by hand', () {
       final lobby = lobbyOf([phone('p1'), phone('p2')]);
       // Nudge the second phone a centimetre further out than the helper put it.
+      // Centre, not corner: 10mm further out than the helper put it.
       final plan = Layouts.row(lobby.phones).withPlacement(
         const PhonePlacement('p2',
-            xMm: 168.4, yMm: 0, quarterTurns: 1, hint: 'a bit further'),
+            xMm: 244.6, yMm: 34.29, turnDeg: 90, hint: 'a bit further'),
       );
       final board = compiler.compile(plan, lobby);
 
-      expect(board.phones.last.worldOffsetX, closeTo(16.84, 1e-9));
+      expect(board.phones.last.leftEdge, closeTo(16.84, 1e-9));
       expect(board.phones.last.placement, 'a bit further');
       // The wider gap is a wider seam, and nothing else changes.
       expect(board.coverage.seamRects().single.width, closeTo(1.6, 1e-6));
@@ -252,23 +254,24 @@ void main() {
       expect(sideways.board.height, closeTo(6.858, 1e-9));
     });
 
-    test('the pixel dimensions swap with it, so the scale stays true', () {
+    test('the panel is never swapped — the turn carries the rotation', () {
       final lobby = lobbyOf([phone('p1')]);
       final sideways = compiler.compile(Layouts.row(lobby.phones), lobby);
       final me = sideways.phones.single;
 
-      // The phone will turn its own surface, so by the time anything is drawn
-      // its pixel axes point the same way as the world's.
-      expect(me.quarterTurns, 1);
-      expect(me.activePxWidth, closeTo(152.4 * 400 / 25.4, 1e-6));
-      expect(me.activePxHeight, closeTo(68.58 * 400 / 25.4, 1e-6));
+      expect(me.turnRadians, closeTo(math.pi / 2, 1e-9));
+      // Pixels stay in the phone's own portrait frame. There is exactly one
+      // place rotation is handled, and it is the transform.
+      expect(me.activePxWidth, closeTo(68.58 * 400 / 25.4, 1e-6));
+      expect(me.activePxHeight, closeTo(152.4 * 400 / 25.4, 1e-6));
 
-      // One world unit is still one centimetre of real glass.
+      // The board footprint is turned, and one world unit is still one
+      // centimetre of real glass.
       expect(me.viewport.width, closeTo(15.24, 1e-9));
       expect(me.viewport.height, closeTo(6.858, 1e-9));
     });
 
-    test('the widget turns the opposite way, to cancel the placement', () {
+    test('a turn is carried as an angle, not a quarter-turn count', () {
       final lobby = lobbyOf([phone('p1')]);
       final sideways = compiler.compile(Layouts.row(lobby.phones), lobby);
       final upright = compiler.compile(
@@ -278,12 +281,12 @@ void main() {
 
       // Turned one step clockwise on the table, so the surface turns one step
       // back — otherwise everything would read on its side.
-      expect(sideways.phones.single.quarterTurns, 1);
-      expect(sideways.phones.single.screenQuarterTurns, 3);
+      expect(sideways.phones.single.turnRadians, closeTo(math.pi / 2, 1e-9));
+      
 
       // Nothing to cancel when the phone is left upright.
-      expect(upright.phones.single.quarterTurns, 0);
-      expect(upright.phones.single.screenQuarterTurns, 0);
+      expect(upright.phones.single.turnRadians, 0);
+      
     });
 
     test('the transforms stay exact inverses when turned', () {
@@ -312,9 +315,8 @@ void main() {
       final board = compiler.compile(Layouts.row(lobby.phones), lobby);
       final round = PhoneLayout.fromJson(board.phones.single.toJson());
 
-      expect(round.quarterTurns, 1);
-      expect(round.screenQuarterTurns, 3);
-      expect(round.activePxWidth, closeTo(152.4 * 400 / 25.4, 1e-6));
+      expect(round.turnRadians, closeTo(math.pi / 2, 1e-9));
+      expect(round.activePxWidth, closeTo(68.58 * 400 / 25.4, 1e-6));
     });
 
     test('a board may mix orientations', () {
@@ -323,8 +325,8 @@ void main() {
       final lobby = lobbyOf([phone('a'), phone('b')]);
       final board = compiler.compile(
         const BoardPlan([
-          PhonePlacement('a', xMm: 0, yMm: 0, quarterTurns: 1),
-          PhonePlacement('b', xMm: 158.4, yMm: 0),
+          PhonePlacement('a', xMm: 0, yMm: 0, turnDeg: 90),
+          PhonePlacement('b', xMm: 116.49, yMm: 0),
         ]),
         lobby,
       );
@@ -335,8 +337,8 @@ void main() {
       expect(a.viewport.height, closeTo(6.858, 1e-9));
       expect(b.viewport.width, closeTo(6.858, 1e-9));
       expect(b.viewport.height, closeTo(15.24, 1e-9));
-      expect(a.screenQuarterTurns, 3);
-      expect(b.screenQuarterTurns, 0);
+      expect(a.turnRadians, closeTo(math.pi / 2, 1e-9));
+      expect(b.turnRadians, 0);
     });
 
     test('the instruction says which way up, not just which way along', () {
@@ -408,7 +410,7 @@ void main() {
 
       // Every screen shares a left edge and descends — no proportions guess
       // needed to know this is a column.
-      expect(board.slices.every((s) => s.viewport.left == 0), isTrue);
+      expect(board.slices.every((s) => s.viewport.left.abs() < 1e-9), isTrue);
       for (var i = 1; i < board.slices.length; i++) {
         expect(board.slices[i].viewport.top,
             greaterThan(board.slices[i - 1].viewport.top));
@@ -551,18 +553,13 @@ void main() {
       }
     });
 
-    test("the right phone's first lit pixel is one gap past the left phone's",
-        () {
+    test('6mm of bezel sits between the two lit areas', () {
       final lobby = lobbyOf([phone('p1'), phone('p2')]);
       final board = compiler.compile(Layouts.row(lobby.phones), lobby);
-      final left = board.phones[0];
-      final right = board.phones[1];
 
-      final leftEdge = left.physicalPxToWorld(left.activePxWidth, 0);
-      final rightEdge = right.physicalPxToWorld(0, 0);
-
-      // 6mm of bezel between the last lit pixel and the first one.
-      expect(rightEdge.x - leftEdge.x, closeTo(0.6, 1e-9));
+      final gap =
+          board.phones[1].viewport.left - board.phones[0].viewport.right;
+      expect(gap, closeTo(0.6, 1e-6));
     });
 
     test('a viewport covers exactly its own screen', () {
@@ -587,9 +584,9 @@ void main() {
       );
 
       expect(board.phones.map((p) => p.phoneId), ['a', 'b', 'c']);
-      expect(board.phones[0].worldOffsetX, closeTo(0, 1e-9));
-      expect(board.phones[1].worldOffsetX, closeTo(10.0 + 0.6, 1e-9));
-      expect(board.phones[2].worldOffsetX, closeTo(10.6 + 14.0 + 0.6, 1e-9));
+      expect(board.phones[0].leftEdge, closeTo(0, 1e-9));
+      expect(board.phones[1].leftEdge, closeTo(10.0 + 0.6, 1e-9));
+      expect(board.phones[2].leftEdge, closeTo(10.6 + 14.0 + 0.6, 1e-9));
       expect(board.phones[2].index, 2);
     });
 
@@ -637,4 +634,12 @@ void main() {
       );
     });
   });
+}
+
+/// Left/top edge of a compiled screen, which is what these expectations were
+/// originally written against. The layout itself is centre-based now, because a
+/// screen that can be turned has no meaningful axis-aligned corner.
+extension EdgeReadout on PhoneLayout {
+  double get leftEdge => viewport.left;
+  double get topEdge => viewport.top;
 }

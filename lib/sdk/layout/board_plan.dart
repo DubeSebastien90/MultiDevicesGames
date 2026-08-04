@@ -1,38 +1,47 @@
-/// Where one phone's lit area sits on the board, in millimetres.
+import 'dart:math' as math;
+
+/// Where one phone goes, in board millimetres.
 ///
-/// The *lit* area, not the casing — bezels are the game's business, because a
-/// game may want the screens touching (leaving a gap the ball flies through) or
-/// deliberately spaced.
+/// The position is the **middle of the lit area**, and [turnDeg] is how far the
+/// phone is turned clockwise from upright. Centre-plus-angle rather than a
+/// corner, because once a phone can lie at 37° there is no meaningful
+/// axis-aligned corner to measure from.
 class PhonePlacement {
   const PhonePlacement(
     this.phoneId, {
     required this.xMm,
     required this.yMm,
-    this.quarterTurns = 0,
+    this.turnDeg = 0,
     this.hint,
   });
 
   final String phoneId;
 
-  /// Top-left corner of this screen's footprint, in board millimetres. The
-  /// board's origin is wherever the plan puts it; the compiler normalises so
-  /// the top-left is (0, 0).
+  /// Middle of the lit area, in board millimetres. The compiler normalises the
+  /// whole plan so the board's top-left corner is the world origin.
   final double xMm;
   final double yMm;
 
-  /// How far this phone is turned within the board, clockwise, in 90° steps.
+  /// Clockwise, degrees, from the phone held upright.
   ///
-  /// The app itself is locked portrait and never rotates. This is the game
-  /// saying "put this phone on its side", and the phone then rotates what it
-  /// draws so the world reads upright to whoever is standing at the table.
-  ///
-  /// An odd number of turns swaps the screen's footprint: a phone 68mm wide
-  /// and 152mm tall occupies 152 x 68 of the board.
-  final int quarterTurns;
+  /// The app is locked portrait and never rotates. This is the game saying how
+  /// the device lies on the table; the phone then turns its camera and its UI
+  /// to match, so the board reads the right way up to its player.
+  final double turnDeg;
+
+  double get turnRadians => turnDeg * math.pi / 180;
 
   /// Optional line shown on that phone's placement screen: 'below the big one'.
-  /// The platform writes a sensible default when this is null.
   final String? hint;
+
+  PhonePlacement copyWith({double? xMm, double? yMm, double? turnDeg}) =>
+      PhonePlacement(
+        phoneId,
+        xMm: xMm ?? this.xMm,
+        yMm: yMm ?? this.yMm,
+        turnDeg: turnDeg ?? this.turnDeg,
+        hint: hint,
+      );
 }
 
 /// The playfield rectangle, in the same millimetre space as the placements.
@@ -58,17 +67,29 @@ class BoardBoundsMm {
 
 /// A game's answer to "where does everyone go?".
 class BoardPlan {
-  const BoardPlan(this.placements, {this.instruction, this.bounds});
+  const BoardPlan(
+    this.placements, {
+    this.instruction,
+    this.bounds,
+    this.allowGaps = false,
+  });
 
   final List<PhonePlacement> placements;
 
-  /// The one line everyone reads before moving their phone:
-  /// 'Stack the phones one above the other, long edges touching.'
+  /// The one line everyone reads before moving their phone.
   final String? instruction;
 
   /// The playfield. Null means "the box around every screen", which is the
-  /// right answer whenever the phones match.
+  /// right answer whenever the phones are butted together.
   final BoardBoundsMm? bounds;
+
+  /// The board is meant to have space between screens.
+  ///
+  /// Normally a phone sitting far from its neighbours is a bug in the plan's
+  /// arithmetic, and the compiler refuses it. A ring of phones around a table
+  /// is the legitimate exception: nothing touches, and the potato crossing the
+  /// void between two screens is the game working, not failing.
+  final bool allowGaps;
 
   PhonePlacement? forPhone(String phoneId) {
     for (final p in placements) {
@@ -85,6 +106,7 @@ class BoardPlan {
         if (p.phoneId == placement.phoneId) placement else p,
     ],
     instruction: instruction,
+    allowGaps: allowGaps,
     // Deliberately dropped: moving a screen invalidates a hugged playfield,
     // and the bounding box is the safe answer until the game says otherwise.
     bounds: null,
