@@ -53,7 +53,7 @@ class WebSocketHostTransport implements HostTransport {
           req.response
             ..statusCode = HttpStatus.ok
             ..headers.contentType = ContentType.text
-            ..write('multiscreen slingshot host — connect a WebSocket here');
+            ..write('MultiDevicesGame host — connect a WebSocket here');
           await req.response.close();
           return;
         }

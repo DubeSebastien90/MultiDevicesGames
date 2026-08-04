@@ -56,6 +56,292 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
 
+---
+
+# Writing a game
+
+**Read this before touching anything. If you are an AI agent, this section is
+the brief.**
+
+## The one rule
+
+> **Do not modify anything under `lib/sdk/`.**
+>
+> A new game — new rules, new layout, new artwork, no physics, whatever it needs
+> — is written entirely inside `lib/games/<your_game>/`. The platform is
+> finished. If it looks like you need to change it, you have almost certainly
+> missed something the contract already gives you.
+
+There is **exactly one exception**, and it is one line:
+
+```dart
+// lib/sdk/catalog.dart
+import '../games/your_game/your_game.dart';   // ← add this
+
+static const playlist = <MultiscreenGame>[
+  SlingshotGame(),
+  BallBinGame(),
+  HotPotatoGame(),
+  YourGame(),                                 // ← and this
+];
+```
+
+That file exists *to be* the seam. Nothing else in `sdk/` names a game, and
+that is checked: `grep -rn "Slingshot" lib/sdk/` returns only `catalog.dart`.
+
+If your game ships images or sounds, you also add them to `assets/games/<id>/`
+and declare the folder in `pubspec.yaml`. That is the whole list of files
+outside your own folder.
+
+## What you implement
+
+Four members. That is the entire contract.
+
+```dart
+class YourGame implements MultiscreenGame {
+  const YourGame();
+
+  @override
+  GameManifest get manifest => const GameManifest(
+    id: 'yourgame',                    // stable, wire-visible
+    title: 'Your Game',
+    tagline: 'One line, shown before the round.',
+    goal: 'How it ends, in the player\'s words.',
+    players: PlayerCount.range(min: 2, max: 6),
+    supportsIpad: false,               // claim it only once you have tried one
+  );
+
+  @override
+  BoardPlan planBoard(LobbyInfo lobby) => Layouts.row(lobby.phones);
+
+  @override
+  GameSim createSim(BoardContext context) => YourSim(context);   // host only
+
+  @override
+  GameView createView(ViewContext context) => YourView();        // every phone
+}
+```
+
+### `manifest` — who you are, and what table you need
+
+`PlayerCount` has four shapes. Reach for the last only when nothing else fits:
+
+```dart
+PlayerCount.range(min: 3)                                    // 3 or more
+PlayerCount.range(min: 2, max: 8, parity: CountParity.even)  // teams
+PlayerCount.exactly(2)                                       // head to head
+PlayerCount.anyOf([3, 5, 9])                                 // escape hatch
+```
+
+The lobby greys your game out and explains why, entirely from this. You write no
+UI for it.
+
+### `planBoard` — where the phones go
+
+Called the moment your game is chosen, *before* anything is broadcast, so a bad
+plan fails on the host's screen instead of sending everyone to rearrange a table
+for a round that cannot start.
+
+You are handed a `LobbyInfo`:
+
+| What you get | Meaning |
+| --- | --- |
+| `phones` | `List<PhoneSpec>`, in join order — which means nothing physical |
+| `phoneCount` | how many |
+| `byId(id)` | lookup |
+
+And per phone (`PhoneSpec`):
+
+| Field | Meaning |
+| --- | --- |
+| `phoneId` | `'p1'`, stable for the connection |
+| `label` | `'Pixel 7'`, for diagrams |
+| `widthMm`, `heightMm` | **portrait**: width is the *short* edge |
+| `bezelMm` | casing edge to first lit pixel |
+| `dpi`, `devicePixelRatio` | density |
+| `activePxWidth`, `activePxHeight` | resolution |
+| `areaMm2`, `diagonalMm` | derived, for sorting by size |
+
+Use a helper unless you genuinely need something else:
+
+```dart
+Layouts.row(lobby.phones, sort: PhoneSort.smallestFirst)   // wide runway
+Layouts.column(lobby.phones, sort: PhoneSort.largestLast)  // tall well
+Layouts.circle(lobby.phones)                               // ring, 3+ phones
+```
+
+Every helper returns a plain `BoardPlan`, so you can call one and then nudge a
+single phone with `withPlacement`. Or build placements yourself — position is
+the **centre** of the lit area in millimetres, plus `turnDeg` clockwise:
+
+```dart
+BoardPlan([
+  PhonePlacement('p1', xMm: 0,   yMm: 0, turnDeg: 90),
+  PhonePlacement('p2', xMm: 160, yMm: 0, turnDeg: 90),
+], instruction: 'Side by side, on their sides.')
+```
+
+The compiler **refuses** a plan that overlaps two screens, leaves a phone
+unplaced, names a phone that is not there, or strands one far from the rest.
+Pass `allowGaps: true` if the spacing is deliberate, as a ring's is.
+
+### `createSim` — the rules, host only
+
+```dart
+abstract class GameSim {
+  void step(double dt);                 // fixed 60Hz
+  void onTouch(TouchEvent touch);       // world coordinates, tagged by phone
+  Iterable<Entity> get entities;        // everything drawable, right now
+  Map<String, Object?> get sharedState; // slow-changing values, e.g. phase
+  GameOutcome? get outcome;             // non-null ends the round
+  void reset();
+}
+```
+
+`BoardContext` gives you:
+
+| What you get | Meaning |
+| --- | --- |
+| `board` | the playfield, `WorldRect`, world units |
+| `coverage` | which parts are backed by a screen; `seamRects()` |
+| `scores` | the session scoreboard, **writable** |
+| `slices` | named screen rectangles, turn included |
+| `phoneAt(x, y)` | whose screen is this point on? |
+| `nearestPhone(x, y)` | same, but never null |
+
+### `createView` — the pixels, every phone
+
+Each frame you are handed a `Frame`:
+
+| What you get | Meaning |
+| --- | --- |
+| `entities` | interpolated to this instant, by id |
+| `sharedState`, `scores` | as the sim published them |
+| `timeMs` | the **shared** clock — identical on every phone |
+| `dt` | local frame delta, for effects that need not agree |
+| `me` | this phone's `PhoneLayout` |
+| `board`, `coverage`, `visible` | geometry, and what to cull against |
+| `onePixel` | one physical pixel in world units, for stroke widths |
+| `ofKind(kind)`, `byId(id)` | convenience |
+
+The canvas arrives with the camera applied: draw at world coordinates and it
+lands correctly, at true physical scale, on whichever phone can see it.
+
+## Physics is optional
+
+Two starting points. Pick by whether you have anything to integrate.
+
+**No physics** — extend `GameSim` directly and link no engine. Hot Potato does
+this: its whole world is "who is holding it" and "how long is left".
+
+```dart
+class YourSim implements GameSim { ... }
+```
+
+**Physics** — extend `Forge2DGameSim`, which wires up a world and the
+body↔entity plumbing. Build in your constructor body with `addBody`:
+
+```dart
+class YourSim extends Forge2DGameSim {
+  YourSim(super.context) : super(gravity: Vector2(0, 9)) {
+    addBoundaryWalls();
+    addBody('ball', 'ball', BodyDef(type: BodyType.dynamic, position: ...),
+        props: {ShapeProps.shape: ShapeKind.circle, ShapeProps.radius: 0.5});
+  }
+}
+```
+
+`hide(id)` / `show(id)` park a body without destroying it — how Ball Bin
+recycles a pool of six balls.
+
+**Even with no physics, still use entities.** Physics is optional; the
+platform's interpolation is not. An entity's transform is smoothed onto the
+shared timeline, so easing one toward a new position makes it visibly slide
+across the table on every screen at once, in step. That is the whole point of
+the project, and it costs you a lerp.
+
+## Rendering: free, or your own
+
+**Free** — return a `ShapeView`. It draws every entity from its props, and a
+prototype gets a working picture without a line of paint code:
+
+```dart
+GameView createView(ViewContext c) => ShapeView();
+// entity props: shape (circle|box), r / w+h, color, spin
+```
+
+**Extend it** — keep the shapes and add your own layer, which is what Slingshot
+does for its rubber band:
+
+```dart
+class YourView extends ShapeView {
+  @override
+  void renderForeground(Canvas canvas, Frame frame) { ... }
+}
+```
+
+**Replace it** — implement `GameView.render` outright for full custom art. Load
+sprites in `load()`, which is awaited during the placement screen so nothing
+blocks a frame mid-round.
+
+**A HUD is Flutter widgets**, not canvas painting:
+
+```dart
+@override
+Widget? buildHud(BuildContext context, HudFrame frame) =>
+    Text('${frame.sharedState['caught']} / 10');
+```
+
+## Scoring
+
+Score belongs to the lobby and survives every round. Award it and nothing else:
+
+```dart
+context.scores.award(phoneId, 10);   // or a negative number
+context.scores.awardAll(5);          // co-operative
+```
+
+The platform shows standings in the lobby and on the results screen, and shows
+**nothing at all** until somebody scores — so a co-operative game that never
+awards is completely normal.
+
+## Five rules that will break the seam if you ignore them
+
+1. **`step(dt)` must be pure with respect to wall-clock time.** No
+   `DateTime.now()`, no timers. Accumulate `dt`. The platform decides when time
+   passes, and that is what keeps every screen agreeing.
+2. **`render` must not mutate game state.** It runs on every device at each
+   device's own frame rate. The host's sim is the only writer; a view is a pure
+   function of its `Frame`.
+3. **Award points in `step`, never in the `outcome` getter.** `outcome` is polled
+   more than once per tick, so awarding there double-charges. Latch it:
+   `if (!_awarded) { _awarded = true; scores.award(...); }`
+4. **An entity's `kind` and `props` are immutable.** Declared once when it
+   appears. Only the transform moves per tick, and only the transform is
+   interpolated.
+5. **Animate from `frame.timeMs`, not a local clock.** Two phones on separate
+   clocks pulse out of step.
+
+## Checklist for a new game
+
+```
+lib/games/your_game/
+  your_game.dart          implements MultiscreenGame — the four members
+  your_game_sim.dart      the rules (GameSim, or Forge2DGameSim)
+  your_game_view.dart     the pixels (ShapeView, or GameView)
+  your_game_config.dart   your tunables, as plain data
+```
+
+- [ ] Registered in `sdk/catalog.dart` (one import, one list entry)
+- [ ] `manifest.players` says the truth about your table
+- [ ] `planBoard` uses a helper, or a plan the compiler accepts
+- [ ] Nothing under `lib/sdk/` modified
+- [ ] `flutter analyze` clean, `flutter test` green
+- [ ] A test that drives the sim headlessly — see `test/hot_potato_test.dart`,
+      which plays a whole round with no host, no sockets and no rendering
+
+---
+
 ## Score
 
 Score belongs to the lobby, not to a game: one running total per phone that

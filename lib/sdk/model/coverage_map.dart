@@ -69,8 +69,8 @@ class ScreenRect {
 ///
 /// The world is continuous and physics runs *everywhere*, including the dead
 /// millimetres between two phones. This map is metadata on top, so a game can
-/// choose a policy per dead zone: the slingshot lets the bird cross the bezel
-/// gap invisibly and reappear exactly where momentum says it should.
+/// choose a policy per dead zone — most let a moving thing cross the gap
+/// invisibly and reappear exactly where momentum says it should.
 class CoverageMap {
   const CoverageMap({required this.screens, required this.board});
 
