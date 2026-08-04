@@ -26,33 +26,40 @@ enum ClientPhase {
   disconnected,
 }
 
-/// A round that ended, and what the playlist serves up next.
+/// A round that ended, and what follows it.
+///
+/// [nextTitle] is null when the round was a one-off started from the games
+/// list. Its absence is how every phone knows this ends at the lobby rather
+/// than chaining into another game.
 class RoundResult {
   const RoundResult({
     required this.won,
     required this.title,
     required this.summary,
-    required this.nextTitle,
-    required this.nextTagline,
-    required this.nextInstruction,
+    this.nextTitle,
+    this.nextTagline,
+    this.nextInstruction,
   });
 
   final bool won;
   final String title;
   final String? summary;
-  final String nextTitle;
-  final String nextTagline;
+
+  final String? nextTitle;
+  final String? nextTagline;
 
   /// How to rearrange the phones for what is coming.
-  final String nextInstruction;
+  final String? nextInstruction;
+
+  bool get hasNext => nextTitle != null;
 
   static RoundResult fromJson(Map<String, dynamic> j) => RoundResult(
     won: j['won'] as bool? ?? true,
     title: (j['gameTitle'] as String?) ?? 'That round',
     summary: j['summary'] as String?,
-    nextTitle: (j['nextTitle'] as String?) ?? 'Next game',
-    nextTagline: (j['nextTagline'] as String?) ?? '',
-    nextInstruction: (j['nextInstruction'] as String?) ?? '',
+    nextTitle: j['nextTitle'] as String?,
+    nextTagline: j['nextTagline'] as String?,
+    nextInstruction: j['nextInstruction'] as String?,
   );
 }
 

@@ -26,6 +26,39 @@ import '../score/scoreboard.dart';
 /// a host squinting at a diagram could.
 enum HostPhase { idle, lobby, placing, playing, finished }
 
+/// How a round was started, which decides where it ends.
+enum RoundMode {
+  /// From the **Play** button: win one and the next begins, forever.
+  playlist,
+
+  /// From the games list: play that one, then back to the lobby.
+  oneOff,
+}
+
+/// One entry in the lobby's list of games.
+///
+/// The eligibility check is answered once, here, rather than being re-derived
+/// by whatever draws the list — so the reason a game is greyed out and the
+/// reason it cannot be started are guaranteed to be the same reason.
+class GameOffer {
+  const GameOffer({
+    required this.game,
+    required this.playable,
+    required this.reason,
+  });
+
+  final MultiscreenGame game;
+
+  /// Whether this table can start it right now.
+  final bool playable;
+
+  /// Why not, when it does not fit the phone count: 'needs 3+ phones'. Null
+  /// when the game itself is fine and only the lobby is not ready.
+  final String? reason;
+
+  GameManifest get manifest => game.manifest;
+}
+
 /// One connected phone, from the host's point of view.
 class PhoneRecord {
   PhoneRecord({required this.link});
@@ -97,6 +130,10 @@ class HostSession extends ChangeNotifier {
 
   /// Position in the playlist. Only ever goes up; the catalog wraps.
   int _gameIndex = 0;
+
+  /// Whether the current round chains into the next game or returns to the
+  /// lobby. Set when the round starts and never guessed at afterwards.
+  RoundMode _mode = RoundMode.playlist;
   MultiscreenGame? _game;
   GameOutcome? _outcome;
 
@@ -121,10 +158,6 @@ class HostSession extends ChangeNotifier {
 
   /// The game being set up or played.
   MultiscreenGame? get game => _game;
-
-  /// What the playlist serves up after this round.
-  MultiscreenGame? get nextGame =>
-      GameCatalog.playableFrom(_gameIndex + 1, _phones.length);
 
   String? get qrPayload => _address == null ? null : '$_address#$_joinCode';
   String? get discoveryFailure => _beacon?.failure;
@@ -390,14 +423,47 @@ class HostSession extends ChangeNotifier {
 
   // ----------------------------------------------------------- the round
 
-  /// Choose the game, plan the board, and send everyone to their places.
+  /// Which way the current round was started.
+  RoundMode get mode => _mode;
+
+  /// What comes after this round — null for a one-off, or when nothing else
+  /// fits the table.
+  MultiscreenGame? get nextGame => _mode == RoundMode.oneOff
+      ? null
+      : GameCatalog.playableFrom(_gameIndex + 1, _phones.length);
+
+  /// One game, then back to the lobby. The games list.
   ///
-  /// Everything between "Play" and "placing" happens here, with no screen in
-  /// between: the game already knows where the phones go.
+  /// Everything between the tap and the placement screen happens here, with no
+  /// screen in between: the game already knows where the phones go.
+  void startGame(MultiscreenGame game) {
+    if (!canStart) return;
+    if (!game.manifest.fits(_phones.length)) return;
+    final index = GameCatalog.playlist
+        .indexWhere((g) => g.manifest.id == game.manifest.id);
+    if (index < 0) return;
+    _mode = RoundMode.oneOff;
+    _startGame(index);
+  }
+
+  /// The never-ending playlist. The **Play** button.
   void startRound() {
     if (!canStart) return;
+    _mode = RoundMode.playlist;
     _startGame(GameCatalog.playableIndexFrom(_gameIndex, _phones.length)!);
   }
+
+  /// Every game, with whether this table can play it. The lobby's list.
+  List<GameOffer> get offers => [
+    for (final game in GameCatalog.playlist)
+      GameOffer(
+        game: game,
+        playable: canStart && game.manifest.fits(_phones.length),
+        reason: game.manifest.fits(_phones.length)
+            ? null
+            : game.manifest.requirement(),
+      ),
+  ];
 
   void _startGame(int index) {
     _gameIndex = index;
@@ -573,6 +639,8 @@ class HostSession extends ChangeNotifier {
       'won': outcome.won,
       'summary': outcome.summary,
       ..._gameFields,
+      // Present only on a playlist round. Its absence is how every phone knows
+      // this one ends at the lobby.
       if (next != null) ...{
         'nextTitle': next.manifest.title,
         'nextTagline': next.manifest.tagline,
@@ -599,8 +667,8 @@ class HostSession extends ChangeNotifier {
     }
   }
 
-  /// On to the next game, which means a new board and so a fresh trip through
-  /// placement.
+  /// On to the next game in the playlist, which means a new board and so a
+  /// fresh trip through placement.
   void advanceToNextGame() {
     if (_phase != HostPhase.finished) return;
     _sim?.dispose();
@@ -648,6 +716,7 @@ class HostSession extends ChangeNotifier {
       p.confirmed = false;
     }
     _phase = HostPhase.lobby;
+    _mode = RoundMode.playlist;
     _broadcastLobby();
     _updateBeacon();
     notifyListeners();

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
+import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
@@ -292,12 +293,26 @@ void main() {
           phone2.phase == ClientPhase.finished,
     );
     expect(phone1.result!.won, isTrue);
-    expect(phone2.result!.nextTitle, 'Ball Bin');
-    expect(phone2.result!.nextInstruction, contains('one above the other'));
+    expect(phone2.result!.title, 'Slingshot');
 
-    // The playlist advances into placement, not straight to play: the phones
-    // have to physically move first.
-    host.advanceToNextGame();
+    // A round ends at the lobby; the host then picks the next game from the
+    // list rather than being handed one.
+    host.returnToLobby();
+    expect(host.phase, HostPhase.lobby);
+    await waitFor(
+      'phones back in the lobby',
+      () => phone1.phase == ClientPhase.lobby &&
+          phone2.phase == ClientPhase.lobby,
+    );
+
+    // Ball Bin is offered because two phones fit it; Hot Potato is not.
+    final offered = {
+      for (final o in host.offers) o.manifest.id: o.playable,
+    };
+    expect(offered['ballbin'], isTrue);
+    expect(offered['hotpotato'], isFalse);
+
+    host.startGame(const BallBinGame());
     expect(host.phase, HostPhase.placing);
     expect(host.game!.manifest.id, 'ballbin');
 
@@ -351,7 +366,10 @@ void main() {
     await waitFor('slingshot won', () => host.phase == HostPhase.finished,
         timeout: const Duration(seconds: 12));
 
-    host.advanceToNextGame();
+    host.returnToLobby();
+    await waitFor('back in the lobby',
+        () => phone2.phase == ClientPhase.lobby);
+    host.startGame(const BallBinGame());
     await waitFor('placed again', () => phone2.phase == ClientPhase.placing);
     phone1.confirmPlacement();
     phone2.confirmPlacement();
