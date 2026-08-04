@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../app_controller.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
+import '../model/player_color.dart';
 import 'metrics_card.dart';
 import 'standings_card.dart';
 
@@ -70,6 +71,8 @@ class LobbyView extends StatelessWidget {
                     _HostPanel(host: host)
                   else
                     _JoinedPanel(client: client, phoneCount: phoneCount),
+                  const SizedBox(height: 14),
+                  _ColorPicker(client: client),
                   const SizedBox(height: 14),
                   _WhoIsHere(
                     controller: controller,
@@ -184,6 +187,112 @@ class _JoinedPanel extends StatelessWidget {
   );
 }
 
+/// Which colour you are, at a table where that is how people tell you apart.
+///
+/// Everyone arrives already wearing a colour, so this screen is never a gate —
+/// it is here for the person who wants to be Green because they are always
+/// Green. A taken swatch is shown struck through rather than hidden, because
+/// "somebody else has it" and "it does not exist" should not look the same.
+class _ColorPicker extends StatelessWidget {
+  const _ColorPicker({required this.client});
+
+  final ClientSession client;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mine = client.myColor;
+    final taken = client.takenColorIds;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Your colour', style: theme.textTheme.titleSmall),
+                const Spacer(),
+                if (mine != null)
+                  Text(
+                    mine.name,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: mine.value,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final c in PlayerPalette.all)
+                  _Swatch(
+                    color: c,
+                    selected: c.id == mine?.id,
+                    // Mine is never "taken" from my own point of view.
+                    taken: taken.contains(c.id) && c.id != mine?.id,
+                    onTap: () => client.pickColor(c),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Swatch extends StatelessWidget {
+  const _Swatch({
+    required this.color,
+    required this.selected,
+    required this.taken,
+    required this.onTap,
+  });
+
+  final PlayerColor color;
+  final bool selected;
+  final bool taken;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Semantics(
+      label: color.name,
+      selected: selected,
+      button: !taken,
+      child: GestureDetector(
+        onTap: taken ? null : onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: taken ? color.value.withValues(alpha: 0.28) : color.value,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected ? scheme.onSurface : Colors.transparent,
+              width: 3,
+            ),
+          ),
+          child: taken
+              ? Icon(Icons.close, size: 20, color: scheme.onSurfaceVariant)
+              : selected
+                  ? Icon(Icons.check, size: 22, color: color.onColor)
+                  : null,
+        ),
+      ),
+    );
+  }
+}
+
 /// Everyone who has made it in. Names only — sizes and ordering are the
 /// arrangement screen's business.
 class _WhoIsHere extends StatelessWidget {
@@ -206,6 +315,7 @@ class _WhoIsHere extends StatelessWidget {
                 me: p.phoneId == client.phoneId,
                 ready: p.calibrated,
                 connected: p.connected,
+                color: p.color,
               ),
           ]
         : [
@@ -215,6 +325,7 @@ class _WhoIsHere extends StatelessWidget {
                 me: p['phoneId'] == client.phoneId,
                 ready: (p['calibrated'] as bool?) ?? false,
                 connected: (p['connected'] as bool?) ?? true,
+                color: PlayerPalette.byId(p['color'] as String?),
               ),
           ];
 
@@ -243,11 +354,20 @@ class _WhoIsHere extends StatelessWidget {
                               ? Icons.smartphone
                               : Icons.hourglass_empty,
                       size: 16,
-                      color: e.connected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.error,
+                      color: !e.connected
+                          ? theme.colorScheme.error
+                          : e.color?.value ?? theme.colorScheme.primary,
                     ),
                     label: Text(e.me ? '${e.label} (you)' : e.label),
+                    // A wash of the colour, not the colour itself: a chip is
+                    // read as text, and eight saturated pills would fight the
+                    // swatches above for the same job.
+                    backgroundColor: e.color?.value.withValues(alpha: 0.16),
+                    side: e.color == null
+                        ? null
+                        : BorderSide(
+                            color: e.color!.value.withValues(alpha: 0.5),
+                          ),
                     visualDensity: VisualDensity.compact,
                   ),
               ],

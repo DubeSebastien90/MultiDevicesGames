@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../model/device_metrics.dart';
+import '../model/player_color.dart';
 
 /// One connected phone, as a game needs to know it when deciding the layout.
 ///
@@ -18,6 +19,7 @@ class PhoneSpec {
     required this.devicePixelRatio,
     required this.activePxWidth,
     required this.activePxHeight,
+    this.color,
   });
 
   /// Platform-assigned, stable for this connection: 'p1'.
@@ -25,6 +27,11 @@ class PhoneSpec {
 
   /// Human name, for diagrams and standings: 'Pixel 7'.
   final String label;
+
+  /// Who is sitting here, as a colour. Null only in the moment between a phone
+  /// connecting and the host seating it, and on a board built from bare metrics
+  /// in a test.
+  final PlayerColor? color;
 
   /// The lit area as the device itself is held: **portrait**, so width is the
   /// short edge and height is the long one.
@@ -68,10 +75,12 @@ class PhoneSpec {
 
   static PhoneSpec fromMetrics(
     String phoneId,
-    DeviceMetrics metrics,
-  ) => PhoneSpec(
+    DeviceMetrics metrics, {
+    PlayerColor? color,
+  }) => PhoneSpec(
     phoneId: phoneId,
     label: metrics.label,
+    color: color,
     widthMm: metrics.widthMm,
     heightMm: metrics.heightMm,
     bezelMm: metrics.bezelMm,
@@ -98,4 +107,14 @@ class LobbyInfo {
     }
     return null;
   }
+
+  /// Everyone who has a colour, in join order.
+  ///
+  /// The list a game builds its players from. Anyone unseated is left out
+  /// rather than given a placeholder: a game that deals turns or spawns by
+  /// colour needs every entry here to be a real, distinct player.
+  List<PhoneSpec> get seated => [
+    for (final p in phones)
+      if (p.color != null) p,
+  ];
 }

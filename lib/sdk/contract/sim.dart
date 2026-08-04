@@ -1,4 +1,5 @@
 import '../model/coverage_map.dart';
+import '../model/player_color.dart';
 import '../model/world_rect.dart';
 import '../score/scoreboard.dart';
 import 'entity.dart';
@@ -49,7 +50,12 @@ class GameOutcome {
 /// carries a human label as well as a rectangle: the picture people are shown
 /// has to be the layout the game actually chose, down to the gaps.
 class PhoneSlice {
-  const PhoneSlice(this.phoneId, this.viewport, {this.label = ''});
+  const PhoneSlice(
+    this.phoneId,
+    this.viewport, {
+    this.label = '',
+    this.color,
+  });
 
   final String phoneId;
 
@@ -59,9 +65,15 @@ class PhoneSlice {
   /// Human name, for diagrams: 'Pixel 7'.
   final String label;
 
+  /// Whose screen this is, as a colour. Travels with the slice so both ends
+  /// agree: the sim deals moles by it, and every phone draws the same owner in
+  /// the same shade without asking anyone.
+  final PlayerColor? color;
+
   Map<String, dynamic> toJson() => {
     'phoneId': phoneId,
     'label': label,
+    if (color != null) 'color': color!.id,
     'rect': viewport.toJson(),
   };
 
@@ -69,6 +81,7 @@ class PhoneSlice {
     j['phoneId'] as String,
     WorldRect.fromJson(j['rect'] as Map<String, dynamic>),
     label: (j['label'] as String?) ?? '',
+    color: PlayerPalette.byId(j['color'] as String?),
   );
 }
 
@@ -94,6 +107,33 @@ class BoardContext {
   final List<PhoneSlice> slices;
 
   List<String> get phoneIds => [for (final s in slices) s.phoneId];
+
+  /// Everyone playing, as a colour each, in board order.
+  ///
+  /// A game that scores by colour builds its player list from this and never
+  /// touches [phoneIds]: the two are the same length only when every phone has
+  /// been seated, and the difference is exactly the case that would silently
+  /// deal points to nobody.
+  List<PlayerColor> get players => [
+    for (final s in slices)
+      if (s.color != null) s.color!,
+  ];
+
+  /// Which phone wears this colour. The inverse of [colorOf], and the bridge
+  /// from "this thing belongs to Green" back to a row of the [Scoreboard].
+  String? phoneOfColor(PlayerColor color) {
+    for (final s in slices) {
+      if (s.color?.id == color.id) return s.phoneId;
+    }
+    return null;
+  }
+
+  PlayerColor? colorOf(String phoneId) {
+    for (final s in slices) {
+      if (s.phoneId == phoneId) return s.color;
+    }
+    return null;
+  }
 
   /// Whose screen is this point on? Null in a gap between screens.
   ///

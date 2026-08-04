@@ -55,10 +55,11 @@ Entity entityOf(GameSim sim, String id) =>
 
 void main() {
   group('the catalog', () {
-    test('offers both games and wraps', () {
-      expect(GameCatalog.playlist, hasLength(2));
+    test('offers every game and wraps', () {
+      expect(GameCatalog.playlist, hasLength(3));
       expect(GameCatalog.byId('slingshot'), isNotNull);
       expect(GameCatalog.byId('ballbin'), isNotNull);
+      expect(GameCatalog.byId('guacamole'), isNotNull);
       expect(GameCatalog.byId('nope'), isNull);
     });
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'board_plan.dart';
 import 'phone_spec.dart';
 
@@ -139,6 +141,132 @@ class Layouts {
         instruction:
             instruction ?? _instructionFor(false, orientation, align),
       );
+
+  /// A squarish block. Phones fill rows left to right, top to bottom.
+  ///
+  /// The arrangement for a game where everyone has to *reach* everyone: a strip
+  /// of six phones is two metres of table and the far end is unplayable, while
+  /// the same six in a 3x2 block are all within arm's length of every seat.
+  ///
+  /// Unlike [row] and [column] this asks for uniform phones and says so. A grid
+  /// of mismatched screens has no honest answer — a short phone in the top row
+  /// leaves a hole that is not a bezel gap and not playfield either, and every
+  /// choice about it is wrong in some game. Cells are therefore sized to the
+  /// *largest* footprint and smaller screens are centred in theirs, which keeps
+  /// the grid square and confines the error to a visible margin rather than
+  /// smearing it across the board.
+  ///
+  /// [columns] defaults to `ceil(sqrt(n))`, which is the squarest block for any
+  /// count: 4 phones make 2x2, 6 make 3x2, 9 make 3x3. A short final row is
+  /// centred, because a lone phone hanging off one end looks like a mistake.
+  static BoardPlan grid(
+    List<PhoneSpec> phones, {
+    int? columns,
+    PhoneSort sort = PhoneSort.joinOrder,
+    Gaps gap = Gaps.casingsTouching,
+    PhoneOrientation orientation = PhoneOrientation.upright,
+    String? instruction,
+  }) {
+    if (phones.isEmpty) {
+      throw const BoardPlanError('no phones to place');
+    }
+
+    final ordered = List.of(phones)..sort(sort.compare);
+    final turns = orientation.quarterTurns;
+    final n = ordered.length;
+
+    final cols = columns ?? math.max(1, math.sqrt(n).ceil());
+    if (cols < 1) {
+      throw const BoardPlanError('a grid needs at least one column');
+    }
+    final rows = (n / cols).ceil();
+
+    // One cell size for the whole grid, or the rows would not line up.
+    var cellW = 0.0;
+    var cellH = 0.0;
+    for (final p in ordered) {
+      final w = p.footprintWidthMm(turns);
+      final h = p.footprintHeightMm(turns);
+      if (w > cellW) cellW = w;
+      if (h > cellH) cellH = h;
+    }
+
+    // Gaps between neighbours vary with which two phones meet, but a grid needs
+    // one pitch. Take the largest so no two casings are asked to overlap.
+    var gapX = 0.0;
+    var gapY = 0.0;
+    for (final a in ordered) {
+      for (final b in ordered) {
+        if (identical(a, b)) continue;
+        final g = gap.between(a, b);
+        if (g > gapX) gapX = g;
+        if (g > gapY) gapY = g;
+      }
+    }
+    // A single phone has no neighbour to measure against.
+    if (n == 1) gapX = gapY = 0;
+
+    final pitchX = cellW + gapX;
+    final pitchY = cellH + gapY;
+
+    final placements = <PhonePlacement>[];
+    for (var i = 0; i < n; i++) {
+      final p = ordered[i];
+      final row = i ~/ cols;
+      final col = i % cols;
+
+      // Centre a short last row: with 5 phones in a 3-wide grid the pair below
+      // sits under the middle of the three, which is what people do anyway.
+      final inThisRow = math.min(cols, n - row * cols);
+      final rowInsetMm = (cols - inThisRow) * pitchX / 2;
+
+      // Centre each screen in its cell, so a smaller phone's margin is even
+      // rather than all on one side.
+      final dx = (cellW - p.footprintWidthMm(turns)) / 2;
+      final dy = (cellH - p.footprintHeightMm(turns)) / 2;
+
+      placements.add(PhonePlacement(
+        p.phoneId,
+        xMm: rowInsetMm + col * pitchX + dx,
+        yMm: row * pitchY + dy,
+        quarterTurns: turns,
+        hint: _gridHint(row, col, rows, cols, inThisRow),
+      ));
+    }
+
+    return BoardPlan(
+      placements,
+      instruction: instruction ??
+          'Lay the phones in a $cols x $rows block, '
+              '${orientation == PhoneOrientation.upright ? 'upright' : 'on their sides'}, '
+              'casings touching — everyone should be able to reach the middle.',
+      // Deliberately no declared bounds: every cell is backed by a screen, so
+      // the bounding box *is* the playfield and the compiler's default is
+      // already right. Hugging a band the way a row does would cut off rows.
+    );
+  }
+
+  static String _gridHint(
+    int row,
+    int col,
+    int rows,
+    int cols,
+    int inThisRow,
+  ) {
+    if (rows == 1) return _hintFor(col, cols, true);
+    final vertical = row == 0
+        ? 'top row'
+        : row == rows - 1
+            ? 'bottom row'
+            : 'row ${row + 1}';
+    if (inThisRow == 1) return '$vertical, on your own in the middle';
+    final horizontal = col == 0
+        ? 'far left'
+        : col == inThisRow - 1
+            ? 'far right'
+            : 'position ${col + 1} from the left';
+    return '$vertical, $horizontal';
+  }
 
   static BoardPlan _pack(
     List<PhoneSpec> phones, {

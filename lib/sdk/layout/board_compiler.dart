@@ -144,7 +144,12 @@ class BoardCompiler {
       layouts.add(layout);
       liveRects.add(layout.viewport);
       slices.add(
-        PhoneSlice(spec.phoneId, layout.viewport, label: spec.label),
+        PhoneSlice(
+          spec.phoneId,
+          layout.viewport,
+          label: spec.label,
+          color: spec.color,
+        ),
       );
     }
 
