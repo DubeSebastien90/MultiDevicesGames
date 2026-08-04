@@ -1,4 +1,5 @@
 import '../../sdk/contract/game.dart';
+import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
@@ -24,15 +25,21 @@ class FloodGame implements MultiscreenGame {
     title: 'Flood',
     tagline: 'Two teams, one waterline. Tap to push it onto their screens.',
     goal: 'Flood the other team off the board.',
-    minPhones: FloodConfig.minPhones,
-    maxPhones: FloodConfig.maxPhones,
+    // Two equal teams, so an odd table cannot play at all. The lobby filters
+    // on this and never offers the game at three phones.
+    players: PlayerCount.range(
+      min: FloodConfig.minPhones,
+      max: FloodConfig.maxPhones,
+      parity: CountParity.even,
+    ),
   );
 
   /// Two rows facing each other: blue along the top, red along the bottom.
   ///
-  /// Throws on an odd phone count — two equal teams is the premise, so a table
-  /// of three is a round that cannot be played rather than one to improvise
-  /// through. The host sees why on the lobby screen.
+  /// Still throws on an odd phone count, though the manifest's parity rule now
+  /// means the lobby never offers the game at one. Kept as a backstop: the
+  /// board is built from the assumption of two equal rows, and a silent wrong
+  /// answer there would be a game people can see is broken.
   @override
   BoardPlan planBoard(LobbyInfo lobby) => FloodBoard.plan(lobby);
 

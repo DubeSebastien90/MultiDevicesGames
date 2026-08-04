@@ -4,6 +4,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../app_controller.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
+import 'game_picker.dart';
 import 'metrics_card.dart';
 import 'standings_card.dart';
 
@@ -98,6 +99,9 @@ class LobbyView extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 16),
+                    // Two ways to play. The button is the whole evening: one
+                    // game rolls into the next, forever. The list below is for
+                    // when somebody wants a particular one.
                     FilledButton.icon(
                       onPressed: host.canStart ? host.startRound : null,
                       icon: const Icon(Icons.play_arrow),
@@ -108,9 +112,25 @@ class LobbyView extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      host.blockedReason ??
-                          'Next up: ${host.upcoming!.manifest.title}. '
-                              'Everyone will be told where to put their phone.',
+                      host.canStart
+                          ? 'Starts ${host.upcoming!.manifest.title} and keeps '
+                                'going — each win rolls into the next game.'
+                          : host.blockedReason!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    GamePicker(
+                      offers: host.offers,
+                      // Already said above the Play button; no need twice.
+                      blockedReason: null,
+                      onPick: host.startGame,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Or tap one game to play just that, then come back here.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

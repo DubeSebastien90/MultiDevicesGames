@@ -106,80 +106,81 @@ class _GameViewState extends State<GameView> {
       // The app never rotates; the *board* does. Turning the whole gameplay
       // surface — canvas, HUD and buttons together — is what makes a phone laid
       // on its side read upright to the person at the table.
-      body: RotatedBox(
-        quarterTurns: layout?.screenQuarterTurns ?? 0,
-        child: Stack(
-          children: [
-            Positioned.fill(child: GameWidget(game: _game)),
-            Positioned.fill(
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (e) => _pointer(e, TouchPhase.down),
-                onPointerMove: (e) => _pointer(e, TouchPhase.move),
-                onPointerUp: (e) => _pointer(e, TouchPhase.up),
-                onPointerCancel: (e) => _pointer(e, TouchPhase.up),
-                child: const SizedBox.expand(),
-              ),
+      // Deliberately not turned. A phone placed at an angle occupies an angled
+      // slot in the *world*, and the camera already turns to match it — so the
+      // world arrives upright on this screen and the HUD reads normally. Doing
+      // it here as well would rotate everything a second time.
+      body: Stack(
+        children: [
+          Positioned.fill(child: GameWidget(game: _game)),
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (e) => _pointer(e, TouchPhase.down),
+              onPointerMove: (e) => _pointer(e, TouchPhase.move),
+              onPointerUp: (e) => _pointer(e, TouchPhase.up),
+              onPointerCancel: (e) => _pointer(e, TouchPhase.up),
+              child: const SizedBox.expand(),
             ),
+          ),
+          Positioned(
+            left: 10,
+            top: 8,
+            child: Row(
+              children: [
+                _Badge(
+                  text: layout == null
+                      ? client.phoneId ?? '…'
+                      : '${client.phoneId} · '
+                            '${layout.index + 1}/${layout.total}',
+                ),
+                // This phone's running score, when the session has one at all.
+                if (client.scores.isUsed) ...[
+                  const SizedBox(width: 6),
+                  _Badge(
+                    text: '${client.scores[client.phoneId ?? '']} pts',
+                    highlight: true,
+                  ),
+                ],
+                // Whatever the game wants to say for itself.
+                if (_hud != null) ...[const SizedBox(width: 6), _hud!],
+              ],
+            ),
+          ),
+          Positioned(
+            right: 6,
+            top: 4,
+            child: Row(
+              children: [
+                _HudButton(
+                  icon: Icons.refresh,
+                  tooltip: 'Start the round over',
+                  onPressed: client.sendReset,
+                ),
+                _HudButton(
+                  icon: Icons.bug_report_outlined,
+                  tooltip: 'Debug',
+                  onPressed: _toggleDebug,
+                ),
+                _HudButton(
+                  icon: Icons.logout,
+                  tooltip: 'Leave',
+                  onPressed: widget.controller.leave,
+                ),
+              ],
+            ),
+          ),
+          if (_showDebug)
             Positioned(
               left: 10,
-              top: 8,
-              child: Row(
-                children: [
-                  _Badge(
-                    text: layout == null
-                        ? client.phoneId ?? '…'
-                        : '${client.phoneId} · '
-                              '${layout.index + 1}/${layout.total}',
-                  ),
-                  // This phone's running score, when the session has one at all.
-                  if (client.scores.isUsed) ...[
-                    const SizedBox(width: 6),
-                    _Badge(
-                      text: '${client.scores[client.phoneId ?? '']} pts',
-                      highlight: true,
-                    ),
-                  ],
-                  // Whatever the game wants to say for itself.
-                  if (_hud != null) ...[const SizedBox(width: 6), _hud!],
-                ],
+              bottom: 10,
+              child: _DebugPanel(
+                controller: widget.controller,
+                game: _game,
+                onChanged: () => setState(() {}),
               ),
             ),
-            Positioned(
-              right: 6,
-              top: 4,
-              child: Row(
-                children: [
-                  _HudButton(
-                    icon: Icons.refresh,
-                    tooltip: 'Start the round over',
-                    onPressed: client.sendReset,
-                  ),
-                  _HudButton(
-                    icon: Icons.bug_report_outlined,
-                    tooltip: 'Debug',
-                    onPressed: _toggleDebug,
-                  ),
-                  _HudButton(
-                    icon: Icons.logout,
-                    tooltip: 'Leave',
-                    onPressed: widget.controller.leave,
-                  ),
-                ],
-              ),
-            ),
-            if (_showDebug)
-              Positioned(
-                left: 10,
-                bottom: 10,
-                child: _DebugPanel(
-                  controller: widget.controller,
-                  game: _game,
-                  onChanged: () => setState(() {}),
-                ),
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -316,7 +317,7 @@ class _DebugPanel extends StatelessWidget {
             _row('px per cm', layout.logicalPxPerWorldUnit.toStringAsFixed(1)),
             _row(
               'world offset',
-              '${layout.worldOffsetX.toStringAsFixed(2)} cm',
+              '${layout.worldCenterX.toStringAsFixed(2)} cm',
             ),
             _row('viewport', layout.viewport.toString()),
           ],

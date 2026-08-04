@@ -125,9 +125,13 @@ void main() {
     final (session, game, loopback) =
         await mountViewport(tester, phoneIndex: 1);
     expect(tester.takeException(), isNull);
-    expect(game.camera.viewfinder.anchor, Anchor.topLeft);
-    expect(game.camera.viewfinder.position.x, closeTo(15.84, 1e-6));
-    expect(game.camera.viewfinder.position.y, closeTo(0, 1e-6));
+    // Centre-anchored and turned to match the phone: that is the one place
+    // arbitrary rotation is handled.
+    expect(game.camera.viewfinder.anchor, Anchor.center);
+    expect(game.camera.viewfinder.position.x, closeTo(15.84 + 7.62, 1e-6));
+    expect(game.camera.viewfinder.position.y, closeTo(3.429, 1e-6));
+    expect(game.camera.viewfinder.angle,
+        closeTo(session.layout!.turnRadians, 1e-9));
     expect(session.layout!.viewport.left, closeTo(15.84, 1e-6));
 
     await _teardown(tester, session, loopback);

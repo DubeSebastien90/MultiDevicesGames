@@ -154,11 +154,12 @@ void main() {
     });
 
     test('phones stand upright, so the push axis gets the long edge', () {
-      final started = start(const FloodGame(), 2);
-      for (final p in started.board.phones) {
-        expect(p.quarterTurns, 0);
+      final lobby = LobbyInfo([phone('p1'), phone('p2')]);
+      for (final p in const FloodGame().planBoard(lobby).placements) {
+        expect(p.turnDeg, 0, reason: 'upright, not turned onto its side');
       }
       // Two portrait phones stacked: the board is taller than it is wide.
+      final started = start(const FloodGame(), 2);
       expect(started.board.board.height, greaterThan(started.board.board.width));
     });
 

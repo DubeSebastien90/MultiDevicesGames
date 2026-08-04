@@ -32,6 +32,7 @@ class FloodBoard {
   /// Phones stand as you normally hold them. Portrait gives the push axis the
   /// most travel per phone, which is the axis the whole game happens on.
   static const int _quarterTurns = 0;
+  static const double _turnDeg = 0;
 
   /// Lay out [lobby] as two equal rows.
   ///
@@ -119,11 +120,13 @@ class FloodBoard {
             ? blueDepth - h
             : blueDepth + seamMm;
 
+        // Placements are the *centre* of the lit area, so convert from the
+        // edges everything above is reasoned in.
         placements.add(PhonePlacement(
           spec.phoneId,
-          xMm: left,
-          yMm: top,
-          quarterTurns: _quarterTurns,
+          xMm: left + w / 2,
+          yMm: top + h / 2,
+          turnDeg: _turnDeg,
           hint: _hint(isBlue, c, perTeam),
         ));
 

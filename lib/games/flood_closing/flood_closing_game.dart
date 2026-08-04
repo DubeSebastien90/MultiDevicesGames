@@ -1,4 +1,5 @@
 import '../../sdk/contract/game.dart';
+import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
@@ -23,8 +24,11 @@ class FloodClosingGame implements MultiscreenGame {
     title: 'Flood: Closing In',
     tagline: 'Same taps. The ground between you keeps closing in.',
     goal: 'Hold the lead when the field runs out.',
-    minPhones: FloodConfig.minPhones,
-    maxPhones: FloodConfig.maxPhones,
+    players: PlayerCount.range(
+      min: FloodConfig.minPhones,
+      max: FloodConfig.maxPhones,
+      parity: CountParity.even,
+    ),
   );
 
   @override

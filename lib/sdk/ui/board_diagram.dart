@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../contract/sim.dart' show PhoneSlice;
@@ -5,13 +7,16 @@ import '../model/world_rect.dart';
 
 /// A to-scale picture of the board the game actually compiled.
 ///
-/// Drawn straight from the world rectangles the host sent, so it shows the real
-/// order, the real gaps and the real cross-alignment — for any layout, not just
-/// a row or a column. A grid draws as a grid; a phone the game deliberately set
-/// apart shows as set apart.
+/// Drawn straight from the compiled screens, so it shows the real order, the
+/// real gaps, the real cross-alignment — **and the real angles**. A ring of
+/// phones facing outward draws as a ring of turned phones; a row draws as a
+/// row. Nothing here knows what shape a board is supposed to be.
 ///
-/// The version this replaced laid chips out in a `Row` in *join* order, which
-/// was wrong the moment a game sorted its phones — and both shipped games do.
+/// Two earlier versions of this were wrong in instructive ways. The first laid
+/// chips out in a `Row` in join order, which broke the moment a game sorted its
+/// phones. The second used each screen's bounding box, which is fine until a
+/// phone is turned — and then a 72° phone in a circle draws as a fat upright
+/// rectangle that looks nothing like the thing on the table.
 class BoardDiagram extends StatelessWidget {
   const BoardDiagram({
     super.key,
@@ -19,7 +24,7 @@ class BoardDiagram extends StatelessWidget {
     required this.board,
     this.meId,
     this.confirmed = const {},
-    this.maxExtent = 150,
+    this.maxExtent = 170,
   });
 
   /// Every screen's place on the board, in board order.
@@ -51,18 +56,18 @@ class BoardDiagram extends StatelessWidget {
       );
     }
 
-    // A screen can stick out past the playfield when phones differ in size, so
-    // frame the union rather than the board alone and let nothing be clipped.
+    // Frame the union of the playfield and every screen, so a phone sticking
+    // out past the board — or a whole ring around it — is never clipped.
     var left = board.left;
     var top = board.top;
     var right = board.right;
     var bottom = board.bottom;
     for (final s in slices) {
-      final r = s.viewport;
-      if (r.left < left) left = r.left;
-      if (r.top < top) top = r.top;
-      if (r.right > right) right = r.right;
-      if (r.bottom > bottom) bottom = r.bottom;
+      final b = s.viewport; // bounding box: right for framing, not for drawing
+      left = math.min(left, b.left);
+      top = math.min(top, b.top);
+      right = math.max(right, b.right);
+      bottom = math.max(bottom, b.bottom);
     }
     final frameWidth = right - left;
     final frameHeight = bottom - top;
@@ -82,9 +87,10 @@ class BoardDiagram extends StatelessWidget {
             builder: (context, constraints) {
               final scale = constraints.maxWidth / frameWidth;
               return Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  // The playfield, so a screen sticking out past it is visible
-                  // as exactly that.
+                  // The playfield, so a screen reaching past it is visible as
+                  // exactly that.
                   Positioned(
                     left: (board.left - left) * scale,
                     top: (board.top - top) * scale,
@@ -93,29 +99,53 @@ class BoardDiagram extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: scheme.surfaceContainerHighest
-                            .withValues(alpha: 0.35),
+                            .withValues(alpha: 0.28),
                         borderRadius: BorderRadius.circular(3),
                       ),
                     ),
                   ),
                   for (final (i, slice) in slices.indexed)
-                    Positioned(
-                      left: (slice.viewport.left - left) * scale,
-                      top: (slice.viewport.top - top) * scale,
-                      width: slice.viewport.width * scale,
-                      height: slice.viewport.height * scale,
-                      child: _Screen(
-                        index: i,
-                        label: slice.label,
-                        isMe: slice.phoneId == meId,
-                        confirmed: confirmed.contains(slice.phoneId),
-                        scheme: scheme,
-                      ),
-                    ),
+                    _positionedScreen(slice, i, left, top, scale, scheme),
                 ],
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+
+  /// One screen, drawn at its true size *and its true angle*.
+  ///
+  /// Positioned by its centre rather than a corner, because a turned rectangle
+  /// has no corner worth measuring from — the same reason the layout itself is
+  /// centre-based.
+  Widget _positionedScreen(
+    PhoneSlice slice,
+    int index,
+    double left,
+    double top,
+    double scale,
+    ColorScheme scheme,
+  ) {
+    final screen = slice.screen;
+    final w = screen.width * scale;
+    final h = screen.height * scale;
+
+    return Positioned(
+      left: (screen.centerX - left) * scale - w / 2,
+      top: (screen.centerY - top) * scale - h / 2,
+      width: w,
+      height: h,
+      child: Transform.rotate(
+        angle: screen.turnRadians,
+        child: _Screen(
+          index: index,
+          label: slice.label,
+          isMe: slice.phoneId == meId,
+          confirmed: confirmed.contains(slice.phoneId),
+          turnRadians: screen.turnRadians,
+          scheme: scheme,
         ),
       ),
     );
@@ -128,6 +158,7 @@ class _Screen extends StatelessWidget {
     required this.label,
     required this.isMe,
     required this.confirmed,
+    required this.turnRadians,
     required this.scheme,
   });
 
@@ -135,51 +166,72 @@ class _Screen extends StatelessWidget {
   final String label;
   final bool isMe;
   final bool confirmed;
+  final double turnRadians;
   final ColorScheme scheme;
 
   @override
   Widget build(BuildContext context) {
+    final edge = isMe ? scheme.primary : scheme.outlineVariant;
+
     return Container(
       decoration: BoxDecoration(
         color: isMe
             ? scheme.primary.withValues(alpha: 0.22)
             : scheme.surfaceContainerHigh,
-        border: Border.all(
-          color: isMe ? scheme.primary : scheme.outlineVariant,
-          width: isMe ? 2 : 1,
-        ),
+        border: Border.all(color: edge, width: isMe ? 2 : 1),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Padding(
-            padding: const EdgeInsets.all(2),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isMe ? 'YOU' : '${index + 1}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isMe ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // A bar along the phone's own top edge. With everything turned, this
+          // is what tells you which way round to put it down — a rectangle
+          // alone cannot say which end is up.
+          Align(
+            alignment: Alignment.topCenter,
+            child: FractionallySizedBox(
+              widthFactor: 0.45,
+              child: Container(
+                height: 2.5,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: BoxDecoration(
+                  color: edge,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                if (label.isNotEmpty)
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 8,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                if (confirmed)
-                  Icon(Icons.check_circle, size: 10, color: scheme.primary),
-              ],
+              ),
             ),
           ),
-        ),
+          // Turned back, so the writing stays readable however the phone lies.
+          Transform.rotate(
+            angle: -turnRadians,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isMe ? 'YOU' : '${index + 1}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: isMe ? scheme.primary : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (label.isNotEmpty)
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  if (confirmed)
+                    Icon(Icons.check_circle, size: 10, color: scheme.primary),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
