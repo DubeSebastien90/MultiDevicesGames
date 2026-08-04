@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/track.dart';
+import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 
 void main() {
   group('PitchTrack — an open two-point track', () {
@@ -75,6 +77,65 @@ void main() {
       final p = track.pointAtArclength(39.5);
       expect(p.x, closeTo(-5, 1e-6));
       expect(p.y, closeTo(-4.5, 1e-6));
+    });
+  });
+
+  group('TrackGenerator — line', () {
+    final board = const WorldRect(0, 0, 40, 10);
+
+    test('spans from near the left edge to near the right edge', () {
+      final track = TrackGenerator.generate(
+        topology: PitchTrackTopology.line,
+        board: board,
+        random: math.Random(1),
+      );
+      expect(track.closed, isFalse);
+      expect(track.waypoints.first.x, lessThan(board.left + 5));
+      expect(track.waypoints.last.x, greaterThan(board.right - 5));
+    });
+
+    test('is never a straight horizontal line', () {
+      final track = TrackGenerator.generate(
+        topology: PitchTrackTopology.line,
+        board: board,
+        random: math.Random(2),
+      );
+      final ys = track.waypoints.map((w) => w.y).toSet();
+      expect(ys.length, greaterThan(1),
+          reason: 'a track whose waypoints share one y is a straight line');
+    });
+
+    test('stays within the board vertically', () {
+      final track = TrackGenerator.generate(
+        topology: PitchTrackTopology.line,
+        board: board,
+        random: math.Random(3),
+      );
+      for (final w in track.waypoints) {
+        expect(w.y, inInclusiveRange(board.top, board.bottom));
+      }
+    });
+  });
+
+  group('TrackGenerator — loop', () {
+    final board = const WorldRect(0, 0, 30, 30);
+
+    test('is closed', () {
+      final track = TrackGenerator.generate(
+        topology: PitchTrackTopology.loop,
+        board: board,
+        random: math.Random(1),
+      );
+      expect(track.closed, isTrue);
+    });
+
+    test('rings the board center with a hollow middle', () {
+      final track = TrackGenerator.generate(
+        topology: PitchTrackTopology.loop,
+        board: board,
+        random: math.Random(1),
+      );
+      expect(track.isOnTrack(board.centerX, board.centerY), isFalse);
     });
   });
 }

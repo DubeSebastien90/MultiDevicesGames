@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 
+import '../../sdk/model/world_rect.dart';
+import 'pitch_cars_config.dart';
+
 /// A point on a track's centerline, in world units.
 class Waypoint {
   const Waypoint(this.x, this.y);
@@ -134,5 +137,61 @@ class PitchTrack {
     final dx = x - px;
     final dy = y - py;
     return math.sqrt(dx * dx + dy * dy);
+  }
+}
+
+/// Builds a random [PitchTrack] for a compiled board.
+class TrackGenerator {
+  const TrackGenerator._();
+
+  static PitchTrack generate({
+    required PitchTrackTopology topology,
+    required WorldRect board,
+    required math.Random random,
+    double widthWorld = PitchCarsConfig.trackWidthWorld,
+  }) =>
+      topology == PitchTrackTopology.line
+          ? _line(board, random, widthWorld)
+          : _loop(board, random, widthWorld);
+
+  /// A winding path from near the left edge to near the right edge. A forced
+  /// sine sweep plus jitter guarantees it is never straight.
+  static PitchTrack _line(WorldRect board, math.Random random, double width) {
+    final margin = width;
+    final usableHalfHeight =
+        math.max((board.height - width) / 2, width / 2);
+    final amplitude =
+        math.min(usableHalfHeight, PitchCarsConfig.lineAmplitudeWorld);
+    const segments = 6;
+
+    final waypoints = <Waypoint>[];
+    for (var i = 0; i <= segments; i++) {
+      final t = i / segments;
+      final x = board.left + margin + t * (board.width - margin * 2);
+      final sweep = math.sin(t * math.pi * 2) * amplitude;
+      final jitter = (random.nextDouble() * 2 - 1) * amplitude * 0.25;
+      final y = (board.centerY + sweep + jitter)
+          .clamp(board.top + width / 2, board.bottom - width / 2);
+      waypoints.add(Waypoint(x, y));
+    }
+    return PitchTrack(waypoints: waypoints, widthWorld: width, closed: false);
+  }
+
+  /// A ring inscribed in the board, with a hollow middle — the "donut".
+  static PitchTrack _loop(WorldRect board, math.Random random, double width) {
+    final maxRadius = math.min(board.width, board.height) / 2 - width;
+    final radius = math.max(maxRadius, width);
+    const segments = 16;
+
+    final waypoints = <Waypoint>[];
+    for (var i = 0; i < segments; i++) {
+      final angle = i / segments * math.pi * 2;
+      final jitter = 1 + (random.nextDouble() * 2 - 1) * 0.08;
+      waypoints.add(Waypoint(
+        board.centerX + math.cos(angle) * radius * jitter,
+        board.centerY + math.sin(angle) * radius * jitter,
+      ));
+    }
+    return PitchTrack(waypoints: waypoints, widthWorld: width, closed: true);
   }
 }
