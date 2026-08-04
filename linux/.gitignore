@@ -1,1 +1,8 @@
 flutter/ephemeral
+
+# Generated from the plugin list on every `flutter pub get`, so tracking them
+# only invites conflicts between machines. Android and iOS already ignore
+# their equivalents (GeneratedPluginRegistrant); desktop never did.
+flutter/generated_plugin_registrant.cc
+flutter/generated_plugin_registrant.h
+flutter/generated_plugins.cmake

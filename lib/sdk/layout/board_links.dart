@@ -66,8 +66,8 @@ class EdgeMarker {
 ///
 /// Every pair produces one of these, joined or not. The markers are *derived*
 /// from these verdicts rather than computed separately, so there is exactly one
-/// decision path — and an audit of a real session is a dump of these, which
-/// means the algorithm explains itself instead of needing to be reverse
+/// decision path — which means a stripe cannot exist that no verdict explains,
+/// and a board that looks wrong can be interrogated instead of reverse
 /// engineered from a screenshot.
 class LinkVerdict {
   const LinkVerdict({
@@ -96,8 +96,8 @@ class LinkVerdict {
 
   final bool joined;
 
-  /// Plain English, for the audit: 'joined', 'gap 4.20 > 3.00', 'no shared
-  /// edge', 'p2 is turned 72.0°'.
+  /// Plain English: 'joined', 'gap 4.20 exceeds 4.00', 'no shared edge on
+  /// either axis', 'p2 is turned 72.0°'.
   final String reason;
 
   Map<String, dynamic> toJson() => {
@@ -168,9 +168,7 @@ class BoardLinks {
       colorIndex++;
     }
 
-    // Anything touching nothing — a ring of phones around a table — gets a
-    // single stripe on the edge facing the middle. There is no partner to match
-    // colours with, so they all share one.
+    // Phones that touch nothing — a ring of them around a table.
     final orphans = slices.where((s) => !joined.contains(s.phoneId)).toList();
     if (orphans.length > 1) {
       final midX =
@@ -179,12 +177,102 @@ class BoardLinks {
       final midY =
           slices.map((s) => s.screen.centerY).reduce((a, b) => a + b) /
               slices.length;
+
+      // Which way to face. Never paired with anyone, so the renderer paints
+      // these one neutral colour and they cannot be mistaken for a join.
       for (final slice in orphans) {
-        markers.add(_inwardEdge(slice, midX, midY));
+        markers.add(_edgeFacing(slice, midX, midY));
+      }
+
+      // And who is on your left and right. A stripe pointing at the middle says
+      // where to stand but nothing about the order to stand in, which is the
+      // one thing a circle of people actually has to agree on. Neighbours here
+      // are *near*, not touching — the only difference from a join is the size
+      // of the gap, so they earn matching colours the same way.
+      for (final (a, b) in _ringPairs(orphans, midX, midY)) {
+        markers
+          ..add(_edgeAround(a, b, midX, midY, colorIndex, b.phoneId))
+          ..add(_edgeAround(b, a, midX, midY, colorIndex, a.phoneId));
+        colorIndex++;
       }
     }
 
     return markers;
+  }
+
+  /// The edge of [me] that faces [neighbour] *around* the ring rather than
+  /// across it.
+  ///
+  /// Aiming straight at a neighbour's centre is not good enough, and the reason
+  /// is worth keeping: on a circle of three, each neighbour sits only 30° off
+  /// the direction of the middle, and on a circle of four, exactly 45°. Picking
+  /// an edge by whichever screen axis points most strongly at the target then
+  /// chooses the *same* edge for the middle and for both neighbours, and all
+  /// three stripes land on top of each other — one visible line per phone,
+  /// which is precisely what a real three-phone table showed.
+  ///
+  /// So the pull toward the middle is removed first, leaving only the part of
+  /// the direction that runs along the ring. What is left can only point out of
+  /// one of the two edges facing round the circle, whatever the player count.
+  static EdgeMarker _edgeAround(
+    PhoneSlice me,
+    PhoneSlice neighbour,
+    double midX,
+    double midY,
+    int colorIndex,
+    String partnerId,
+  ) {
+    final s = me.screen;
+    final toMid = _unit(midX - s.centerX, midY - s.centerY);
+    final dx = neighbour.screen.centerX - s.centerX;
+    final dy = neighbour.screen.centerY - s.centerY;
+
+    // Strip the radial component; keep the tangential one.
+    final radial = dx * toMid.x + dy * toMid.y;
+    final aroundX = dx - radial * toMid.x;
+    final aroundY = dy - radial * toMid.y;
+
+    // Directly across the ring with nothing to either side — a degenerate
+    // board rather than a circle. The plain direction is the best answer left.
+    if (aroundX.abs() + aroundY.abs() < _epsilon) {
+      return _edgeFacing(me, neighbour.screen.centerX, neighbour.screen.centerY,
+          colorIndex: colorIndex, partnerId: partnerId);
+    }
+
+    return _edgeFacing(me, s.centerX + aroundX, s.centerY + aroundY,
+        colorIndex: colorIndex, partnerId: partnerId);
+  }
+
+  static ({double x, double y}) _unit(double x, double y) {
+    final len = math.sqrt(x * x + y * y);
+    return len < _epsilon ? (x: 0.0, y: 0.0) : (x: x / len, y: y / len);
+  }
+
+  /// Consecutive phones around the ring, as pairs, wrapping at the end.
+  ///
+  /// Ordered by the angle of each screen from the middle of the board, which is
+  /// what "sitting next to" means once nothing is touching. Deliberately not a
+  /// special case asked for by the game: a circle is simply the arrangement in
+  /// which this falls out, and any scattered board would be described the same
+  /// way. Two phones facing each other across a table are one pair, not two —
+  /// hence the wrap only above three.
+  static List<(PhoneSlice, PhoneSlice)> _ringPairs(
+    List<PhoneSlice> ring,
+    double midX,
+    double midY,
+  ) {
+    if (ring.length < 3) return const [];
+
+    final byAngle = List.of(ring)
+      ..sort((a, b) => math
+          .atan2(a.screen.centerY - midY, a.screen.centerX - midX)
+          .compareTo(
+              math.atan2(b.screen.centerY - midY, b.screen.centerX - midX)));
+
+    return [
+      for (var i = 0; i < byAngle.length; i++)
+        (byAngle[i], byAngle[(i + 1) % byAngle.length]),
+    ];
   }
 
   /// The one place a pair's fate is decided.
@@ -324,18 +412,27 @@ class BoardLinks {
     ];
   }
 
-  /// The edge of [slice] facing (midX, midY), as a world segment. Works at any
-  /// angle: the screen's own axes are projected onto the direction of the
-  /// middle, and whichever points at it more strongly names the edge.
-  static EdgeMarker _inwardEdge(PhoneSlice slice, double midX, double midY) {
+  /// The edge of [slice] facing (targetX, targetY), as a world segment.
+  ///
+  /// Works at any angle: the screen's own axes are projected onto the direction
+  /// of the target, and whichever points at it more strongly names the edge.
+  /// With no [partnerId] this is the "middle is that way" hint; with one it is
+  /// half of a pair, and the phone it points at carries the matching half.
+  static EdgeMarker _edgeFacing(
+    PhoneSlice slice,
+    double targetX,
+    double targetY, {
+    int colorIndex = 0,
+    String? partnerId,
+  }) {
     final s = slice.screen;
     final cos = math.cos(s.turnRadians);
     final sin = math.sin(s.turnRadians);
     final ux = cos, uy = sin;
     final vx = -sin, vy = cos;
 
-    final alongU = (midX - s.centerX) * ux + (midY - s.centerY) * uy;
-    final alongV = (midX - s.centerX) * vx + (midY - s.centerY) * vy;
+    final alongU = (targetX - s.centerX) * ux + (targetY - s.centerY) * uy;
+    final alongV = (targetX - s.centerX) * vx + (targetY - s.centerY) * vy;
 
     final hw = s.width / 2;
     final hh = s.height / 2;
@@ -363,7 +460,8 @@ class BoardLinks {
       y1: s.centerY + outY - runY * runHalf,
       x2: s.centerX + outX + runX * runHalf,
       y2: s.centerY + outY + runY * runHalf,
-      colorIndex: 0,
+      colorIndex: colorIndex,
+      partnerId: partnerId,
     );
   }
 

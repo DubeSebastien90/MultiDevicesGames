@@ -19,4 +19,12 @@ class LinkPalette {
   ];
 
   static Color of(int index) => _colors[index % _colors.length];
+
+  /// For a stripe with no partner — the one that only says "the middle of the
+  /// table is this way".
+  ///
+  /// Deliberately outside the list above. It is not half of anything, and
+  /// painting it in a pairing colour is how a ring once looked like a row of
+  /// joins that had all come out the same.
+  static const Color inward = Color(0xFFE8ECF5);
 }

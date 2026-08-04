@@ -5,3 +5,8 @@
 # Xcode-related
 **/dgph
 **/xcuserdata/
+
+# Generated from the plugin list on every `flutter pub get`, so tracking them
+# only invites conflicts between machines. Android and iOS already ignore
+# their equivalents (GeneratedPluginRegistrant); desktop never did.
+Flutter/GeneratedPluginRegistrant.swift

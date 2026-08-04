@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../platform_config.dart';
 import '../model/device_metrics.dart';
+import '../model/player_color.dart';
 import '../net/discovery.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
@@ -13,7 +14,6 @@ import '../catalog.dart';
 import '../contract/entity.dart';
 import '../contract/game.dart';
 import '../contract/sim.dart';
-import '../layout/board_audit.dart';
 import '../layout/board_compiler.dart';
 import '../layout/board_plan.dart';
 import '../layout/phone_spec.dart';
@@ -29,7 +29,7 @@ enum HostPhase { idle, lobby, placing, playing, finished }
 
 /// How a round was started, which decides where it ends.
 enum RoundMode {
-  /// From the **Play** button: win one and the next begins, forever.
+  /// From the **Play** button: the whole list, once, then back to the lobby.
   playlist,
 
   /// From the games list: play that one, then back to the lobby.
@@ -77,6 +77,11 @@ class PhoneRecord {
   DeviceMetrics? metrics;
   bool confirmed = false;
   bool connected = true;
+
+  /// Assigned the moment this phone is admitted, changeable in the lobby.
+  /// Unique across the session — the host is the only thing that can promise
+  /// that, so the host is the only thing that writes it.
+  PlayerColor? color;
 
   /// Round-trip time in ms, from the client's pings. Display only.
   double? rttMs;
@@ -134,7 +139,8 @@ class HostSession extends ChangeNotifier {
   Timer? _loop;
   String? _warning;
 
-  /// Position in the playlist. Only ever goes up; the catalog wraps.
+  /// Position in the playlist. Only ever goes up within a run, and resets when
+  /// the table lands back in the lobby — the list is played through once.
   int _gameIndex = 0;
 
   /// Whether the current round chains into the next game or returns to the
@@ -178,16 +184,6 @@ class HostSession extends ChangeNotifier {
   String? get planError => _planError;
   String? _planError;
 
-  /// A full record of the last board that was laid out — measurements, plan,
-  /// compiled geometry, and the reason every pair of screens was or was not
-  /// joined. Readable from any browser at the host's own address.
-  String? get lastAudit => _lastAudit;
-  String? _lastAudit;
-
-  /// The one-line verdict from that audit, for the host's own screen.
-  String? get lastAuditSummary => _lastAuditSummary;
-  String? _lastAuditSummary;
-
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming =>
       GameCatalog.playableFrom(_gameIndex, _phones.length);
@@ -227,14 +223,6 @@ class HostSession extends ChangeNotifier {
     _address = uri;
     _phase = HostPhase.lobby;
     _subs.add(_transport.onPeer.listen(_attachPeer));
-
-    // Make the audit readable from any browser on the same WiFi. The only way
-    // to get diagnostics off a phone that is hosting.
-    final ws = _transport;
-    if (ws is WebSocketHostTransport) {
-      ws.diagnostics = () =>
-          _lastAudit ?? 'MultiDevicesGame host — no board laid out yet';
-    }
 
     if (_advertise) {
       final beacon = DiscoveryBroadcaster(
@@ -355,6 +343,9 @@ class HostSession extends ChangeNotifier {
   void _admit(PhoneRecord record) {
     record.authenticated = true;
     record.phoneId = 'p${_nextPhoneNumber++}';
+    // Seat them immediately. A player who never opens the picker still has an
+    // identity, so choosing is a change rather than a gate on starting.
+    record.color = PlayerPalette.firstFree(_takenColorIds());
     _phones.add(record);
     scores.register(record.phoneId, record.label);
     record.link.send({
@@ -372,6 +363,37 @@ class HostSession extends ChangeNotifier {
     link.send({'type': HostMsg.welcome, 'rejected': true, 'reason': reason});
     // Long enough for the frame to make it out before the socket shuts.
     Future<void>.delayed(const Duration(milliseconds: 300), link.close);
+  }
+
+  Iterable<String> _takenColorIds() sync* {
+    for (final p in _phones) {
+      final c = p.color;
+      if (c != null) yield c.id;
+    }
+  }
+
+  /// First come, first served, decided here because only here can decide it.
+  ///
+  /// Two phones tapping Green in the same instant both send a request; the one
+  /// whose packet arrives second is simply told no, by receiving a lobby
+  /// snapshot in which Green belongs to somebody else. No error message and no
+  /// special case on the client — the broadcast is already the source of truth
+  /// about who is what colour, so losing the race just looks like the swatch
+  /// not taking.
+  void _handlePickColour(PhoneRecord record, String? colorId) {
+    if (_phase != HostPhase.lobby) return;
+
+    final wanted = PlayerPalette.byId(colorId);
+    if (wanted == null) return;
+    if (record.color?.id == wanted.id) return;
+
+    for (final other in _phones) {
+      if (other != record && other.color?.id == wanted.id) return;
+    }
+
+    record.color = wanted;
+    _broadcastLobby();
+    notifyListeners();
   }
 
   void _updateBeacon() => _beacon?.update(
@@ -417,6 +439,9 @@ class HostSession extends ChangeNotifier {
         scores.register(record.phoneId, record.label);
         _broadcastLobby();
         notifyListeners();
+
+      case ClientMsg.pickColor:
+        _handlePickColour(record, msg['color'] as String?);
 
       case ClientMsg.confirmPlacement:
         if (_phase != HostPhase.placing) return;
@@ -489,7 +514,9 @@ class HostSession extends ChangeNotifier {
   void startRound() {
     if (!canStart) return;
     _mode = RoundMode.playlist;
-    _startGame(GameCatalog.playableIndexFrom(_gameIndex, _phones.length)!);
+    // Always from the top: a run is the whole list, not a resumption of one
+    // somebody abandoned.
+    _startGame(GameCatalog.playableIndexFrom(0, _phones.length)!);
   }
 
   /// Every game, with whether this table can play it. The lobby's list.
@@ -513,7 +540,7 @@ class HostSession extends ChangeNotifier {
 
     final lobby = LobbyInfo([
       for (final p in _phones)
-        PhoneSpec.fromMetrics(p.phoneId, p.metrics!),
+        PhoneSpec.fromMetrics(p.phoneId, p.metrics!, color: p.color),
     ]);
 
     final BoardLayout solved;
@@ -529,19 +556,6 @@ class HostSession extends ChangeNotifier {
       notifyListeners();
       return;
     }
-
-    // Record what just happened, before anyone is told anything. Four phones on
-    // a table produce measurements no synthetic test will guess, and this is
-    // how those numbers get read rather than inferred from stripe colours.
-    final audit = BoardAudit.of(
-      gameId: game.manifest.id,
-      lobby: lobby,
-      plan: plan,
-      board: solved,
-    );
-    _lastAudit = BoardAudit.toPrettyJson(audit);
-    _lastAuditSummary = audit['summary'] as String?;
-    debugPrint('=== board audit ===\n$_lastAudit');
 
     _layout = solved;
     _phase = HostPhase.placing;
@@ -702,6 +716,25 @@ class HostSession extends ChangeNotifier {
 
   /// The round is over. Keep the final frame on screen — a tower mid-collapse
   /// is the reward — and tell everyone what is next.
+  /// A game naming phones that are not at the table has almost certainly used
+  /// its own indices — `'0'`, `'blue'` — where a `phoneId` was wanted, and the
+  /// symptom is every player being told they lost. Said out loud at the moment
+  /// it happens rather than left to be puzzled over on five screens at once.
+  void _warnAboutUnknownPhones(GameOutcome outcome) {
+    final known = {for (final p in _phones) p.phoneId};
+    final named = <String>{
+      ...?outcome.winners,
+      ...?outcome.lines?.keys,
+    };
+    final strangers = named.difference(known);
+    if (strangers.isEmpty) return;
+
+    _warning = '${_game?.manifest.title ?? 'That game'} ended naming phones '
+        'that are not here: ${strangers.join(', ')}. Outcomes are keyed by '
+        'phoneId.';
+    debugPrint('[outcome] $_warning');
+  }
+
   void _finishRound(GameOutcome outcome) {
     if (_phase != HostPhase.playing) return;
     _loop?.cancel();
@@ -709,11 +742,16 @@ class HostSession extends ChangeNotifier {
     _phase = HostPhase.finished;
     _outcome = outcome;
 
+    _warnAboutUnknownPhones(outcome);
+
     final next = nextGame;
     _broadcast({
       'type': HostMsg.outcome,
+      'kind': outcome.kind.name,
       'won': outcome.won,
       'summary': outcome.summary,
+      if (outcome.winners != null) 'winners': outcome.winners!.toList(),
+      if (outcome.lines != null) 'lines': outcome.lines,
       ..._gameFields,
       // Present only on a playlist round. Its absence is how every phone knows
       // this one ends at the lobby.
@@ -793,6 +831,11 @@ class HostSession extends ChangeNotifier {
     }
     _phase = HostPhase.lobby;
     _mode = RoundMode.playlist;
+    // Back to the top of the list. The playlist is played through once, so
+    // without this a second Play would start from wherever the last one
+    // stopped — and after a full run, from past the end, which reads as "no
+    // game fits this table".
+    _gameIndex = 0;
     _broadcastLobby();
     _updateBeacon();
     notifyListeners();
@@ -845,6 +888,7 @@ class HostSession extends ChangeNotifier {
             'phoneId': p.phoneId,
             'index': i,
             'label': p.label,
+            if (p.color != null) 'color': p.color!.id,
             'calibrated': p.calibrated,
             'confirmed': p.confirmed,
             'connected': p.connected,

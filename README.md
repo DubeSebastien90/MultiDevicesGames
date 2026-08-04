@@ -27,6 +27,7 @@ pick it and type the code. Then:
    told at once — there is no arrangement screen to review.
 3. Each phone shows where to sit. Push them together, tap **In place — confirm**.
 4. Play. Win, and the next minigame starts — with a different arrangement.
+   The list is played through **once**, then everyone is back in the lobby.
 
 The host is a player too — it renders its own viewport through the same code path
 as everybody else.
@@ -55,9 +56,58 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | **Hot Potato** | `Layouts.circle`, join order | a ring | not holding it at the end |
 | **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
 | **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
+| **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
 
-Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
+Adding another is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
+
+## Who a player is
+
+A phone had two names — `phoneId` for the wire and a label for diagrams — and
+neither survives being read from across a table. So the platform now also knows
+a **colour**: `PlayerPalette` of eight, one per phone, unique for the session.
+
+Uniqueness is the host's promise, because only the host can make it. A phone is
+seated the moment it joins, so nobody is *gated* on choosing; picking in the
+lobby is a change, not a step. Two phones tapping the same swatch at once both
+send a request and the host answers with an ordinary lobby broadcast in which
+one of them holds it — the loser's swatch simply never lights up, with no error
+path and no special case on the client.
+
+Colour rides on `PhoneSpec` and on the compiled `PhoneSlice`, so a game reads
+`context.players` and `context.phoneOfColor(...)` and never asks the lobby
+anything.
+
+## Guac-a-Mole, and why points follow the colour
+
+Four phones or more in a block. Each screen has four holes, so a table has 4N.
+Avocados pop up in a uniformly random hole *anywhere on the board*, tinted one
+player's colour, and squishing one scores **its owner** — whoever's finger did
+it. Purely additive: nothing is ever deducted.
+
+That last rule looks strange until you notice what the game physically is. With
+four players only a quarter of the moles on your own screen are yours; the rest
+of yours are on other people's phones, so you play it leaning across the table.
+
+Which means a touch cannot identify a player. It arrives tagged with the phone
+whose *glass* was pressed, and once people are reaching, that phone is usually
+not the person reaching — a green mole tapped on p3's screen is Green stretching
+over, or p3 fumbling, and the two are the same event with the same data. The
+tapper is genuinely unknowable, so the game never asks. Points follow the mole's
+colour, which is unambiguous, and a wrong tap punishes itself by handing a rival
+a point. Anything richer — a bonus for squishing your own — would need the one
+fact the hardware cannot supply.
+
+Spawn *position* is uniform over every hole, with no bias toward anyone's own
+screen: reaching is the game. Spawn *colour* is dealt from a shuffled bag, so
+across a round no player is more than one deal behind another. Independent random
+colours would let somebody get visibly fewer moles by luck, and losing to the
+dice is not losing to a person.
+
+It is also the first game here that does not use the seam. Nothing crosses the
+gap. What it borrows from the platform instead is the single authoritative clock
+and the single spawner — which is exactly what makes "an equal number of moles
+each" a promise one machine can keep.
 
 ---
 
@@ -339,7 +389,8 @@ The only lever you have is the plan you return:
 | What your plan does | What players see |
 | --- | --- |
 | Two screens within 40mm of each other, sharing some edge | A stripe on each facing edge, same colour, spanning only the length they share |
-| A screen with nothing near it — a ring, or `allowGaps: true` | One stripe on the edge facing the middle of the table, the same colour on every such phone |
+| Three or more screens touching nothing — a ring, or `allowGaps: true` | A neutral stripe on the edge facing the middle, **plus** a paired-colour stripe facing the neighbour on each side, so the order round the circle is unambiguous |
+| Two screens touching nothing | The neutral middle-facing stripe only. Two phones across a table are one relationship, not a loop |
 | A single phone alone | No stripe. There is nothing to line it up with |
 | A gap wider than 40mm without `allowGaps` | A validation error. The round refuses to start and the host is told which phone is stranded |
 
@@ -351,10 +402,9 @@ only appear during placement, then get out of the way — a round is your canvas
 alone.
 
 **A wrong-looking connector is never a bug in your game.** It comes from the plan
-or from a phone's measurements, most often `bezelMm`. The host prints a
-`BoardAudit` on every round — every pair, with the reason it did or did not join
-— readable in the lobby, in the console, or in a browser at the host's
-`http://<ip>:8080`. Read that before touching anything.
+or from a phone's measurements, most often `bezelMm`. `BoardLinks.explain()`
+judges every pair and returns the reason it did or did not join, in words — call
+it on `board.slices` and read the verdicts before touching anything of your own.
 
 ## Scoring
 
@@ -368,6 +418,41 @@ context.scores.awardAll(5);          // co-operative
 The platform shows standings in the lobby and on the results screen, and shows
 **nothing at all** until somebody scores — so a co-operative game that never
 awards is completely normal.
+
+## Ending a round
+
+Return a `GameOutcome` from `outcome` and the round is over. Which constructor
+you pick decides what each phone is told — pick the one that is true, because
+"who won" is not the same question for every game:
+
+```dart
+GameOutcome.won(summary: 'the tower fell')          // the table did it together
+GameOutcome.lost(summary: 'time ran out')           // the table did not
+GameOutcome.contest(winners: {'p1','p3'}, …)        // some phones won
+GameOutcome.draw(summary: 'dead level')             // a contest nobody won
+GameOutcome.perPhone({'p1': 'You made 40 points'})  // no winning, just facts
+```
+
+| You return | The named phones see | Everyone else sees |
+| --- | --- | --- |
+| `won` | 🏆 **You win!** | the same |
+| `lost` | **Round over** | the same |
+| `contest` | 🏆 **You win!** | **You lost** |
+| `draw` | **A draw** | the same |
+| `perPhone` | 🏆 **Well played!** + their line | the headline, without a line |
+
+Three things worth knowing:
+
+- **`lines` rides along with any of them.** A contest can say **You win!** *and*
+  "3 kills" underneath. The platform owns the headline so five phones cannot
+  word one result differently; you own the facts under it.
+- **Keys are `phoneId`s.** Using your own indices means everybody is told they
+  lost — the host notices and warns, but the round is already over by then.
+- **Latch it.** `outcome` is polled several times a tick, so build the object
+  once and return the same one, exactly as with awarding points.
+
+A game that ends when its goal is met has nothing to decide here: `won` is
+right, and `outcome` returns null until then.
 
 ## Five rules that will break the seam if you ignore them
 
@@ -416,64 +501,6 @@ rest, and shows nothing at all until somebody actually scores — both shipped
 games are co-operative, and Ball Bin is the only one that credits catches to
 individual phones.
 
-## Flood, and the first competitive board
-
-The two Flood variants are the project's first **competitive** games — two teams,
-one loses — and its first board that is not a strip. Built to
-[`lib/games/pusho-war-option-a-growing-power.md`](lib/games/pusho-war-option-a-growing-power.md)
-and [`lib/games/pusho-war-option-b-shrinking-field.md`](lib/games/pusho-war-option-b-shrinking-field.md).
-
-Phones stand upright in **two rows facing each other**, blue along the top and
-red along the bottom, so every player has one phone in front of them and
-teammates sit shoulder to shoulder:
-
-```
-  1v1                2v2                  3v3
- ┌────┐            ┌────┬────┐        ┌────┬────┬────┐
- │ B  │            │ B  │ B  │        │ B  │ B  │ B  │
- ├────┤            ├────┼────┤        ├────┼────┼────┤
- │ R  │            │ R  │ R  │        │ R  │ R  │ R  │
- └────┘            └────┴────┘        └────┴────┴────┘
-```
-
-Tap anywhere on your phone and the waterline between the colours moves toward
-the other team. Because every phone draws the same boundary in world
-coordinates, that line runs unbroken across every seam — the same trick as the
-bird, on a board where the *whole picture* is the moving thing.
-
-The board is `Layouts.grid(rows: 2)`. It began as hand-written placements —
-`row` and `column` pack one axis and this needs two — but nothing in it was
-actually about flooding, so it moved into the SDK where any team-versus-team
-game can reach it. Two things it does that the single-axis helpers do not: the
-playfield intersects **within** a column (the strip both facing phones can see)
-and unions **across** columns, and each row is pulled toward the seam, so a
-shallower phone loses its far edge rather than its front line.
-
-What stayed behind in `FloodBoard` is only what is genuinely Flood's: the
-even-count rule, which row is which team, and where the line between them sits.
-
-The two variants share their board, teams, countdown and tap handling in
-`games/flood_common/`, and differ in exactly one method each:
-
-| | Tap strength | What wins | Feels like |
-| --- | --- | --- | --- |
-| **Flood** | grows with the clock — doubled at 15s | the raw boundary | a slow tug that suddenly runs away |
-| **Flood: Closing In** | flat all round | the boundary read through a field shrinking to 15% | fair mashing, mounting pressure |
-
-Neither has any entities. The world is one float, it moves in steps rather than
-smoothly, and it therefore lives in `sharedState` rather than the interpolated
-snapshot stream — a game that extends `GameSim` directly and never links a
-physics engine, which is the case §6 of the architecture doc says should be
-possible and this is the first game to actually prove.
-
-**An even number of phones is the premise**, not a preference, and the manifest
-says so: `PlayerCount.range(min: 2, max: 6, parity: CountParity.even)`. The
-lobby filters on it, so Flood is offered at 2, 4 and 6 and simply is not there
-at 3 or 5 — nobody taps Play on a round that cannot run. `planBoard` still
-throws on an odd table as a backstop, because the board is built from the
-assumption of two equal rows and a silent wrong answer there would be a game
-people can see is broken.
-
 ### A float in `sharedState` is a 60 Hz stream
 
 Worth writing down, because it is invisible and the next game to skip entities
@@ -518,9 +545,12 @@ lib/
   games/
     slingshot/     game + sim + view + config
     ball_bin/      game + sim + view + config
+    hot_potato/    game + sim + view + config
+    arena/         game + sim + view + config
     flood_common/  board, config, and the sim/view both variants share
     flood/         Flood — growing tap power
     flood_closing/ Flood: Closing In — shrinking field
+    guacamole/     game + sim + view + config
   main.dart
 ```
 
@@ -612,45 +642,6 @@ delay slider**. Drag it to 0 and the bird stutters — that is the jitter the
 buffer normally hides. It also toggles the 1cm world grid (unbroken grid lines
 across the gap are a live calibration check) and marks the dead zone.
 
-## What is verified
-
-`flutter test` — 160 tests, all passing:
-
-- **`layout_solver_test.dart`** — packing, bezel gaps, top alignment, the
-  coverage map, transforms as exact inverses, and mixed-density phones drawing at
-  one physical scale.
-- **`snapshot_buffer_test.dart`** — interpolation, capped extrapolation, angle
-  wraparound, timeline restarts, and the frame-pacing property above.
-- **`end_to_end_test.dart`** — a real host with a real Forge2D world, its own
-  loopback viewport, and a second phone over an **actual WebSocket**: full
-  handshake, placement, launch, and flight. Asserts the bird crosses onto the
-  second phone, that both phones agree at the seam, and that the bird is
-  simulated *inside* the dead zone rather than stopped by it.
-- **`viewport_render_test.dart`** — the Flame camera resolves to the physically
-  correct zoom (52.49 logical px per cm at 400dpi/dpr 3) and is pinned to this
-  phone's world offset.
-- **`flood_test.dart`** — both Flood variants through the contract at 2, 4 and 6
-  phones: two equal rows with every blue screen above every red one, an odd
-  table refused, the countdown swallowing a head start, A's ramp doubling a tap
-  after one `rampWindow` while B's stays flat, B's shrinking field resolving a
-  three-tap lead with nobody touching anything again, and the `maxRoundLength`
-  backstop ending every round on time and awarding the marginal lead. Also
-  pins **which way the flood goes** — a team's taps must expand its own colour
-  onto the opponent's glass, and the sim is identical either way, so only a
-  test that asks the *view* where it would paint can tell. And the idle packet
-  rate; see below.
-
-Measured on a two-phone board, host + socket client: the bird crosses the seam
-1.05s into a flight that peaks 1.2 units above the sling and stays on screen the
-whole way, and the two phones disagree by **0.0005 world units (5µm)** while
-crossing.
-
-Both real builds compile: `flutter build windows` and `flutter build apk`.
-
-Not covered by tests: the actual physical experience on two phones on a table.
-That needs two phones, and it is the only thing that can truly validate the
-concept.
-
 ## Networking gotchas
 
 Both phones must be on the same WiFi, and that network must let devices talk to
@@ -711,5 +702,14 @@ inside it.
 - Launch feel is tuned for a two-phone board and scaled by `sqrt(width)` from
   there, so a four-phone board needs more shots to cross.
 - Measurements are not persisted, so they need re-entering each launch.
+- `Layouts.grid` sizes every cell to the largest phone and centres smaller ones
+  inside theirs. A grid of mismatched screens has no honest answer — a short
+  phone in the top row leaves a hole that is neither bezel nor playfield — so
+  the error is confined to a visible margin instead of being smeared across the
+  board. Guac-a-Mole's holes are placed per screen, so they stay correct either
+  way; a grid game that wanted one continuous surface would need more.
+- Guac-a-Mole never checks that a mole is *reachable*. On a table of eight in a
+  4x2 block, a mole at the far corner is a lunge, and whoever sits centrally has
+  a real advantage. Four phones is the size it is designed around.
 - On desktop, resizing the window after the board is laid out leaves the recorded
   viewport extent stale (phones do not resize).

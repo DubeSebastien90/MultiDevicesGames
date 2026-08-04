@@ -79,6 +79,17 @@ class _HoldToConfirmState extends State<HoldToConfirm>
     if (widget.confirmed && !_done) {
       _done = true;
       _progress.value = 1;
+      return;
+    }
+
+    // Being told it is no longer confirmed has to undo it. This latched once
+    // and stayed latched, and because Flutter reuses this State for the next
+    // round, a second round opened already saying "Ready" — with the hold
+    // disabled, since it thought the job was done. Nobody could confirm, and
+    // the host waited for a phone that had no way to answer.
+    if (!widget.confirmed && _done) {
+      _done = false;
+      _progress.value = 0;
     }
   }
 
