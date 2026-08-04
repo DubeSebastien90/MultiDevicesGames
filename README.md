@@ -415,64 +415,6 @@ rest, and shows nothing at all until somebody actually scores — both shipped
 games are co-operative, and Ball Bin is the only one that credits catches to
 individual phones.
 
-## Flood, and the first competitive board
-
-The two Flood variants are the project's first **competitive** games — two teams,
-one loses — and its first board that is not a strip. Built to
-[`lib/games/pusho-war-option-a-growing-power.md`](lib/games/pusho-war-option-a-growing-power.md)
-and [`lib/games/pusho-war-option-b-shrinking-field.md`](lib/games/pusho-war-option-b-shrinking-field.md).
-
-Phones stand upright in **two rows facing each other**, blue along the top and
-red along the bottom, so every player has one phone in front of them and
-teammates sit shoulder to shoulder:
-
-```
-  1v1                2v2                  3v3
- ┌────┐            ┌────┬────┐        ┌────┬────┬────┐
- │ B  │            │ B  │ B  │        │ B  │ B  │ B  │
- ├────┤            ├────┼────┤        ├────┼────┼────┤
- │ R  │            │ R  │ R  │        │ R  │ R  │ R  │
- └────┘            └────┴────┘        └────┴────┴────┘
-```
-
-Tap anywhere on your phone and the waterline between the colours moves toward
-the other team. Because every phone draws the same boundary in world
-coordinates, that line runs unbroken across every seam — the same trick as the
-bird, on a board where the *whole picture* is the moving thing.
-
-The board is `Layouts.grid(rows: 2)`. It began as hand-written placements —
-`row` and `column` pack one axis and this needs two — but nothing in it was
-actually about flooding, so it moved into the SDK where any team-versus-team
-game can reach it. Two things it does that the single-axis helpers do not: the
-playfield intersects **within** a column (the strip both facing phones can see)
-and unions **across** columns, and each row is pulled toward the seam, so a
-shallower phone loses its far edge rather than its front line.
-
-What stayed behind in `FloodBoard` is only what is genuinely Flood's: the
-even-count rule, which row is which team, and where the line between them sits.
-
-The two variants share their board, teams, countdown and tap handling in
-`games/flood_common/`, and differ in exactly one method each:
-
-| | Tap strength | What wins | Feels like |
-| --- | --- | --- | --- |
-| **Flood** | grows with the clock — doubled at 15s | the raw boundary | a slow tug that suddenly runs away |
-| **Flood: Closing In** | flat all round | the boundary read through a field shrinking to 15% | fair mashing, mounting pressure |
-
-Neither has any entities. The world is one float, it moves in steps rather than
-smoothly, and it therefore lives in `sharedState` rather than the interpolated
-snapshot stream — a game that extends `GameSim` directly and never links a
-physics engine, which is the case §6 of the architecture doc says should be
-possible and this is the first game to actually prove.
-
-**An even number of phones is the premise**, not a preference, and the manifest
-says so: `PlayerCount.range(min: 2, max: 6, parity: CountParity.even)`. The
-lobby filters on it, so Flood is offered at 2, 4 and 6 and simply is not there
-at 3 or 5 — nobody taps Play on a round that cannot run. `planBoard` still
-throws on an odd table as a backstop, because the board is built from the
-assumption of two equal rows and a silent wrong answer there would be a game
-people can see is broken.
-
 ### A float in `sharedState` is a 60 Hz stream
 
 Worth writing down, because it is invisible and the next game to skip entities
