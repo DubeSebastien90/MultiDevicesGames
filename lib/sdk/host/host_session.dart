@@ -28,7 +28,7 @@ enum HostPhase { idle, lobby, placing, playing, finished }
 
 /// How a round was started, which decides where it ends.
 enum RoundMode {
-  /// From the **Play** button: win one and the next begins, forever.
+  /// From the **Play** button: the whole list, once, then back to the lobby.
   playlist,
 
   /// From the games list: play that one, then back to the lobby.
@@ -133,7 +133,8 @@ class HostSession extends ChangeNotifier {
   Timer? _loop;
   String? _warning;
 
-  /// Position in the playlist. Only ever goes up; the catalog wraps.
+  /// Position in the playlist. Only ever goes up within a run, and resets when
+  /// the table lands back in the lobby — the list is played through once.
   int _gameIndex = 0;
 
   /// Whether the current round chains into the next game or returns to the
@@ -470,7 +471,9 @@ class HostSession extends ChangeNotifier {
   void startRound() {
     if (!canStart) return;
     _mode = RoundMode.playlist;
-    _startGame(GameCatalog.playableIndexFrom(_gameIndex, _phones.length)!);
+    // Always from the top: a run is the whole list, not a resumption of one
+    // somebody abandoned.
+    _startGame(GameCatalog.playableIndexFrom(0, _phones.length)!);
   }
 
   /// Every game, with whether this table can play it. The lobby's list.
@@ -761,6 +764,11 @@ class HostSession extends ChangeNotifier {
     }
     _phase = HostPhase.lobby;
     _mode = RoundMode.playlist;
+    // Back to the top of the list. The playlist is played through once, so
+    // without this a second Play would start from wherever the last one
+    // stopped — and after a full run, from past the end, which reads as "no
+    // game fits this table".
+    _gameIndex = 0;
     _broadcastLobby();
     _updateBeacon();
     notifyListeners();

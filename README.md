@@ -27,6 +27,7 @@ pick it and type the code. Then:
    told at once — there is no arrangement screen to review.
 3. Each phone shows where to sit. Push them together, tap **In place — confirm**.
 4. Play. Win, and the next minigame starts — with a different arrangement.
+   The list is played through **once**, then everyone is back in the lobby.
 
 The host is a player too — it renders its own viewport through the same code path
 as everybody else.
