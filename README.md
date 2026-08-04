@@ -322,6 +322,40 @@ Widget? buildHud(BuildContext context, HudFrame frame) =>
     Text('${frame.sharedState['caught']} / 10');
 ```
 
+## Connectors: not your job
+
+Those coloured stripes players line their phones up against — **you do nothing
+about them.** There is no field for them on the manifest, no hook to implement,
+nothing to draw. They are not even in your `Frame`, deliberately.
+
+They fall out of the compiled geometry: after `planBoard` returns, `BoardLinks`
+judges every pair of screens, and the answer travels with the layout. It is
+computed once, on the host, so two phones can never disagree about which edge is
+red. That one rule covers rows, columns, grids and rings without knowing any of
+their names — which is exactly why it does not need your help.
+
+The only lever you have is the plan you return:
+
+| What your plan does | What players see |
+| --- | --- |
+| Two screens within 40mm of each other, sharing some edge | A stripe on each facing edge, same colour, spanning only the length they share |
+| A screen with nothing near it — a ring, or `allowGaps: true` | One stripe on the edge facing the middle of the table, the same colour on every such phone |
+| A single phone alone | No stripe. There is nothing to line it up with |
+| A gap wider than 40mm without `allowGaps` | A validation error. The round refuses to start and the host is told which phone is stranded |
+
+Two things follow from this, and both are load-bearing:
+
+**Do not draw your own alignment hints.** Yours would be computed from different
+numbers and would disagree with the SDK's on somebody's screen. Connectors also
+only appear during placement, then get out of the way — a round is your canvas
+alone.
+
+**A wrong-looking connector is never a bug in your game.** It comes from the plan
+or from a phone's measurements, most often `bezelMm`. The host prints a
+`BoardAudit` on every round — every pair, with the reason it did or did not join
+— readable in the lobby, in the console, or in a browser at the host's
+`http://<ip>:8080`. Read that before touching anything.
+
 ## Scoring
 
 Score belongs to the lobby and survives every round. Award it and nothing else:
@@ -366,6 +400,7 @@ lib/games/your_game/
 - [ ] `manifest.players` says the truth about your table
 - [ ] `planBoard` uses a helper, or a plan the compiler accepts
 - [ ] Nothing under `lib/sdk/` modified
+- [ ] No alignment hints of your own — connectors are the platform's job
 - [ ] `flutter analyze` clean, `flutter test` green
 - [ ] A test that drives the sim headlessly — see `test/hot_potato_test.dart`,
       which plays a whole round with no host, no sockets and no rendering
