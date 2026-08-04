@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:forge2d/forge2d.dart' show Vector2;
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_config.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_game.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_sim.dart';
@@ -74,6 +75,113 @@ void _flickForward(PitchCarsSim sim) {
     sim.step(1 / PlatformConfig.simHz);
     steps++;
   }
+}
+
+/// Result of [_runGraceWindowScenario]: where the current-turn car ended up
+/// after being pushed off the track, plus the two candidate reset
+/// destinations so the test can tell which one the sim actually chose.
+class _GraceWindowResult {
+  _GraceWindowResult({
+    required this.settled,
+    required this.hold,
+    required this.preTurn,
+  });
+  final Vector2 settled;
+  final Vector2 hold;
+  final Vector2 preTurn;
+}
+
+/// Deterministically engineers the exact scenario the hit-grace-window fix
+/// is about: the current turn's car is hit by another car, stays on the
+/// track for [holdTicks] more physics ticks, and is then pushed off the
+/// track. Real Forge2D physics still drives the collision and the off-track
+/// reset — only *positioning* is puppeted directly through [PitchCarsSim
+/// .carOf] (a public accessor the sim itself uses) so the timing between the
+/// hit and the exit is exact rather than hunted for via random seeds.
+///
+/// `holdTicks` is measured against `PitchCarsConfig.hitGraceWindow`, which
+/// is exactly 15 ticks at the sim's 60 Hz (`PlatformConfig.simHz`).
+_GraceWindowResult _runGraceWindowScenario({required int holdTicks}) {
+  final started = start(2, seed: 1);
+  final sim = started.sim;
+  final dt = 1 / PlatformConfig.simHz;
+
+  final p1 = sim.currentTurn;
+  final p2 = sim.entities.firstWhere((e) => e.id != p1 && e.kind == 'car').id;
+
+  final startCar = sim.entities.firstWhere((e) => e.id == p1);
+  final preTurn = Vector2(startCar.x, startCar.y);
+
+  // A tiny flick just to start the turn (sets `_moving` and starts the
+  // sim's internal since-launch clock) — its direction/magnitude do not
+  // matter, because every frame's position from here on is driven directly
+  // below.
+  sim.onTouch(TouchEvent(phoneId: p1, worldX: startCar.x, worldY: startCar.y, phase: TouchPhase.down));
+  sim.onTouch(TouchEvent(
+      phoneId: p1, worldX: startCar.x - 0.5, worldY: startCar.y, phase: TouchPhase.move));
+  sim.onTouch(TouchEvent(
+      phoneId: p1, worldX: startCar.x - 0.5, worldY: startCar.y, phase: TouchPhase.up));
+
+  // A point on the centerline, away from the start line, to hold the car at
+  // while "on track" — kept distinct from `preTurn` so the two possible
+  // reset destinations below are distinguishable in the assertions.
+  final holdArc = sim.track.length / 2;
+  final holdWp = sim.track.pointAtArclength(holdArc);
+  final tangent = sim.track.tangentAt(holdArc);
+  final hold = Vector2(holdWp.x, holdWp.y);
+  final normal = Vector2(-tangent.y, tangent.x);
+  // p2 sits beside p1 along the tangent for the hit, overlapping it (0.9
+  // world units apart, less than their combined radius of 1.0) so the hit
+  // step's physics registers a real Forge2D contact between them.
+  final p2Touching = Vector2(hold.x + tangent.x * 0.9, hold.y + tangent.y * 0.9);
+  // Once the hit is recorded, p2 is moved well clear of p1 so it does not
+  // keep pushing p1 around every subsequent step through overlap
+  // resolution — everything from here on should be p1 sitting still.
+  final p2Clear = Vector2(hold.x + tangent.x * 4.0, hold.y + tangent.y * 4.0);
+  // Well outside the track's half-width (1.5 world units), along the normal.
+  final offTrack = Vector2(
+    hold.x + normal.x * PitchCarsConfig.trackWidthWorld,
+    hold.y + normal.y * PitchCarsConfig.trackWidthWorld,
+  );
+
+  final car1 = sim.carOf(p1);
+  final car2 = sim.carOf(p2);
+
+  void place(Vector2 p1Pos, Vector2 p1Vel, Vector2 p2Pos) {
+    car1
+      ..setTransform(p1Pos, 0)
+      ..linearVelocity = p1Vel
+      ..angularVelocity = 0
+      ..setAwake(true);
+    car2
+      ..setTransform(p2Pos, 0)
+      ..linearVelocity = Vector2.zero()
+      ..angularVelocity = 0
+      ..setAwake(true);
+  }
+
+  // The hit.
+  place(hold, Vector2(0.5, 0), p2Touching);
+  sim.step(dt);
+
+  // Hold p1 on the track for `holdTicks` more frames — real elapsed
+  // simulation time passes, so the sim's since-launch clock advances well
+  // past the single tick the hit took.
+  for (var i = 0; i < holdTicks; i++) {
+    place(hold, Vector2.zero(), p2Clear);
+    sim.step(dt);
+  }
+
+  // Now push p1 off the track and let the sim resolve it.
+  place(offTrack, Vector2.zero(), p2Clear);
+  sim.step(dt);
+
+  final settled = sim.entities.firstWhere((e) => e.id == p1);
+  return _GraceWindowResult(
+    settled: Vector2(settled.x, settled.y),
+    hold: hold,
+    preTurn: preTurn,
+  );
 }
 
 void main() {
@@ -257,6 +365,42 @@ void main() {
         started.sim.step(1 / PlatformConfig.simHz);
       }
       expect(started.sim.outcome, isNull);
+    });
+
+    test(
+        'a car hit shortly before leaving the track is treated as bumped, '
+        'not self-fault', () {
+      // 11 ticks (~183ms) between the hit and the exit — well inside the
+      // 15-tick (250ms) hitGraceWindow.
+      final result = _runGraceWindowScenario(holdTicks: 10);
+
+      expect(result.settled.x, closeTo(result.hold.x, 1e-3));
+      expect(result.settled.y, closeTo(result.hold.y, 1e-3));
+      expect(
+        (result.settled.x - result.preTurn.x).abs() > 1e-2 ||
+            (result.settled.y - result.preTurn.y).abs() > 1e-2,
+        isTrue,
+        reason: 'a bumped car must not be reset all the way back to its '
+            'pre-turn position',
+      );
+    });
+
+    test(
+        'a car hit well before leaving the track is treated as self-fault, '
+        'despite the earlier hit', () {
+      // 21 ticks (~350ms) between the hit and the exit — well outside the
+      // 15-tick (250ms) hitGraceWindow.
+      final result = _runGraceWindowScenario(holdTicks: 20);
+
+      expect(result.settled.x, closeTo(result.preTurn.x, 1e-3));
+      expect(result.settled.y, closeTo(result.preTurn.y, 1e-3));
+      expect(
+        (result.settled.x - result.hold.x).abs() > 1e-2 ||
+            (result.settled.y - result.hold.y).abs() > 1e-2,
+        isTrue,
+        reason: 'a self-fault car reset to its last on-track point instead '
+            'of its pre-turn position would defeat the grace window',
+      );
     });
   });
 }
