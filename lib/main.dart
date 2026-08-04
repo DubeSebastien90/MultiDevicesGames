@@ -11,9 +11,19 @@ Future<void> main() async {
   // Landscape, because the v1 arrangement is a left-to-right strip: phones on
   // their sides make a wide board, and the bird's flight crosses the seam
   // horizontally, which is the thing we are trying to look at.
+  // Portrait, always, on every device — and the app never re-lays-out because
+  // somebody physically turned a phone.
+  //
+  // A phone lying flat on a table has no meaningful "up": gravity cannot tell
+  // you which way the board runs. So orientation stops being something the OS
+  // decides and becomes something a *game* declares, as `quarterTurns` on each
+  // placement in its BoardPlan. The phone then rotates its own surface to match
+  // the board it was put into. Chasing the accelerometer instead was the source
+  // of a whole class of bug — locks that iPadOS quietly ignores, and metrics
+  // measured mid-rotation.
   await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
   ]);
 
   // Edge to edge with no system bars. A status or navigation bar would eat the

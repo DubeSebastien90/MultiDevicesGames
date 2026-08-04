@@ -17,11 +17,12 @@ import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 /// guarantees it lands at the same physical size and the same place on every
 /// panel. Feeds a client the exact messages a real host sends, using the real
 /// compiler and the real sim, then mounts the real renderer on top.
-DeviceMetrics landscapePhone(String label) => DeviceMetrics(
-  activePxWidth: 2400,
-  activePxHeight: 1080,
-  widthMm: 152.4, // 400 dpi
-  heightMm: 68.58,
+DeviceMetrics portraitPhone(String label) => DeviceMetrics(
+  // The app is locked portrait, so a phone measures itself short-edge-first.
+  activePxWidth: 1080,
+  activePxHeight: 2400,
+  widthMm: 68.58, // 400 dpi
+  heightMm: 152.4,
   bezelMm: 3,
   devicePixelRatio: 3,
   label: label,
@@ -34,8 +35,8 @@ void main() {
   }) async {
     const game = SlingshotGame();
     final lobby = LobbyInfo([
-      PhoneSpec.fromMetrics('p1', landscapePhone('p1')),
-      PhoneSpec.fromMetrics('p2', landscapePhone('p2')),
+      PhoneSpec.fromMetrics('p1', portraitPhone('p1')),
+      PhoneSpec.fromMetrics('p2', portraitPhone('p2')),
     ]);
     final board =
         const BoardCompiler().compile(game.planBoard(lobby), lobby);
@@ -44,7 +45,7 @@ void main() {
     final loopback = LoopbackPair();
     final session = ClientSession(
       transport: loopback.transport,
-      metrics: landscapePhone('me'),
+      metrics: portraitPhone('me'),
     );
     await session.connect();
 
@@ -124,9 +125,13 @@ void main() {
     final (session, game, loopback) =
         await mountViewport(tester, phoneIndex: 1);
     expect(tester.takeException(), isNull);
-    expect(game.camera.viewfinder.anchor, Anchor.topLeft);
-    expect(game.camera.viewfinder.position.x, closeTo(15.84, 1e-6));
-    expect(game.camera.viewfinder.position.y, closeTo(0, 1e-6));
+    // Centre-anchored and turned to match the phone: that is the one place
+    // arbitrary rotation is handled.
+    expect(game.camera.viewfinder.anchor, Anchor.center);
+    expect(game.camera.viewfinder.position.x, closeTo(15.84 + 7.62, 1e-6));
+    expect(game.camera.viewfinder.position.y, closeTo(3.429, 1e-6));
+    expect(game.camera.viewfinder.angle,
+        closeTo(session.layout!.turnRadians, 1e-9));
     expect(session.layout!.viewport.left, closeTo(15.84, 1e-6));
 
     await _teardown(tester, session, loopback);
@@ -166,7 +171,7 @@ void main() {
     final loopback = LoopbackPair();
     final session = ClientSession(
       transport: loopback.transport,
-      metrics: landscapePhone('me'),
+      metrics: portraitPhone('me'),
     );
     await session.connect();
 

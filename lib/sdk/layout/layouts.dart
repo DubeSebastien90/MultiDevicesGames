@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'board_plan.dart';
 import 'phone_spec.dart';
 
@@ -63,16 +65,37 @@ class Gaps {
   static double _zero(PhoneSpec a, PhoneSpec b) => 0;
 }
 
+/// Which way up the phones lie within the board.
+///
+/// The app itself is always portrait; this is purely about how the devices are
+/// put on the table. The row and column helpers use [sideways], because a
+/// runway and a falling well both want the long edge running left-to-right.
+enum PhoneOrientation {
+  /// Long edge horizontal — the phone on its side. A quarter turn.
+  sideways,
+
+  /// Long edge vertical — the phone as you normally hold it. No turn.
+  upright,
+}
+
+extension PhoneOrientationTurn on PhoneOrientation {
+  double get turnDeg => this == PhoneOrientation.sideways ? 90 : 0;
+}
+
 /// How phones line up across the packing axis.
-enum CrossAlign {
-  /// Top edges flush in a row, left edges flush in a column.
-  start,
+enum CrossAlign { start, center, end }
 
-  /// Centres line up.
-  center,
+/// Which way a phone lies in a ring.
+enum RingFacing {
+  /// Long edge along the rim, at right angles to the radius — phones laid like
+  /// tiles around a wheel. The circumference is spent on long edges, so more
+  /// phones fit and the ring reads as a ring.
+  tangential,
 
-  /// Bottom edges flush in a row, right edges flush in a column.
-  end,
+  /// Long edge pointing at the middle, like spokes. Each phone's own top edge
+  /// then points outward at its player, which reads more naturally on the
+  /// device but wastes rim.
+  radial,
 }
 
 /// Ready-made plans for the arrangements most games want.
@@ -88,18 +111,17 @@ class Layouts {
     PhoneSort sort = PhoneSort.joinOrder,
     Gaps gap = Gaps.casingsTouching,
     CrossAlign align = CrossAlign.start,
+    PhoneOrientation orientation = PhoneOrientation.sideways,
     String? instruction,
-  }) =>
-      _pack(
-        phones,
-        horizontal: true,
-        sort: sort,
-        gap: gap,
-        align: align,
-        instruction: instruction ??
-            'Lay the phones side by side in a row, short edges touching, '
-                '${_alignWord(align, true)}.',
-      );
+  }) => _pack(
+    phones,
+    horizontal: true,
+    sort: sort,
+    gap: gap,
+    align: align,
+    orientation: orientation,
+    instruction: instruction ?? _instructionFor(true, orientation, align),
+  );
 
   /// Top to bottom. A narrow, tall board — falling things, towers, ladders.
   static BoardPlan column(
@@ -107,18 +129,106 @@ class Layouts {
     PhoneSort sort = PhoneSort.joinOrder,
     Gaps gap = Gaps.casingsTouching,
     CrossAlign align = CrossAlign.start,
+    PhoneOrientation orientation = PhoneOrientation.sideways,
     String? instruction,
-  }) =>
-      _pack(
-        phones,
-        horizontal: false,
-        sort: sort,
-        gap: gap,
-        align: align,
-        instruction: instruction ??
-            'Stack the phones one above the other, long edges touching, '
-                '${_alignWord(align, false)}.',
+  }) => _pack(
+    phones,
+    horizontal: false,
+    sort: sort,
+    gap: gap,
+    align: align,
+    orientation: orientation,
+    instruction: instruction ?? _instructionFor(false, orientation, align),
+  );
+
+  /// A ring of phones around a table, each turned to face its own player.
+  ///
+  /// Unlike a row or a column, nothing touches: the phones are islands with
+  /// space between them, and a game passing something around the ring sends it
+  /// across that space. So the plan declares [BoardPlan.allowGaps] and the
+  /// compiler stops treating the distance as a mistake.
+  ///
+  /// By default each phone lies [RingFacing.tangential]: its long edge along
+  /// the rim, at right angles to its own radius, like tiles around a wheel.
+  /// That spends the circumference on long edges, so more phones fit and the
+  /// ring actually looks like one.
+  ///
+  /// Either way this needs arbitrary angles rather than quarter turns — five
+  /// phones sit 72° apart.
+  ///
+  /// Order runs clockwise from the top, and the game's own passing order is
+  /// simply that order wrapping around.
+  static BoardPlan circle(
+    List<PhoneSpec> phones, {
+    PhoneSort sort = PhoneSort.joinOrder,
+    RingFacing facing = RingFacing.tangential,
+
+    /// Clear space between neighbouring screens, as a fraction of the widest
+    /// phone. Enough that nobody's elbows collide.
+    double spacing = 0.6,
+
+    /// Force a particular ring size instead of the smallest that fits.
+    double? radiusMm,
+    String? instruction,
+  }) {
+    if (phones.length < 3) {
+      throw const BoardPlanError(
+        'a circle needs at least 3 phones — with two you are just facing each '
+        'other',
       );
+    }
+
+    final ordered = List.of(phones)..sort(sort.compare);
+    final count = ordered.length;
+
+    // What has to fit in the chord between two neighbours is whichever edge
+    // runs along the rim — the long one when the phones lie tangentially.
+    final tangential = facing == RingFacing.tangential;
+    final alongRim = ordered
+        .map((p) => tangential ? p.heightMm : p.widthMm)
+        .reduce(math.max);
+    final acrossRim = ordered
+        .map((p) => tangential ? p.widthMm : p.heightMm)
+        .reduce(math.max);
+    final neededChord = alongRim * (1 + spacing);
+
+    // chord = 2 R sin(pi / n)
+    final fitted = neededChord / (2 * math.sin(math.pi / count));
+    // Keep a hole in the middle even when there are only three phones, so the
+    // ring reads as a ring rather than a huddle.
+    final radius = radiusMm ?? math.max(fitted, acrossRim * 1.2);
+
+    final placements = <PhonePlacement>[];
+    for (var i = 0; i < count; i++) {
+      // Start at the top of the ring and work clockwise.
+      final angle = -math.pi / 2 + (2 * math.pi * i) / count;
+      placements.add(PhonePlacement(
+        ordered[i].phoneId,
+        xMm: radius * math.cos(angle),
+        yMm: radius * math.sin(angle),
+        // Radial puts the phone's top edge along its own radius, pointing
+        // outward — turn zero already points "up", which is outward at the top
+        // of the ring, hence the extra quarter. Tangential adds another
+        // quarter, swinging the long edge round onto the rim.
+        turnDeg: angle * 180 / math.pi + (tangential ? 180 : 90),
+        hint: _ringHint(i, count),
+      ));
+    }
+
+    return BoardPlan(
+      placements,
+      allowGaps: true,
+      instruction: instruction ??
+          'Sit in a circle and put your phone on the table in front of you, '
+              'screen facing you. $count phones, evenly spaced.',
+    );
+  }
+
+  static String _ringHint(int index, int count) {
+    if (index == 0) return 'at the top of the circle';
+    final oClock = (index * 12 / count).round() % 12;
+    return '${oClock == 0 ? 12 : oClock} o\'clock in the circle';
+  }
 
   static BoardPlan _pack(
     List<PhoneSpec> phones, {
@@ -126,6 +236,7 @@ class Layouts {
     required PhoneSort sort,
     required Gaps gap,
     required CrossAlign align,
+    required PhoneOrientation orientation,
     required String instruction,
   }) {
     if (phones.isEmpty) {
@@ -133,12 +244,21 @@ class Layouts {
     }
 
     final ordered = List.of(phones)..sort(sort.compare);
+    final turn = orientation.turnDeg;
+    final sideways = orientation == PhoneOrientation.sideways;
 
-    double acrossSize(PhoneSpec p) => horizontal ? p.heightMm : p.widthMm;
+    // Footprints, not panels: a phone put on its side covers the board the
+    // other way round, and every measurement below is about the board.
+    double footprintAlong(PhoneSpec p) => horizontal
+        ? (sideways ? p.heightMm : p.widthMm)
+        : (sideways ? p.widthMm : p.heightMm);
+    double footprintAcross(PhoneSpec p) => horizontal
+        ? (sideways ? p.widthMm : p.heightMm)
+        : (sideways ? p.heightMm : p.widthMm);
 
-    // Phones sit inside a lane as deep as the *largest* of them, so no screen
-    // is ever placed at a negative offset.
-    final lane = ordered.map(acrossSize).reduce((a, b) => a > b ? a : b);
+    // Phones sit inside a lane as deep as the largest of them, so no screen is
+    // ever placed at a negative offset.
+    final lane = ordered.map(footprintAcross).reduce(math.max);
 
     double offsetFor(double size) => switch (align) {
       CrossAlign.start => 0.0,
@@ -158,19 +278,23 @@ class Layouts {
 
     for (var i = 0; i < ordered.length; i++) {
       final p = ordered[i];
-      final offset = offsetFor(acrossSize(p));
+      final across = footprintAcross(p);
+      final along = footprintAlong(p);
+      final offset = offsetFor(across);
 
       if (offset > bandStart) bandStart = offset;
-      if (offset + acrossSize(p) < bandEnd) bandEnd = offset + acrossSize(p);
+      if (offset + across < bandEnd) bandEnd = offset + across;
 
+      // Centre, not corner.
       placements.add(PhonePlacement(
         p.phoneId,
-        xMm: horizontal ? cursor : offset,
-        yMm: horizontal ? offset : cursor,
+        xMm: horizontal ? cursor + along / 2 : offset + across / 2,
+        yMm: horizontal ? offset + across / 2 : cursor + along / 2,
+        turnDeg: turn,
         hint: _hintFor(i, ordered.length, horizontal),
       ));
 
-      cursor += horizontal ? p.widthMm : p.heightMm;
+      cursor += along;
       if (i < ordered.length - 1) {
         cursor += gap.between(p, ordered[i + 1]);
       }
@@ -197,6 +321,26 @@ class Layouts {
     }
     if (index == 0) return 'top — everyone else goes below you';
     return 'below phone $index, left edges aligned';
+  }
+
+  /// The line everyone reads before moving a phone.
+  ///
+  /// Which edges end up touching depends on both the packing axis *and* which
+  /// way up the phones lie: a row of phones on their sides meets at the short
+  /// edges, the same row standing upright meets at the long ones.
+  static String _instructionFor(
+    bool horizontal,
+    PhoneOrientation orientation,
+    CrossAlign align,
+  ) {
+    final sideways = orientation == PhoneOrientation.sideways;
+    final touching = (horizontal == sideways) ? 'short' : 'long';
+    final pose = sideways ? 'on their sides' : 'upright';
+    final verb = horizontal
+        ? 'Lay the phones $pose side by side in a row'
+        : 'Stack the phones $pose one above the other';
+    return '$verb, $touching edges touching, '
+        '${_alignWord(align, horizontal)}.';
   }
 
   static String _alignWord(CrossAlign align, bool horizontal) =>

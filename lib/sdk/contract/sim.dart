@@ -49,25 +49,31 @@ class GameOutcome {
 /// carries a human label as well as a rectangle: the picture people are shown
 /// has to be the layout the game actually chose, down to the gaps.
 class PhoneSlice {
-  const PhoneSlice(this.phoneId, this.viewport, {this.label = ''});
+  const PhoneSlice(this.phoneId, this.screen, {this.label = ''});
 
   final String phoneId;
 
-  /// What that screen physically covers, in world units.
-  final WorldRect viewport;
+  /// Where that screen sits, turn included.
+  final ScreenRect screen;
 
   /// Human name, for diagrams: 'Pixel 7'.
   final String label;
 
+  /// Axis-aligned extent, for culling and framing.
+  WorldRect get viewport => screen.bounds;
+
+  /// Exact: is this world point on that screen?
+  bool contains(double x, double y) => screen.contains(x, y);
+
   Map<String, dynamic> toJson() => {
     'phoneId': phoneId,
     'label': label,
-    'rect': viewport.toJson(),
+    'screen': screen.toJson(),
   };
 
   static PhoneSlice fromJson(Map<String, dynamic> j) => PhoneSlice(
     j['phoneId'] as String,
-    WorldRect.fromJson(j['rect'] as Map<String, dynamic>),
+    ScreenRect.fromJson(j['screen'] as Map<String, dynamic>),
     label: (j['label'] as String?) ?? '',
   );
 }
@@ -101,7 +107,7 @@ class BoardContext {
   /// per-phone scoring needs: the ball landed here, so whose was it?
   String? phoneAt(double x, double y) {
     for (final slice in slices) {
-      if (slice.viewport.contains(x, y)) return slice.phoneId;
+      if (slice.contains(x, y)) return slice.phoneId;
     }
     return null;
   }

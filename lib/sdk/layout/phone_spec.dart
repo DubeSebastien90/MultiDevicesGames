@@ -26,7 +26,12 @@ class PhoneSpec {
   /// Human name, for diagrams and standings: 'Pixel 7'.
   final String label;
 
-  /// The lit area, landscape: width is the long edge.
+  /// The lit area as the device itself is held: **portrait**, so width is the
+  /// short edge and height is the long one.
+  ///
+  /// This is the panel, not the placement. How the phone lies on the table is
+  /// the game's decision, expressed as `quarterTurns` on its placement — see
+  /// [footprintWidthMm].
   final double widthMm;
   final double heightMm;
 
@@ -40,6 +45,22 @@ class PhoneSpec {
   final double activePxHeight;
 
   double get areaMm2 => widthMm * heightMm;
+
+  /// How much board this screen covers once turned [quarterTurns] steps.
+  /// An odd number of turns swaps the two.
+  double footprintWidthMm(int quarterTurns) =>
+      quarterTurns.isOdd ? heightMm : widthMm;
+
+  double footprintHeightMm(int quarterTurns) =>
+      quarterTurns.isOdd ? widthMm : heightMm;
+
+  /// The same swap for pixels, which is what the rotated surface reports and
+  /// therefore what the world transform has to be built from.
+  double footprintPxWidth(int quarterTurns) =>
+      quarterTurns.isOdd ? activePxHeight : activePxWidth;
+
+  double footprintPxHeight(int quarterTurns) =>
+      quarterTurns.isOdd ? activePxWidth : activePxHeight;
 
   /// Handy for "biggest screen", which is usually what a game means by "best".
   double get diagonalMm =>

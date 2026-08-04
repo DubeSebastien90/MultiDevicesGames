@@ -65,12 +65,20 @@ class _GameViewState extends State<GameView> {
 
   /// Raw local input, forwarded untouched.
   ///
-  /// [PointerEvent.position] is already global logical pixels, so this is
-  /// immune to any inset or padding between the game surface and the screen
-  /// edge — and the edge is exactly where the interesting touches are.
+  /// Deliberately [PointerEvent.localPosition] and not the global position: the
+  /// whole surface may be turned to match a phone laid sideways on the table,
+  /// and the local frame is the turned one. Reading global coordinates here
+  /// would send the host a finger that never moves the way the player's did.
+  ///
+  /// The listener fills the surface with no padding, so local coordinates start
+  /// at the first lit pixel — which is exactly what the host's transform
+  /// expects.
   void _pointer(PointerEvent event, String phase) {
-    widget.controller.client!
-        .sendTouch(event.position.dx, event.position.dy, phase);
+    widget.controller.client!.sendTouch(
+      event.localPosition.dx,
+      event.localPosition.dy,
+      phase,
+    );
   }
 
   /// The game's own overlay, if it has one.
@@ -95,6 +103,13 @@ class _GameViewState extends State<GameView> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B1020),
+      // The app never rotates; the *board* does. Turning the whole gameplay
+      // surface — canvas, HUD and buttons together — is what makes a phone laid
+      // on its side read upright to the person at the table.
+      // Deliberately not turned. A phone placed at an angle occupies an angled
+      // slot in the *world*, and the camera already turns to match it — so the
+      // world arrives upright on this screen and the HUD reads normally. Doing
+      // it here as well would rotate everything a second time.
       body: Stack(
         children: [
           Positioned.fill(child: GameWidget(game: _game)),
@@ -117,7 +132,7 @@ class _GameViewState extends State<GameView> {
                   text: layout == null
                       ? client.phoneId ?? '…'
                       : '${client.phoneId} · '
-                          '${layout.index + 1}/${layout.total}',
+                            '${layout.index + 1}/${layout.total}',
                 ),
                 // This phone's running score, when the session has one at all.
                 if (client.scores.isUsed) ...[
@@ -128,10 +143,7 @@ class _GameViewState extends State<GameView> {
                   ),
                 ],
                 // Whatever the game wants to say for itself.
-                if (_hud != null) ...[
-                  const SizedBox(width: 6),
-                  _hud!,
-                ],
+                if (_hud != null) ...[const SizedBox(width: 6), _hud!],
               ],
             ),
           ),
@@ -288,19 +300,25 @@ class _DebugPanel extends StatelessWidget {
           // renderer drew every game. They belong to ShapeView now, and a game
           // that draws its own pixels was never going to honour them.
           const Divider(height: 14, color: Colors.white24),
-          _row('rtt', client.rttMs == null
-              ? '—'
-              : '${client.rttMs!.toStringAsFixed(0)} ms'),
+          _row(
+            'rtt',
+            client.rttMs == null
+                ? '—'
+                : '${client.rttMs!.toStringAsFixed(0)} ms',
+          ),
           _row('snapshots buffered', '${buffer.bufferedSnapshots}'),
-          _row('snapshot spacing',
-              '${buffer.snapshotIntervalMs.toStringAsFixed(1)} ms'),
+          _row(
+            'snapshot spacing',
+            '${buffer.snapshotIntervalMs.toStringAsFixed(1)} ms',
+          ),
           _row('extrapolating', buffer.extrapolating ? 'YES' : 'no'),
           _row('render clock', '${buffer.renderTimeMs.toStringAsFixed(0)} ms'),
           if (layout != null) ...[
-            _row('px per cm',
-                layout.logicalPxPerWorldUnit.toStringAsFixed(1)),
-            _row('world offset',
-                '${layout.worldOffsetX.toStringAsFixed(2)} cm'),
+            _row('px per cm', layout.logicalPxPerWorldUnit.toStringAsFixed(1)),
+            _row(
+              'world offset',
+              '${layout.worldCenterX.toStringAsFixed(2)} cm',
+            ),
             _row('viewport', layout.viewport.toString()),
           ],
           if (controller.host != null) ...[
@@ -310,8 +328,10 @@ class _DebugPanel extends StatelessWidget {
               // what you want when a measurement turned out wrong.
               onPressed: () => controller.host!.recalibrate(),
               icon: const Icon(Icons.tune, size: 15),
-              label: const Text('Re-calibrate the board',
-                  style: TextStyle(fontSize: 11)),
+              label: const Text(
+                'Re-calibrate the board',
+                style: TextStyle(fontSize: 11),
+              ),
             ),
           ],
         ],
@@ -324,9 +344,14 @@ class _DebugPanel extends StatelessWidget {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.white38)),
-        Text(value,
-            style: const TextStyle(fontSize: 10, color: Colors.white70)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.white38),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 10, color: Colors.white70),
+        ),
       ],
     ),
   );

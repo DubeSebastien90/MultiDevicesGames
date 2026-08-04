@@ -1,4 +1,5 @@
 import '../games/ball_bin/ball_bin_game.dart';
+import '../games/hot_potato/hot_potato_game.dart';
 import '../games/slingshot/slingshot_game.dart';
 import 'contract/game.dart';
 
@@ -17,6 +18,7 @@ class GameCatalog {
   static const playlist = <MultiscreenGame>[
     SlingshotGame(),
     BallBinGame(),
+    HotPotatoGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds
@@ -69,7 +71,23 @@ class GameCatalog {
   }
 
   /// What to tell the host when nothing fits.
-  static String requirementSummary() => playlist
-      .map((g) => '${g.manifest.title} ${g.manifest.requirement()}')
-      .join(', ');
+  ///
+  /// Ordered by how close each game is to playable, so a table of two is told
+  /// about the game needing three before the one needing eight. That is the
+  /// difference between "here is a wall of requirements" and "add one phone".
+  static String requirementSummary() {
+    final byReach = List.of(playlist)
+      ..sort((a, b) =>
+          a.manifest.smallestTable.compareTo(b.manifest.smallestTable));
+    return byReach
+        .map((g) => '${g.manifest.title} ${g.manifest.requirement()}')
+        .join('; ');
+  }
+
+  /// Every count that would let *something* be played, for the lobby to
+  /// suggest. Empty only if no game is playable at any size.
+  static List<int> playableTableSizes({int ceiling = 8}) => [
+    for (var n = 1; n <= ceiling; n++)
+      if (anyPlayable(n)) n,
+  ];
 }

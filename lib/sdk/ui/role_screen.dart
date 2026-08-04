@@ -21,16 +21,16 @@ class RoleScreen extends StatefulWidget {
 class _RoleScreenState extends State<RoleScreen> {
   DeviceMetrics? _metrics;
 
-  /// Whether the surface we are actually being drawn on is taller than it is
-  /// wide, despite the landscape lock.
-  bool _surfaceIsPortrait = false;
+  /// Whether the surface we are drawing on is wider than it is tall, despite
+  /// the portrait lock.
+  bool _surfaceIsLandscape = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Re-measured every time the view changes, not just once. A device that
-    // rotates into landscape a beat after launch then corrects itself instead
-    // of carrying a first guess for the rest of the session.
+    // settles into the locked orientation a beat after launch then corrects
+    // itself instead of carrying a first guess for the rest of the session.
     _metrics = _detect();
   }
 
@@ -38,21 +38,19 @@ class _RoleScreenState extends State<RoleScreen> {
     final view = View.of(context);
     final px = view.physicalSize;
 
-    // We are locked to landscape, so the long edge is the width. Reading it
-    // this way survives being measured a frame before the rotation lands.
+    // The app is locked portrait, so the short edge is the width. Taking the
+    // min and max rather than the raw values survives being measured a frame
+    // before that lock lands.
     //
-    // It is also a lie worth noticing when the lock does not hold — an iPad
-    // that supports Split View ignores the orientation lock entirely, and then
-    // this reports a wide, short device that does not exist. Every millimetre
-    // downstream is wrong: the placement diagram draws the tablet on its side,
-    // its neighbours are positioned against the wrong edge, and the world
-    // renders at the wrong scale so the seam cannot line up.
-    _surfaceIsPortrait = px.height > px.width;
+    // This describes the *panel*, never the placement. A phone lying on its
+    // side in a game's board is still measured portrait here; the turning is
+    // the game's business, and travels as `quarterTurns` on its placement.
+    _surfaceIsLandscape = px.width > px.height;
 
     return DeviceMetrics.estimate(
       physicalPx: Size(
-        math.max(px.width, px.height),
         math.min(px.width, px.height),
+        math.max(px.width, px.height),
       ),
       devicePixelRatio: view.devicePixelRatio,
       platform: defaultTargetPlatform,
@@ -108,8 +106,8 @@ class _RoleScreenState extends State<RoleScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 18),
-                  if (_surfaceIsPortrait) ...[
-                    _PortraitWarning(),
+                  if (_surfaceIsLandscape) ...[
+                    _LandscapeWarning(),
                     const SizedBox(height: 14),
                   ],
                   if (metrics != null)
@@ -174,12 +172,13 @@ class _RoleScreenState extends State<RoleScreen> {
   }
 }
 
-/// Shown when the device is drawing portrait despite the landscape lock.
+/// Shown when the device is drawing landscape despite the portrait lock —
+/// an iPad in Split View, or a platform that ignores the lock.
 ///
 /// The board is measured in real millimetres, so this is not cosmetic: every
 /// size the app reports about this screen would be sideways, and the seam could
 /// not line up. Better to say so than to draw a confidently wrong diagram.
-class _PortraitWarning extends StatelessWidget {
+class _LandscapeWarning extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -195,7 +194,7 @@ class _PortraitWarning extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Turn this device sideways. It is drawing upright, so its '
+              'Hold this device upright. It is drawing sideways, so its '
               'measurements — and its place on the board — would be wrong.',
               style: TextStyle(color: scheme.onErrorContainer),
             ),

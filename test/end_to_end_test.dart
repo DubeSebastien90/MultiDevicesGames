@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
+import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
@@ -15,11 +17,12 @@ import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 /// This covers every step except the pixels — transport, the join gate, board
 /// planning, the calibration handshake, entity spawn/despawn, the sim loop, the
 /// scoreboard, and the interpolated playback both phones render from.
-DeviceMetrics landscapePhone(String label) => DeviceMetrics(
-  activePxWidth: 2400,
-  activePxHeight: 1080,
-  widthMm: 152.4, // 400 dpi
-  heightMm: 68.58,
+DeviceMetrics portraitPhone(String label) => DeviceMetrics(
+  // The app is locked portrait, so a phone measures itself short-edge-first.
+  activePxWidth: 1080,
+  activePxHeight: 2400,
+  widthMm: 68.58, // 400 dpi
+  heightMm: 152.4,
   bezelMm: 3,
   devicePixelRatio: 3,
   label: label,
@@ -58,7 +61,7 @@ void main() {
     loopback = LoopbackPair();
     phone1 = ClientSession(
       transport: loopback.transport,
-      metrics: landscapePhone('host phone'),
+      metrics: portraitPhone('host phone'),
     );
     await phone1.connect();
     host.addLocalPeer(loopback.peer);
@@ -68,7 +71,7 @@ void main() {
     final local = address.replace(host: '127.0.0.1');
     phone2 = ClientSession(
       transport: WebSocketTransport(local),
-      metrics: landscapePhone('joined phone'),
+      metrics: portraitPhone('joined phone'),
       joinCode: host.joinCode,
     );
     await phone2.connect();
@@ -112,8 +115,8 @@ void main() {
     // Identical phones, so the game's sort is a no-op and join order stands.
     expect(phone1.layout!.index, 0);
     expect(phone2.layout!.index, 1);
-    expect(phone1.layout!.worldOffsetX, closeTo(0, 1e-9));
-    expect(phone2.layout!.worldOffsetX, closeTo(15.24 + 0.6, 1e-9));
+    expect(phone1.layout!.leftEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.leftEdge, closeTo(15.24 + 0.6, 1e-9));
     expect(phone2.layout!.placement, contains('right of phone 1'));
 
     // Both were told what they are about to play, and how to stand for it.
@@ -168,7 +171,7 @@ void main() {
       () async {
     await _startPlaying(host, phone1, phone2);
 
-    final seamX = phone2.layout!.worldOffsetX; // first lit pixel of phone 2
+    final seamX = phone2.layout!.leftEdge; // first lit pixel of phone 2
     final anchorX = phone1.sharedState['anchorX']! as double;
     final anchorY = phone1.sharedState['anchorY']! as double;
 
@@ -290,12 +293,26 @@ void main() {
           phone2.phase == ClientPhase.finished,
     );
     expect(phone1.result!.won, isTrue);
-    expect(phone2.result!.nextTitle, 'Ball Bin');
-    expect(phone2.result!.nextInstruction, contains('one above the other'));
+    expect(phone2.result!.title, 'Slingshot');
 
-    // The playlist advances into placement, not straight to play: the phones
-    // have to physically move first.
-    host.advanceToNextGame();
+    // A round ends at the lobby; the host then picks the next game from the
+    // list rather than being handed one.
+    host.returnToLobby();
+    expect(host.phase, HostPhase.lobby);
+    await waitFor(
+      'phones back in the lobby',
+      () => phone1.phase == ClientPhase.lobby &&
+          phone2.phase == ClientPhase.lobby,
+    );
+
+    // Ball Bin is offered because two phones fit it; Hot Potato is not.
+    final offered = {
+      for (final o in host.offers) o.manifest.id: o.playable,
+    };
+    expect(offered['ballbin'], isTrue);
+    expect(offered['hotpotato'], isFalse);
+
+    host.startGame(const BallBinGame());
     expect(host.phase, HostPhase.placing);
     expect(host.game!.manifest.id, 'ballbin');
 
@@ -303,13 +320,13 @@ void main() {
       'new layouts delivered',
       () => phone1.layout != null &&
           phone2.layout != null &&
-          phone1.layout!.worldOffsetY != phone2.layout!.worldOffsetY,
+          phone1.layout!.topEdge != phone2.layout!.topEdge,
     );
 
     // Stacked this time: same phones, board rotated a quarter turn.
-    expect(phone1.layout!.worldOffsetX, closeTo(0, 1e-9));
-    expect(phone2.layout!.worldOffsetX, closeTo(0, 1e-9));
-    expect(phone2.layout!.worldOffsetY, closeTo(6.858 + 0.6, 1e-9));
+    expect(phone1.layout!.leftEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.leftEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.topEdge, closeTo(6.858 + 0.6, 1e-9));
     expect(phone2.layout!.placement, contains('below phone 1'));
 
     // And it really plays: confirm through and the bin game starts.
@@ -349,7 +366,10 @@ void main() {
     await waitFor('slingshot won', () => host.phase == HostPhase.finished,
         timeout: const Duration(seconds: 12));
 
-    host.advanceToNextGame();
+    host.returnToLobby();
+    await waitFor('back in the lobby',
+        () => phone2.phase == ClientPhase.lobby);
+    host.startGame(const BallBinGame());
     await waitFor('placed again', () => phone2.phase == ClientPhase.placing);
     phone1.confirmPlacement();
     phone2.confirmPlacement();
@@ -448,4 +468,12 @@ Future<void> _startPlaying(
     () => phone1.buffer.bufferedSnapshots > 3 &&
         phone2.buffer.bufferedSnapshots > 3,
   );
+}
+
+/// Left/top edge of a compiled screen, which is what these expectations were
+/// originally written against. The layout itself is centre-based now, because a
+/// screen that can be turned has no meaningful axis-aligned corner.
+extension EdgeReadout on PhoneLayout {
+  double get leftEdge => viewport.left;
+  double get topEdge => viewport.top;
 }

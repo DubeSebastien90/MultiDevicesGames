@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_sim.dart';
@@ -19,13 +20,14 @@ import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 PhoneSpec phone(String id) => PhoneSpec(
   phoneId: id,
   label: 'phone $id',
-  widthMm: 152.4,
-  heightMm: 68.58,
+  // Portrait: the panel as the device is held. Both games turn it sideways.
+  widthMm: 68.58,
+  heightMm: 152.4,
   bezelMm: 3,
   dpi: 400,
   devicePixelRatio: 3,
-  activePxWidth: 2400,
-  activePxHeight: 1080,
+  activePxWidth: 1080,
+  activePxHeight: 2400,
 );
 
 /// Everything the platform does between "game chosen" and "sim running".
@@ -55,9 +57,10 @@ Entity entityOf(GameSim sim, String id) =>
 void main() {
   group('the catalog', () {
     test('offers both games and wraps', () {
-      expect(GameCatalog.playlist, hasLength(2));
+      expect(GameCatalog.playlist, hasLength(3));
       expect(GameCatalog.byId('slingshot'), isNotNull);
       expect(GameCatalog.byId('ballbin'), isNotNull);
+      expect(GameCatalog.byId('hotpotato'), isNotNull);
       expect(GameCatalog.byId('nope'), isNull);
     });
 
@@ -151,13 +154,13 @@ void main() {
         PhoneSpec(
           phoneId: 'small',
           label: 'small',
-          widthMm: 120,
-          heightMm: 55,
+          widthMm: 55,
+          heightMm: 120,
           bezelMm: 3,
           dpi: 400,
           devicePixelRatio: 3,
-          activePxWidth: 1890,
-          activePxHeight: 866,
+          activePxWidth: 866,
+          activePxHeight: 1890,
         ),
         phone('big'),
       ]);
@@ -165,8 +168,8 @@ void main() {
           .compile(const BallBinGame().planBoard(lobby), lobby);
 
       expect(board.phones.last.phoneId, 'big');
-      expect(board.phones.last.worldOffsetY,
-          greaterThan(board.phones.first.worldOffsetY));
+      expect(board.phones.last.topEdge,
+          greaterThan(board.phones.first.topEdge));
     });
 
     test('a player who tracks the balls wins, and gets the points', () {
@@ -311,4 +314,12 @@ void _chaseLowestBall(GameSim sim) {
     worldY: bin.y,
     phase: TouchPhase.move,
   ));
+}
+
+/// Left/top edge of a compiled screen, which is what these expectations were
+/// originally written against. The layout itself is centre-based now, because a
+/// screen that can be turned has no meaningful axis-aligned corner.
+extension EdgeReadout on PhoneLayout {
+  double get leftEdge => viewport.left;
+  double get topEdge => viewport.top;
 }

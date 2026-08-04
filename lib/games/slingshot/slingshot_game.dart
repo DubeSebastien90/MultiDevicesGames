@@ -1,4 +1,5 @@
 import '../../sdk/contract/game.dart';
+import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
@@ -17,8 +18,8 @@ class SlingshotGame implements MultiscreenGame {
     title: 'Slingshot',
     tagline: 'Pull the bird back and knock the tower down.',
     goal: 'Hit the tower to win.',
-    minPhones: 1,
-    maxPhones: 6,
+    // One phone is a short runway but perfectly playable.
+    players: PlayerCount.range(min: 1, max: 6),
   );
 
   /// A long runway. The flight is horizontal, so the board wants to be as wide

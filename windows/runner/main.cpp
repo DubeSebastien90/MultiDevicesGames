@@ -26,8 +26,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"multiscreen_slingshot", origin, size)) {
+  // Phone-shaped, not the 1280x720 desktop default.
+  //
+  // On desktop a "phone" is a window: the app measures whatever it is given and
+  // reports that as a physical panel. A landscape window therefore claims to be
+  // a landscape phone, which the portrait-locked app does not believe — and the
+  // board comes out turned a quarter turn from what the screen actually shows.
+  // Roughly 9:16 keeps a test window honest.
+  Win32Window::Size size(460, 820);
+  if (!window.Create(L"MultiDevicesGame", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
