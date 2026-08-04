@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Per-machine Claude Code permissions. Tracking this caused a merge conflict
+# once already: it holds absolute paths from whichever machine wrote it.
+.claude/settings.local.json
