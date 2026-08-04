@@ -14,6 +14,19 @@ class PitchCarsConfig {
   static const double lineAmplitudeWorld = 3.0;
 
   static const double carRadius = 0.5;
+
+  /// How far each of the two starting lanes sits either side of the
+  /// centerline. Two lanes rather than one row of N: at 3-4 players a single
+  /// row across a 3-unit ribbon cannot fit cars a full diameter apart without
+  /// putting the outer ones on the track's edge, where they have no room to
+  /// aim (and, before the staggered grid, spawned overlapping).
+  static const double startLaneOffsetWorld = 0.65;
+
+  /// Distance along the centerline between successive rows of the starting
+  /// grid. Progress is cumulative distance travelled, not absolute arclength
+  /// (see `PitchCarsSim._updateProgress`), so a car further up the grid gets
+  /// no head start — only elbow room.
+  static const double startRowSpacingWorld = 1.4;
   static const double carDensity = 1.0;
   static const double carRestitution = 0.5;
   static const double carFriction = 0.3;

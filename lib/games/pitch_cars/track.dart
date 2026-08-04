@@ -181,18 +181,32 @@ class TrackGenerator {
   }
 
   /// A ring inscribed in the board, with a hollow middle — the "donut".
+  ///
+  /// The radius wobbles on a smooth, low-frequency sine rather than per-vertex
+  /// noise, and its amplitude is tied to the track's own width rather than to
+  /// the radius. Independent ±8%-of-radius jitter at each vertex read as
+  /// random on paper but produced 45-60° kinks between neighbouring segments
+  /// on a board this size — turns far sharper than any straight flick can
+  /// follow inside a ribbon only [width] across, which left cars unable to
+  /// make progress at all (a full-power tangent shot went off the track from
+  /// the centerline, was reset, and repeated forever). A couple of gentle
+  /// lobes keeps the ring from reading as a perfect circle while staying
+  /// drivable.
   static PitchTrack _loop(WorldRect board, math.Random random, double width) {
     final maxRadius = math.min(board.width, board.height) / 2 - width;
     final radius = math.max(maxRadius, width);
-    const segments = 16;
+    const segments = 24;
+    final lobes = 2 + random.nextInt(2);
+    final phase = random.nextDouble() * math.pi * 2;
+    final wobble = math.min(width * 0.3, radius * 0.15);
 
     final waypoints = <Waypoint>[];
     for (var i = 0; i < segments; i++) {
       final angle = i / segments * math.pi * 2;
-      final jitter = 1 + (random.nextDouble() * 2 - 1) * 0.08;
+      final r = radius + math.sin(angle * lobes + phase) * wobble;
       waypoints.add(Waypoint(
-        board.centerX + math.cos(angle) * radius * jitter,
-        board.centerY + math.sin(angle) * radius * jitter,
+        board.centerX + math.cos(angle) * r,
+        board.centerY + math.sin(angle) * r,
       ));
     }
     return PitchTrack(waypoints: waypoints, widthWorld: width, closed: true);

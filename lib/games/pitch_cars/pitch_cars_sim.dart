@@ -73,18 +73,24 @@ class PitchCarsSim extends Forge2DGameSim {
     return rotations.length > 1 ? PitchTrackTopology.loop : PitchTrackTopology.line;
   }
 
-  /// Where car [index] of [_order] sits at the start line, side by side
-  /// across the track's width. Shared by initial placement and [reset] so
-  /// the two can never drift apart.
+  /// Where car [index] of [_order] sits on the starting grid. Shared by
+  /// initial placement and [reset] so the two can never drift apart.
+  ///
+  /// A staggered two-lane grid, not one row across the ribbon: the track is
+  /// only [PitchCarsConfig.trackWidthWorld] wide, so four cars abreast would
+  /// have to sit closer than their own diameter (spawning *overlapping*, which
+  /// Forge2D then resolves with a shove and a spurious contact event) and
+  /// would put the outer two hard against the track edge, where a shot has no
+  /// room to deviate before going off. Two lanes, several rows deep, keeps
+  /// every car a comfortable distance from both its neighbours and the edge.
   Vector2 _startPositionFor(int index) {
-    final maxSpread = PitchCarsConfig.trackWidthWorld - PitchCarsConfig.carRadius * 2;
-    final spacing = _order.length <= 1
-        ? 0.0
-        : math.min(1.25, math.max(0.0, maxSpread) / (_order.length - 1));
-    final start = track.pointAtArclength(0);
-    final tangent = track.tangentAt(0);
+    final lane = index.isEven ? -1 : 1;
+    final row = index ~/ 2;
+    final arc = row * PitchCarsConfig.startRowSpacingWorld;
+    final start = track.pointAtArclength(arc);
+    final tangent = track.tangentAt(arc);
     final normal = Vector2(-tangent.y, tangent.x);
-    final offset = (index - (_order.length - 1) / 2) * spacing;
+    final offset = lane * PitchCarsConfig.startLaneOffsetWorld;
     return Vector2(start.x + normal.x * offset, start.y + normal.y * offset);
   }
 
@@ -204,6 +210,21 @@ class PitchCarsSim extends Forge2DGameSim {
     _moving = true;
     _sinceLaunch = Duration.zero;
     _atRest = Duration.zero;
+    // The hit ledger is timestamped against `_sinceLaunch`, which restarts
+    // here — so any contact recorded during the idle window between the last
+    // `_endTurn` and this launch (the pull-back `setTransform` nudging a
+    // neighbour at the packed start line, say) would otherwise carry a
+    // timestamp from the *previous* turn's flight clock and read as "hit
+    // 0.4s in the future", i.e. permanently recent. Clearing the ledger with
+    // the clock keeps the two in the same time base.
+    _clearHitLedger();
+  }
+
+  void _clearHitLedger() {
+    for (final id in _order) {
+      _lastHitBy[id] = null;
+      _lastHitAt.remove(id);
+    }
   }
 
   // ------------------------------------------------------------------ step
@@ -239,11 +260,21 @@ class PitchCarsSim extends Forge2DGameSim {
     }
   }
 
-  /// A car off the track is reset immediately: to where it was before this
-  /// turn's flick if it left under its own power, or to the last on-track
-  /// point it passed through if another car's collision sent it there. The
-  /// asymmetry is deliberate — it punishes a reckless flick harder than
-  /// being a sabotage victim.
+  /// A car off the track is reset immediately: back to how far it had got
+  /// before this turn's flick if it left under its own power, or back to the
+  /// last on-track point it passed through if another car's collision sent it
+  /// there. The asymmetry is deliberate — it punishes a reckless flick harder
+  /// than being a sabotage victim.
+  ///
+  /// Both destinations are snapped onto the track's **centerline** at the
+  /// reference point's arclength rather than used literally. A literal reset
+  /// is an unrecoverable trap: the reference is often a point right on the
+  /// track's edge (the last on-track sample before an exit is, by definition,
+  /// at the boundary), and from the edge the very same shot goes off again on
+  /// the next turn, and the next — a deterministic fixpoint that froze cars
+  /// at zero progress forever on a ring board. On the centerline a car always
+  /// has the full half-width to deviate into, so no position is ever a dead
+  /// end. Which arclength you go back to still carries the whole penalty.
   void _resolveOffTrack() {
     for (final id in _order) {
       final car = carOf(id);
@@ -252,16 +283,26 @@ class PitchCarsSim extends Forge2DGameSim {
         _lastOnTrack[id] = pos.clone();
         continue;
       }
+      final sinceHit = _sinceLaunch - (_lastHitAt[id] ?? Duration.zero);
       final hitRecently = _lastHitBy[id] != null &&
-          (_sinceLaunch - (_lastHitAt[id] ?? Duration.zero)) <= PitchCarsConfig.hitGraceWindow;
+          sinceHit >= Duration.zero &&
+          sinceHit <= PitchCarsConfig.hitGraceWindow;
       final selfFault = id == currentTurn && !hitRecently;
-      final resetTo = selfFault ? _preTurnPosition : (_lastOnTrack[id] ?? _preTurnPosition);
+      final reference = selfFault ? _preTurnPosition : (_lastOnTrack[id] ?? _preTurnPosition);
+      final resetTo = _onCenterline(reference);
       car
-        ..setTransform(resetTo.clone(), car.angle)
+        ..setTransform(resetTo, car.angle)
         ..linearVelocity = Vector2.zero()
         ..angularVelocity = 0;
+      _lastOnTrack[id] = resetTo.clone();
       _lastHitBy[id] = null;
     }
+  }
+
+  /// The centerline point at [reference]'s arclength along the track.
+  Vector2 _onCenterline(Vector2 reference) {
+    final wp = track.pointAtArclength(track.progressAt(reference.x, reference.y));
+    return Vector2(wp.x, wp.y);
   }
 
   /// Unwraps each car's raw (positional, wrap-ambiguous) track progress into
@@ -291,10 +332,7 @@ class PitchCarsSim extends Forge2DGameSim {
 
   void _endTurn() {
     _moving = false;
-    for (final id in _order) {
-      _lastHitBy[id] = null;
-      _lastHitAt.remove(id);
-    }
+    _clearHitLedger();
     _currentIndex = (_currentIndex + 1) % _order.length;
     _preTurnPosition = carOf(currentTurn).position.clone();
   }

@@ -9,7 +9,6 @@ import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_view.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/contract/view.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
-import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
@@ -37,6 +36,33 @@ PhoneSpec phone(String id) => PhoneSpec(
     scores.register(p.phoneId, p.label);
   }
   final plan = const PitchCarsGame().planBoard(lobby);
+  final board = const BoardCompiler().compile(plan, lobby);
+  final sim = PitchCarsSim(board.contextFor(scores), random: math.Random(seed));
+  scores.beginRound();
+  return (sim: sim, board: board, scores: scores);
+}
+
+/// Same as [start], but keeps re-rolling the board plan until it comes back a
+/// ring rather than a row.
+///
+/// `PitchCarsGame.planBoard` flips its own unseeded coin, so the ring path
+/// cannot be reached by choosing a seed. Re-rolling is not probabilistic in
+/// any way that matters: at 4 phones each roll is an even coin, so the loop
+/// below fails only if 200 consecutive flips come up heads. The *sim* is still
+/// seeded, so the track it generates for that ring is fully deterministic.
+({PitchCarsSim sim, BoardLayout board, Scoreboard scores}) startRing(
+  int count, {
+  int seed = 1,
+}) {
+  final lobby = LobbyInfo([for (var i = 0; i < count; i++) phone('p${i + 1}')]);
+  final scores = Scoreboard();
+  for (final p in lobby.phones) {
+    scores.register(p.phoneId, p.label);
+  }
+  var plan = const PitchCarsGame().planBoard(lobby);
+  for (var tries = 0; !plan.allowGaps && tries < 200; tries++) {
+    plan = const PitchCarsGame().planBoard(lobby);
+  }
   final board = const BoardCompiler().compile(plan, lobby);
   final sim = PitchCarsSim(board.contextFor(scores), random: math.Random(seed));
   scores.beginRound();
@@ -85,10 +111,12 @@ void _flickForward(PitchCarsSim sim) {
 /// destinations so the test can tell which one the sim actually chose.
 class _GraceWindowResult {
   _GraceWindowResult({
+    required this.sim,
     required this.settled,
     required this.hold,
     required this.preTurn,
   });
+  final PitchCarsSim sim;
   final Vector2 settled;
   final Vector2 hold;
   final Vector2 preTurn;
@@ -181,10 +209,136 @@ _GraceWindowResult _runGraceWindowScenario({required int holdTicks}) {
 
   final settled = sim.entities.firstWhere((e) => e.id == p1);
   return _GraceWindowResult(
+    sim: sim,
     settled: Vector2(settled.x, settled.y),
     hold: hold,
     preTurn: preTurn,
   );
+}
+
+/// Result of [_runCrossTurnGraceScenario].
+class _CrossTurnResult {
+  _CrossTurnResult({
+    required this.sim,
+    required this.settled,
+    required this.hold,
+    required this.preTurn,
+  });
+  final PitchCarsSim sim;
+  final Vector2 settled;
+  final Vector2 hold;
+  final Vector2 preTurn;
+}
+
+/// The cross-turn variant of [_runGraceWindowScenario]: the collision happens
+/// in the **idle window** between one turn ending and the next one launching,
+/// so its timestamp is taken from the previous turn's flight clock — which
+/// `_launch` then resets to zero. Left unhandled that makes the sim's
+/// "how long since the hit" arithmetic negative, and a negative delta compares
+/// as "well inside the grace window" for the whole of the following turn,
+/// re-opening the clip-anything-then-drive-off-for-free exploit.
+///
+/// The car that gets hit here is the one whose turn is *about to start*, and
+/// it is then driven off the track entirely under its own power. That must be
+/// judged self-fault.
+_CrossTurnResult _runCrossTurnGraceScenario() {
+  final started = start(2, seed: 1);
+  final sim = started.sim;
+  final dt = 1 / PlatformConfig.simHz;
+
+  final first = sim.currentTurn;
+
+  // Turn one: a real (tiny) flick, run to completion so the sim's
+  // since-launch clock ends up well advanced and the turn hands over.
+  final firstCar = sim.entities.firstWhere((e) => e.id == first);
+  sim.onTouch(TouchEvent(
+      phoneId: first, worldX: firstCar.x, worldY: firstCar.y, phase: TouchPhase.down));
+  sim.onTouch(TouchEvent(
+      phoneId: first, worldX: firstCar.x - 0.5, worldY: firstCar.y, phase: TouchPhase.move));
+  sim.onTouch(TouchEvent(
+      phoneId: first, worldX: firstCar.x - 0.5, worldY: firstCar.y, phase: TouchPhase.up));
+  var guard = 0;
+  while (sim.currentTurn == first && guard < PlatformConfig.simHz * 10) {
+    sim.step(dt);
+    guard++;
+  }
+
+  final second = sim.currentTurn;
+  final secondCar = sim.carOf(second);
+  final other = sim.carOf(first);
+  // The sim captured this as the new turn's pre-turn position when the turn
+  // advanced; the assertions below are written against it.
+  final preTurn = secondCar.position.clone();
+
+  // The idle-window hit: nothing has been launched, `_moving` is false, and
+  // the since-launch clock is frozen at the previous turn's final value. Park
+  // the other car overlapping this one and step once so Forge2D reports a
+  // real contact.
+  other
+    ..setTransform(Vector2(preTurn.x + 0.9, preTurn.y), 0)
+    ..linearVelocity = Vector2.zero()
+    ..setAwake(true);
+  sim.step(dt);
+
+  // Clear the other car well away, and undo any shove the overlap gave this
+  // one, so the turn starts from exactly where the sim thinks it does.
+  other
+    ..setTransform(Vector2(preTurn.x + 12, preTurn.y + 12), 0)
+    ..linearVelocity = Vector2.zero();
+  secondCar
+    ..setTransform(preTurn.clone(), 0)
+    ..linearVelocity = Vector2.zero()
+    ..angularVelocity = 0;
+
+  // Now launch this car's turn for real. `_launch` zeroes the since-launch
+  // clock — the moment the stale timestamp turns into a negative delta.
+  sim.onTouch(TouchEvent(
+      phoneId: second, worldX: preTurn.x, worldY: preTurn.y, phase: TouchPhase.down));
+  sim.onTouch(TouchEvent(
+      phoneId: second, worldX: preTurn.x - 0.5, worldY: preTurn.y, phase: TouchPhase.move));
+  sim.onTouch(TouchEvent(
+      phoneId: second, worldX: preTurn.x - 0.5, worldY: preTurn.y, phase: TouchPhase.up));
+
+  // Drive it up the track under its own power, then off the edge — the
+  // "clip a neighbour, then go wherever you like" move.
+  final holdArc = sim.track.length / 2;
+  final holdWp = sim.track.pointAtArclength(holdArc);
+  final hold = Vector2(holdWp.x, holdWp.y);
+  final tangent = sim.track.tangentAt(holdArc);
+  final normal = Vector2(-tangent.y, tangent.x);
+  final offTrack = Vector2(
+    hold.x + normal.x * PitchCarsConfig.trackWidthWorld,
+    hold.y + normal.y * PitchCarsConfig.trackWidthWorld,
+  );
+
+  for (var i = 0; i < 3; i++) {
+    secondCar
+      ..setTransform(hold.clone(), 0)
+      ..linearVelocity = Vector2.zero()
+      ..setAwake(true);
+    sim.step(dt);
+  }
+  secondCar
+    ..setTransform(offTrack, 0)
+    ..linearVelocity = Vector2.zero()
+    ..setAwake(true);
+  sim.step(dt);
+
+  final settled = sim.carOf(second).position;
+  return _CrossTurnResult(
+    sim: sim,
+    settled: settled.clone(),
+    hold: hold,
+    preTurn: preTurn,
+  );
+}
+
+/// Where the sim now sends a car it resets: the centerline point at
+/// [reference]'s arclength, not [reference] itself.
+Vector2 _centerlineAt(PitchCarsSim sim, Vector2 reference) {
+  final wp = sim.track
+      .pointAtArclength(sim.track.progressAt(reference.x, reference.y));
+  return Vector2(wp.x, wp.y);
 }
 
 void main() {
@@ -395,8 +549,13 @@ void main() {
       // 15-tick (250ms) hitGraceWindow.
       final result = _runGraceWindowScenario(holdTicks: 20);
 
-      expect(result.settled.x, closeTo(result.preTurn.x, 1e-3));
-      expect(result.settled.y, closeTo(result.preTurn.y, 1e-3));
+      // Self-fault sends the car back to where it had got to before the
+      // flick — as the centerline point at that arclength, never the literal
+      // point (see `_resolveOffTrack`), so the comparison is against the
+      // projection rather than the raw pre-turn position.
+      final expected = _centerlineAt(result.sim, result.preTurn);
+      expect(result.settled.x, closeTo(expected.x, 1e-3));
+      expect(result.settled.y, closeTo(expected.y, 1e-3));
       expect(
         (result.settled.x - result.hold.x).abs() > 1e-2 ||
             (result.settled.y - result.hold.y).abs() > 1e-2,
@@ -405,6 +564,125 @@ void main() {
             'of its pre-turn position would defeat the grace window',
       );
     });
+
+    test(
+        'a hit landed in the idle window before a turn launches does not '
+        'excuse that turn from self-fault', () {
+      final result = _runCrossTurnGraceScenario();
+
+      final expected = _centerlineAt(result.sim, result.preTurn);
+      expect(result.settled.x, closeTo(expected.x, 1e-3),
+          reason: 'a stale, pre-launch hit timestamp must not read as recent');
+      expect(result.settled.y, closeTo(expected.y, 1e-3));
+      expect(
+        (result.settled.x - result.hold.x).abs() > 1e-2 ||
+            (result.settled.y - result.hold.y).abs() > 1e-2,
+        isTrue,
+        reason: 'the car was let off as "bumped" on the strength of a '
+            'collision recorded before its turn even started — the clip-'
+            'anything-then-drive-off-for-free exploit',
+      );
+    });
+
+    test('a reset never strands a car in a repeating dead end', () {
+      // The trap that made ring races unplayable, stated directly: reset a
+      // car to the literal point it flicked from and, if that point is on the
+      // ribbon's edge, the identical shot goes off identically next turn, and
+      // the next — the car's position is a fixpoint and it never moves again.
+      // Resets that land on the centerline cannot do this, because a car on
+      // the centerline always has the full half-width to deviate into.
+      final started = startRing(4, seed: 3);
+      final sim = started.sim;
+      final frozenRuns = <String, int>{};
+
+      for (var turn = 0; turn < 60 && sim.outcome == null; turn++) {
+        final id = sim.currentTurn;
+        final before = sim.carOf(id).position.clone();
+        _flickForward(sim);
+        final after = sim.carOf(id).position;
+        final moved = (after - before).length;
+        frozenRuns[id] = moved < 1e-6 ? (frozenRuns[id] ?? 0) + 1 : 0;
+        expect(frozenRuns[id], lessThan(3),
+            reason: '$id has taken 3 turns in a row from ${before.x}, '
+                '${before.y} without moving at all — a dead-end fixpoint');
+      }
+    });
+  });
+
+  group('PitchCarsSim — the ring board', () {
+    test('a four-phone ring race is completable', () {
+      // The ring lap is ~111 world units and a full-power flick carries a car
+      // about 4.7 of them, so even flawless play needs ~24 flicks — ~95 turns
+      // shared between four players. This budget is a little over twice that
+      // floor; the flicks below are plausible-but-not-expert (aimed straight
+      // down the tangent at full power every time, which on a curve
+      // systematically drifts wide), and across six seeds they finished in
+      // 101-127 turns.
+      final started = startRing(4, seed: 3);
+      final sim = started.sim;
+      expect(sim.track.closed, isTrue,
+          reason: 'startRing must produce the loop topology');
+
+      var turns = 0;
+      while (sim.outcome == null && turns < 200) {
+        _flickForward(sim);
+        turns++;
+      }
+
+      expect(sim.outcome, isNotNull,
+          reason: 'nobody completed a lap of the ring in $turns turns');
+      expect(sim.outcome!.won, isTrue);
+      expect(started.scores.view.ranked.first.total, 1);
+    });
+
+    test('every car on a ring makes real progress', () {
+      // The failure this guards against was one car frozen at 0% while the
+      // others raced — a per-car trap, invisible to a "did anybody win" check.
+      final started = startRing(4, seed: 3);
+      final sim = started.sim;
+
+      for (var turn = 0; turn < 60 && sim.outcome == null; turn++) {
+        _flickForward(sim);
+      }
+
+      for (var i = 1; i <= 4; i++) {
+        expect(sim.sharedState['progress_p$i'] as double, greaterThan(0.05),
+            reason: 'p$i never got anywhere');
+      }
+    });
+  });
+
+  group('PitchCarsSim — the starting grid', () {
+    for (final count in [2, 3, 4]) {
+      test('$count cars never spawn touching each other', () {
+        for (final started in [
+          start(count),
+          if (count == 4) startRing(count),
+        ]) {
+          final sim = started.sim;
+          final cars = sim.entities.where((e) => e.kind == 'car').toList();
+          expect(cars.length, count);
+          for (var i = 0; i < cars.length; i++) {
+            for (var j = i + 1; j < cars.length; j++) {
+              final d = math.sqrt(math.pow(cars[i].x - cars[j].x, 2) +
+                  math.pow(cars[i].y - cars[j].y, 2));
+              expect(d, greaterThan(PitchCarsConfig.carRadius * 2),
+                  reason: '${cars[i].id} and ${cars[j].id} spawn overlapping, '
+                      'which Forge2D resolves with a shove and a spurious '
+                      'contact before anyone has flicked');
+            }
+          }
+        }
+      });
+
+      test('$count cars all spawn on the track', () {
+        final sim = start(count).sim;
+        for (final car in sim.entities.where((e) => e.kind == 'car')) {
+          expect(sim.track.isOnTrack(car.x, car.y), isTrue,
+              reason: '${car.id} starts off the track');
+        }
+      });
+    }
   });
 
   group('PitchCarsGame — board planning', () {
