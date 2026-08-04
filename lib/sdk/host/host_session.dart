@@ -184,10 +184,6 @@ class HostSession extends ChangeNotifier {
   String? get lastAudit => _lastAudit;
   String? _lastAudit;
 
-  /// The one-line verdict from that audit, for the host's own screen.
-  String? get lastAuditSummary => _lastAuditSummary;
-  String? _lastAuditSummary;
-
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming =>
       GameCatalog.playableFrom(_gameIndex, _phones.length);
@@ -530,18 +526,17 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    // Record what just happened, before anyone is told anything. Four phones on
-    // a table produce measurements no synthetic test will guess, and this is
-    // how those numbers get read rather than inferred from stripe colours.
-    final audit = BoardAudit.of(
+    // Recorded quietly, and only read if someone goes looking for it at the
+    // host's own address. It used to print in full on every round, which earned
+    // its keep while the connectors were wrong and was pure noise the moment
+    // they were right. Four phones on a table still produce measurements no
+    // synthetic test will guess, so the data stays — it just stops shouting.
+    _lastAudit = BoardAudit.toPrettyJson(BoardAudit.of(
       gameId: game.manifest.id,
       lobby: lobby,
       plan: plan,
       board: solved,
-    );
-    _lastAudit = BoardAudit.toPrettyJson(audit);
-    _lastAuditSummary = audit['summary'] as String?;
-    debugPrint('=== board audit ===\n$_lastAudit');
+    ));
 
     _layout = solved;
     _phase = HostPhase.placing;
