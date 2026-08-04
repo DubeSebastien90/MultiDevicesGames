@@ -125,6 +125,32 @@ void main() {
     expect(calls, 0);
   });
 
+  testWidgets('a new round can be confirmed again', (tester) async {
+    // Flutter reuses this State between rounds. "Ready" latched and never let
+    // go, so the second round opened already claiming to be confirmed *and*
+    // refusing to be held — the host waited for an answer the phone had no way
+    // to give, and everyone sat on the placement screen.
+    var calls = 0;
+    await mount(tester, onConfirmed: () => calls++, confirmed: true);
+    expect(find.text('Ready'), findsOne);
+
+    // The host resets every confirmation when the next round is set up.
+    await mount(tester, onConfirmed: () => calls++);
+    expect(find.text('Hold to confirm position'), findsOne,
+        reason: 'a fresh round is not already confirmed');
+    expect(find.text('Ready'), findsNothing);
+
+    // And the hold works again.
+    final finger = await tester.startGesture(const Offset(200, 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1200));
+    expect(calls, 1);
+    expect(find.text('Ready'), findsOne);
+
+    await finger.up();
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('the content is shown beside the ring', (tester) async {
     await mount(tester, onConfirmed: () {});
     expect(find.text('the board'), findsOne);

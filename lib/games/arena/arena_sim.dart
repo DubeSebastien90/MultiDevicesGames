@@ -287,12 +287,30 @@ class ArenaSim implements GameSim {
 
   // -- outcome ----------------------------------------------------------------
 
+  /// Built once. `outcome` is polled several times a tick and this one carries
+  /// a map, so constructing it fresh each time would be pure waste.
+  GameOutcome? _outcome;
+
   @override
   GameOutcome? get outcome {
     if (_phase != 'finished') return null;
-    return GameOutcome.won(
+
+    // Everyone gets their own tally rather than a shared verdict: a round of
+    // Arena is worth more to a player as "you made 40 points" than as a win or
+    // a loss, and the kills are already in the scoreboard by the time the last
+    // fighter falls.
+    return _outcome ??= GameOutcome.perPhone(
+      {
+        for (final f in _fighters)
+          f.phoneId: 'You made ${_points(f.phoneId)} this round',
+      },
       summary: _winnerId != null ? 'last one standing' : 'mutual destruction',
     );
+  }
+
+  String _points(String phoneId) {
+    final n = context.scores.roundDelta(phoneId);
+    return '$n point${n == 1 ? '' : 's'}';
   }
 
   // -- reset ------------------------------------------------------------------
@@ -302,6 +320,8 @@ class ArenaSim implements GameSim {
     _phase = 'countdown';
     _countdown = ArenaConfig.countdownSeconds;
     _winnerId = null;
+    // The latched verdict belongs to the round that just ended.
+    _outcome = null;
     for (var i = 0; i < _fighters.length; i++) {
       final f = _fighters[i];
       f.x = context.slices[i].screen.centerX;

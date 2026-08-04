@@ -13,9 +13,17 @@ class SlingshotView extends ShapeView {
   final _band = Paint()..style = PaintingStyle.stroke;
   final _character = LottieSprite();
 
+  /// Whether the character has finished rasterising. The bird is drawn as a
+  /// plain circle until it has. Exposed so a test can prove the round does not
+  /// wait for it.
+  bool get artworkReady => _character.isLoaded;
+
   @override
   Future<void> load() async {
-    await _character.load(
+    // Started, not awaited. The round begins on time and the bird is a circle
+    // until the character has rasterised — a second of plain artwork beats a
+    // screen that never arrives.
+    _character.beginLoading(
       'assets/animations/character_test.json',
       width: 256,
       height: 256,
@@ -28,16 +36,17 @@ class SlingshotView extends ShapeView {
 
     for (final e in frame.entities.values) {
       if (e.kind == 'bird') {
-        // Draw the Lottie character instead of the default circle.
+        // The Lottie character when it is ready, the default circle until then.
         final size = SlingshotConfig.birdRadius * 2.5;
         if (_isOffScreen(e, size, view)) continue;
-        _character.draw(
+        final drawn = _character.draw(
           canvas,
           Offset(e.x, e.y),
           frame.timeMs,
           worldSize: size,
           angle: e.angle,
         );
+        if (!drawn) _drawShape(canvas, e, view, frame.onePixel);
       } else {
         // Everything else uses the default shape renderer.
         _drawShape(canvas, e, view, frame.onePixel);

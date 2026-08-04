@@ -33,7 +33,17 @@ class SessionScreen extends StatelessWidget {
         return LobbyView(controller: controller);
 
       case ClientPhase.placing:
-        return PlacementView(controller: controller);
+        // Keyed per round for the same reason the game below is: Flutter reuses
+        // a State across rounds, and this screen's state is "have I confirmed
+        // yet". Carried into the next round that answer is both wrong and
+        // unchangeable.
+        return PlacementView(
+          key: ValueKey(
+            '${client.manifest?.id}-${client.phoneId}-'
+            '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}',
+          ),
+          controller: controller,
+        );
 
       case ClientPhase.playing:
         return GameView(

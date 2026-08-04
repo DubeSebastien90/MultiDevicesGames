@@ -31,7 +31,10 @@ class PlacementView extends StatelessWidget {
     final client = controller.client!;
     final layout = client.layout;
 
-    if (layout == null) {
+    // No board to show yet. The ring is deliberately not offered before the
+    // diagram exists: "Ready" over an empty space asks people to promise they
+    // are somewhere they have not been told about.
+    if (layout == null || client.slices.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -70,27 +73,15 @@ class PlacementView extends StatelessWidget {
             ),
           ),
 
-          // The hold target is the whole screen — no button to find while your
-          // hands are busy.
+          // The hold target is the whole screen, and now the only thing on it:
+          // no button to find, and nothing to hit by accident while your hands
+          // are busy holding phones against each other.
           HoldToConfirm(
             confirmed: confirmedIds.contains(client.phoneId),
             onConfirmed: client.confirmPlacement,
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [diagram, legend],
-            ),
-          ),
-
-          // Outside the Listener above, so holding this cannot confirm a
-          // position on the way out.
-          Positioned(
-            right: 4,
-            bottom: 4,
-            child: SafeArea(
-              child: TextButton(
-                onPressed: controller.leave,
-                child: const Text('Leave'),
-              ),
             ),
           ),
         ],
@@ -137,7 +128,8 @@ class _EdgeStripePainter extends CustomPainter {
       // Pull the line a few pixels inside the panel, or half its width falls
       // off the glass.
       final inset = _towardCentre(a, b, size, 5);
-      stripe.color = LinkPalette.of(link.colorIndex);
+      stripe.color =
+          link.isJoin ? LinkPalette.of(link.colorIndex) : LinkPalette.inward;
       canvas.drawLine(a + inset, b + inset, stripe);
     }
   }
@@ -195,7 +187,9 @@ class _LinkLegend extends StatelessWidget {
                 width: 16,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: LinkPalette.of(link.colorIndex),
+                  color: link.isJoin
+                      ? LinkPalette.of(link.colorIndex)
+                      : LinkPalette.inward,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),

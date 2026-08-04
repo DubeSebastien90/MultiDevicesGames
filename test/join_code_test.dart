@@ -132,6 +132,32 @@ void main() {
       client.dispose();
     });
 
+    test('the playlist ends at the lobby instead of starting over', () async {
+      final client = joiner(code: host.joinCode);
+      await client.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      // One phone plays exactly one game: Slingshot, first in the list.
+      host.startRound();
+      expect(host.game!.manifest.id, 'slingshot');
+
+      // And nothing follows it. This used to wrap round to Slingshot again and
+      // keep going for as long as anyone kept winning.
+      expect(host.nextGame, isNull);
+
+      host.returnToLobby();
+
+      // A second Play starts the run from the top rather than from where the
+      // last one stopped — which, after a full run, would be past the end.
+      expect(host.canStart, isTrue);
+      expect(host.upcoming!.manifest.id, 'slingshot');
+      host.startRound();
+      expect(host.game!.manifest.id, 'slingshot');
+
+      client.dispose();
+    });
+
     test('returning to the lobby forgets the one-off mode', () async {
       final client = joiner(code: host.joinCode);
       await client.connect();

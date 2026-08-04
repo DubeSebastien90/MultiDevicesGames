@@ -4,6 +4,7 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../platform_config.dart';
 import '../client/viewport_game.dart';
 import '../contract/sim.dart' show TouchPhase;
 import '../contract/view.dart';
@@ -126,51 +127,57 @@ class _GameViewState extends State<GameView> {
           Positioned(
             left: 10,
             top: 8,
-            child: Row(
+            // Wrap rather than Row so dropping the badge in release leaves no
+            // gap where it used to be.
+            child: Wrap(
+              spacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                _Badge(
-                  text: layout == null
-                      ? client.phoneId ?? '…'
-                      : '${client.phoneId} · '
-                            '${layout.index + 1}/${layout.total}',
-                ),
-                // This phone's running score, when the session has one at all.
-                if (client.scores.isUsed) ...[
-                  const SizedBox(width: 6),
+                // Which phone this is, and where it sits in the board. Useful
+                // while building a layout, noise to a player.
+                if (PlatformConfig.showDevChrome)
+                  _Badge(
+                    text: layout == null
+                        ? client.phoneId ?? '…'
+                        : '${client.phoneId} · '
+                              '${layout.index + 1}/${layout.total}',
+                  ),
+                // The score and the game's own HUD stay: both are the game
+                // talking to the player, not the platform talking to us.
+                if (client.scores.isUsed)
                   _Badge(
                     text: '${client.scores[client.phoneId ?? '']} pts',
                     highlight: true,
                   ),
+                ?_hud,
+              ],
+            ),
+          ),
+          if (PlatformConfig.showDevChrome)
+            Positioned(
+              right: 6,
+              top: 4,
+              child: Row(
+                children: [
+                  _HudButton(
+                    icon: Icons.refresh,
+                    tooltip: 'Start the round over',
+                    onPressed: client.sendReset,
+                  ),
+                  _HudButton(
+                    icon: Icons.bug_report_outlined,
+                    tooltip: 'Debug',
+                    onPressed: _toggleDebug,
+                  ),
+                  _HudButton(
+                    icon: Icons.logout,
+                    tooltip: 'Leave',
+                    onPressed: widget.controller.leave,
+                  ),
                 ],
-                // Whatever the game wants to say for itself.
-                if (_hud != null) ...[const SizedBox(width: 6), _hud!],
-              ],
+              ),
             ),
-          ),
-          Positioned(
-            right: 6,
-            top: 4,
-            child: Row(
-              children: [
-                _HudButton(
-                  icon: Icons.refresh,
-                  tooltip: 'Start the round over',
-                  onPressed: client.sendReset,
-                ),
-                _HudButton(
-                  icon: Icons.bug_report_outlined,
-                  tooltip: 'Debug',
-                  onPressed: _toggleDebug,
-                ),
-                _HudButton(
-                  icon: Icons.logout,
-                  tooltip: 'Leave',
-                  onPressed: widget.controller.leave,
-                ),
-              ],
-            ),
-          ),
-          if (_showDebug)
+          if (_showDebug && PlatformConfig.showDevChrome)
             Positioned(
               left: 10,
               bottom: 10,

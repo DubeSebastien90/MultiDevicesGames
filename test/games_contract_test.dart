@@ -76,9 +76,24 @@ void main() {
 
     test('skips a game that does not fit the table', () {
       // Ball Bin needs 2+. On one phone the playlist must not offer it.
-      expect(GameCatalog.playableFrom(1, 1)!.manifest.id, 'slingshot');
+      expect(GameCatalog.playableFrom(0, 1)!.manifest.id, 'slingshot');
       expect(GameCatalog.playableFrom(1, 2)!.manifest.id, 'ballbin');
       expect(GameCatalog.anyPlayable(1), isTrue);
+    });
+
+    test('the list runs out rather than looping', () {
+      // Played through once and then everyone is back in the lobby. Asking
+      // past the end is how the host knows the run is over, so it must answer
+      // "nothing left" rather than starting again at the top.
+      expect(GameCatalog.playableFrom(GameCatalog.playlist.length, 8), isNull);
+      expect(
+        GameCatalog.playableIndexFrom(GameCatalog.playlist.length, 8),
+        isNull,
+      );
+
+      // One phone can only play Slingshot, and it is first. Asking for what
+      // follows it used to wrap straight back to it.
+      expect(GameCatalog.playableFrom(1, 1), isNull);
     });
 
     test('the fingerprint changes with the game list, not with a rebuild', () {
