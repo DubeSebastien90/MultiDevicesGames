@@ -170,8 +170,11 @@ class TrackGenerator {
       final x = board.left + margin + t * (board.width - margin * 2);
       final sweep = math.sin(t * math.pi * 2) * amplitude;
       final jitter = (random.nextDouble() * 2 - 1) * amplitude * 0.25;
-      final y = (board.centerY + sweep + jitter)
-          .clamp(board.top + width / 2, board.bottom - width / 2);
+      final lo = board.top + width / 2;
+      final hi = board.bottom - width / 2;
+      final minClamp = math.min(lo, hi);
+      final maxClamp = math.max(lo, hi);
+      final y = (board.centerY + sweep + jitter).clamp(minClamp, maxClamp);
       waypoints.add(Waypoint(x, y));
     }
     return PitchTrack(waypoints: waypoints, widthWorld: width, closed: false);

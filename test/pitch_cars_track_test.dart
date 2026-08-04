@@ -115,6 +115,18 @@ void main() {
         expect(w.y, inInclusiveRange(board.top, board.bottom));
       }
     });
+
+    test('handles narrow boards without throwing', () {
+      final narrowBoard = const WorldRect(0, 0, 40, 2);
+      expect(
+        () => TrackGenerator.generate(
+          topology: PitchTrackTopology.line,
+          board: narrowBoard,
+          random: math.Random(4),
+        ),
+        returnsNormally,
+      );
+    });
   });
 
   group('TrackGenerator — loop', () {
