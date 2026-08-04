@@ -5,10 +5,13 @@ import 'package:forge2d/forge2d.dart' show Vector2;
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_config.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_game.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_sim.dart';
+import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_view.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
+import 'package:multiscreen_slingshot/sdk/contract/view.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
@@ -401,6 +404,32 @@ void main() {
         reason: 'a self-fault car reset to its last on-track point instead '
             'of its pre-turn position would defeat the grace window',
       );
+    });
+  });
+
+  group('PitchCarsGame — board planning', () {
+    test('createView returns a PitchCarsView', () {
+      final view = const PitchCarsGame().createView(
+          const ViewContext(phoneId: 'p1', board: WorldRect(0, 0, 1, 1)));
+      expect(view, isA<PitchCarsView>());
+    });
+
+    test('with 2 or 3 phones it always plans a row, never a ring', () {
+      for (final count in [2, 3]) {
+        final lobby = LobbyInfo([for (var i = 0; i < count; i++) phone('p${i + 1}')]);
+        final plan = const PitchCarsGame().planBoard(lobby);
+        expect(plan.allowGaps, isFalse);
+      }
+    });
+
+    test('with 4 phones it can plan either a row or a ring', () {
+      final lobby = LobbyInfo([for (var i = 0; i < 4; i++) phone('p${i + 1}')]);
+      final seen = <bool>{};
+      for (var i = 0; i < 40; i++) {
+        seen.add(const PitchCarsGame().planBoard(lobby).allowGaps);
+      }
+      expect(seen, containsAll(<bool>{true, false}),
+          reason: '40 trials at 4 phones should see both a row and a ring');
     });
   });
 }

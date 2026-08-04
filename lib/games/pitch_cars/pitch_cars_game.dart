@@ -8,6 +8,7 @@ import '../../sdk/layout/board_plan.dart';
 import '../../sdk/layout/layouts.dart';
 import '../../sdk/layout/phone_spec.dart';
 import 'pitch_cars_sim.dart';
+import 'pitch_cars_view.dart';
 
 class PitchCarsGame implements MultiscreenGame {
   const PitchCarsGame();
@@ -47,6 +48,5 @@ class PitchCarsGame implements MultiscreenGame {
   GameSim createSim(BoardContext context) => PitchCarsSim(context);
 
   @override
-  GameView createView(ViewContext context) => throw UnimplementedError(
-      'PitchCarsView is wired up in Task 5/6 of the implementation plan');
+  GameView createView(ViewContext context) => PitchCarsView(phoneId: context.phoneId);
 }
