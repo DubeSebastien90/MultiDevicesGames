@@ -26,9 +26,7 @@ PhoneSpec phone(String id) => PhoneSpec(
 );
 
 ({HotPotatoSim sim, BoardLayout board, Scoreboard scores}) start(int count) {
-  final lobby = LobbyInfo([
-    for (var i = 0; i < count; i++) phone('p${i + 1}'),
-  ]);
+  final lobby = LobbyInfo([for (var i = 0; i < count; i++) phone('p${i + 1}')]);
   final scores = Scoreboard();
   for (final p in lobby.phones) {
     scores.register(p.phoneId, p.label);
@@ -56,28 +54,29 @@ void swipeToward(
   final len = math.sqrt(dx * dx + dy * dy);
   final reach = HotPotatoConfig.minSwipeWorld * 3;
 
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: cx,
-    worldY: cy,
-    phase: TouchPhase.down,
-  ));
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: cx + dx / len * reach,
-    worldY: cy + dy / len * reach,
-    phase: TouchPhase.up,
-  ));
+  sim.onTouch(
+    TouchEvent(
+      phoneId: phoneId,
+      worldX: cx,
+      worldY: cy,
+      phase: TouchPhase.down,
+    ),
+  );
+  sim.onTouch(
+    TouchEvent(
+      phoneId: phoneId,
+      worldX: cx + dx / len * reach,
+      worldY: cy + dy / len * reach,
+      phase: TouchPhase.up,
+    ),
+  );
 }
 
 void main() {
   group('the circle layout', () {
     test('needs at least three phones', () {
       final two = LobbyInfo([phone('p1'), phone('p2')]);
-      expect(
-        () => Layouts.circle(two.phones),
-        throwsA(isA<BoardPlanError>()),
-      );
+      expect(() => Layouts.circle(two.phones), throwsA(isA<BoardPlanError>()));
       expect(const HotPotatoGame().manifest.minPhones, 3);
       expect(const HotPotatoGame().manifest.fits(2), isFalse);
     });
@@ -91,10 +90,10 @@ void main() {
       // The ring's middle is the mean of the seats. The board's bounding box
       // is not the same point: each phone is turned differently, so each one
       // contributes a differently-shaped box to the union.
-      final midX = centers.map((c) => c.x).reduce((a, b) => a + b) /
-          centers.length;
-      final midY = centers.map((c) => c.y).reduce((a, b) => a + b) /
-          centers.length;
+      final midX =
+          centers.map((c) => c.x).reduce((a, b) => a + b) / centers.length;
+      final midY =
+          centers.map((c) => c.y).reduce((a, b) => a + b) / centers.length;
 
       // Every phone the same distance from the middle.
       final radii = [
@@ -107,32 +106,98 @@ void main() {
       expect(radii.first, greaterThan(0));
     });
 
-    test('turns each phone to face outward, at angles no quarter turn allows',
-        () {
-      final started = start(5);
-      final phones = started.board.phones;
+    test(
+      'lays each long edge along the rim, at angles no quarter turn allows',
+      () {
+        final started = start(5);
+        final phones = started.board.phones;
+        final midX =
+            phones.map((p) => p.worldCenterX).reduce((a, b) => a + b) /
+            phones.length;
+        final midY =
+            phones.map((p) => p.worldCenterY).reduce((a, b) => a + b) /
+            phones.length;
+
+        for (final p in phones) {
+          // A phone's long axis runs along its own "up", which is (sin t, -cos t)
+          // once turned t clockwise. Tangential means that axis is square to the
+          // radius — so the dot product with the outward direction is zero.
+          final longAxis = (
+            x: math.sin(p.turnRadians),
+            y: -math.cos(p.turnRadians),
+          );
+          final outward = (x: p.worldCenterX - midX, y: p.worldCenterY - midY);
+          final len = math.sqrt(outward.x * outward.x + outward.y * outward.y);
+          final dot = (longAxis.x * outward.x + longAxis.y * outward.y) / len;
+          expect(
+            dot,
+            closeTo(0, 1e-6),
+            reason: 'phone ${p.phoneId} points its long edge at the middle',
+          );
+        }
+
+        // Five phones sit 72° apart — not expressible as quarter turns.
+        final turns = started.board.phones.map((p) => p.turnRadians).toList();
+        expect(turns.any((t) => (t % (math.pi / 2)).abs() > 1e-6), isTrue);
+      },
+    );
+
+    test('radial facing is still available, and points long edges inward', () {
+      final lobby = LobbyInfo([
+        for (var i = 0; i < 5; i++) phone('p$i'),
+      ]);
+      final board = const BoardCompiler().compile(
+        Layouts.circle(lobby.phones, facing: RingFacing.radial),
+        lobby,
+      );
+      final phones = board.phones;
       final midX =
           phones.map((p) => p.worldCenterX).reduce((a, b) => a + b) /
-              phones.length;
+          phones.length;
       final midY =
           phones.map((p) => p.worldCenterY).reduce((a, b) => a + b) /
-              phones.length;
+          phones.length;
 
       for (final p in phones) {
-        // A phone's own "up" is (sin t, -cos t) once turned t clockwise. It
-        // should point away from the middle, toward its player.
-        final up = (x: math.sin(p.turnRadians), y: -math.cos(p.turnRadians));
+        final longAxis = (
+          x: math.sin(p.turnRadians),
+          y: -math.cos(p.turnRadians),
+        );
         final outward = (x: p.worldCenterX - midX, y: p.worldCenterY - midY);
         final len = math.sqrt(outward.x * outward.x + outward.y * outward.y);
-        final dot = (up.x * outward.x + up.y * outward.y) / len;
-        expect(dot, closeTo(1, 1e-6), reason: 'phone ${p.phoneId} faces in');
+        final dot = (longAxis.x * outward.x + longAxis.y * outward.y) / len;
+        expect(dot.abs(), closeTo(1, 1e-6));
+      }
+    });
+
+    test('a tangential ring fits more phones in the same rim', () {
+      final lobby = LobbyInfo([
+        for (var i = 0; i < 6; i++) phone('p$i'),
+      ]);
+      double radiusOf(RingFacing facing) {
+        final board = const BoardCompiler().compile(
+          Layouts.circle(lobby.phones, facing: facing),
+          lobby,
+        );
+        final phones = board.phones;
+        final midX =
+            phones.map((p) => p.worldCenterX).reduce((a, b) => a + b) /
+            phones.length;
+        final midY =
+            phones.map((p) => p.worldCenterY).reduce((a, b) => a + b) /
+            phones.length;
+        final p = phones.first;
+        return math.sqrt(
+          math.pow(p.worldCenterX - midX, 2) +
+              math.pow(p.worldCenterY - midY, 2),
+        );
       }
 
-      // Five phones sit 72° apart — not expressible as quarter turns.
-      final turns = started.board.phones.map((p) => p.turnRadians).toList();
+      // Long edges along the rim need a wider ring for the same count — the
+      // trade for a circle that reads as one rather than as spokes.
       expect(
-        turns.any((t) => (t % (math.pi / 2)).abs() > 1e-6),
-        isTrue,
+        radiusOf(RingFacing.tangential),
+        greaterThan(radiusOf(RingFacing.radial)),
       );
     });
 
@@ -243,8 +308,8 @@ void main() {
 
       final from = sim.holder;
       final order = board.phones.map((p) => p.phoneId).toList();
-      final prev = order[(order.indexOf(from) - 1 + order.length) %
-          order.length];
+      final prev =
+          order[(order.indexOf(from) - 1 + order.length) % order.length];
       final target = board.forPhone(prev)!;
 
       swipeToward(sim, board, from, target.worldCenterX, target.worldCenterY);
@@ -281,7 +346,12 @@ void main() {
 
       final target = board.forPhone(before)!;
       swipeToward(
-          sim, board, notHolder, target.worldCenterX, target.worldCenterY);
+        sim,
+        board,
+        notHolder,
+        target.worldCenterX,
+        target.worldCenterY,
+      );
       expect(sim.holder, before);
     });
 
@@ -291,19 +361,23 @@ void main() {
       final me = started.board.forPhone(sim.holder)!;
       final before = sim.holder;
 
-      sim.onTouch(TouchEvent(
-        phoneId: before,
-        worldX: me.worldCenterX,
-        worldY: me.worldCenterY,
-        phase: TouchPhase.down,
-      ));
-      sim.onTouch(TouchEvent(
-        phoneId: before,
-        // Barely moved.
-        worldX: me.worldCenterX + 0.2,
-        worldY: me.worldCenterY,
-        phase: TouchPhase.up,
-      ));
+      sim.onTouch(
+        TouchEvent(
+          phoneId: before,
+          worldX: me.worldCenterX,
+          worldY: me.worldCenterY,
+          phase: TouchPhase.down,
+        ),
+      );
+      sim.onTouch(
+        TouchEvent(
+          phoneId: before,
+          // Barely moved.
+          worldX: me.worldCenterX + 0.2,
+          worldY: me.worldCenterY,
+          phase: TouchPhase.up,
+        ),
+      );
       expect(sim.holder, before);
     });
 

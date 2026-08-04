@@ -85,6 +85,19 @@ extension PhoneOrientationTurn on PhoneOrientation {
 /// How phones line up across the packing axis.
 enum CrossAlign { start, center, end }
 
+/// Which way a phone lies in a ring.
+enum RingFacing {
+  /// Long edge along the rim, at right angles to the radius — phones laid like
+  /// tiles around a wheel. The circumference is spent on long edges, so more
+  /// phones fit and the ring reads as a ring.
+  tangential,
+
+  /// Long edge pointing at the middle, like spokes. Each phone's own top edge
+  /// then points outward at its player, which reads more naturally on the
+  /// device but wastes rim.
+  radial,
+}
+
 /// Ready-made plans for the arrangements most games want.
 ///
 /// Every one of these returns an ordinary [BoardPlan], so a game can call a
@@ -135,16 +148,20 @@ class Layouts {
   /// across that space. So the plan declares [BoardPlan.allowGaps] and the
   /// compiler stops treating the distance as a mistake.
   ///
-  /// Every phone is turned so its top edge points *outward*, away from the
-  /// middle — because the player it belongs to is sitting on the outside
-  /// looking in. That needs arbitrary angles, not quarter turns: five phones
-  /// sit 72° apart.
+  /// By default each phone lies [RingFacing.tangential]: its long edge along
+  /// the rim, at right angles to its own radius, like tiles around a wheel.
+  /// That spends the circumference on long edges, so more phones fit and the
+  /// ring actually looks like one.
+  ///
+  /// Either way this needs arbitrary angles rather than quarter turns — five
+  /// phones sit 72° apart.
   ///
   /// Order runs clockwise from the top, and the game's own passing order is
   /// simply that order wrapping around.
   static BoardPlan circle(
     List<PhoneSpec> phones, {
     PhoneSort sort = PhoneSort.joinOrder,
+    RingFacing facing = RingFacing.tangential,
 
     /// Clear space between neighbouring screens, as a fraction of the widest
     /// phone. Enough that nobody's elbows collide.
@@ -164,17 +181,22 @@ class Layouts {
     final ordered = List.of(phones)..sort(sort.compare);
     final count = ordered.length;
 
-    // Adjacent phones sit shoulder to shoulder around the ring, so what has to
-    // fit in the chord between two centres is their widths, not their heights.
-    final widest = ordered.map((p) => p.widthMm).reduce(math.max);
-    final tallest = ordered.map((p) => p.heightMm).reduce(math.max);
-    final neededChord = widest * (1 + spacing);
+    // What has to fit in the chord between two neighbours is whichever edge
+    // runs along the rim — the long one when the phones lie tangentially.
+    final tangential = facing == RingFacing.tangential;
+    final alongRim = ordered
+        .map((p) => tangential ? p.heightMm : p.widthMm)
+        .reduce(math.max);
+    final acrossRim = ordered
+        .map((p) => tangential ? p.widthMm : p.heightMm)
+        .reduce(math.max);
+    final neededChord = alongRim * (1 + spacing);
 
     // chord = 2 R sin(pi / n)
     final fitted = neededChord / (2 * math.sin(math.pi / count));
     // Keep a hole in the middle even when there are only three phones, so the
     // ring reads as a ring rather than a huddle.
-    final radius = radiusMm ?? math.max(fitted, tallest * 0.9);
+    final radius = radiusMm ?? math.max(fitted, acrossRim * 1.2);
 
     final placements = <PhonePlacement>[];
     for (var i = 0; i < count; i++) {
@@ -184,10 +206,11 @@ class Layouts {
         ordered[i].phoneId,
         xMm: radius * math.cos(angle),
         yMm: radius * math.sin(angle),
-        // A phone's top edge points along its own radius, outward. Turn zero
-        // already points "up", which is outward at the top of the ring, so the
-        // turn is the angle plus a quarter.
-        turnDeg: angle * 180 / math.pi + 90,
+        // Radial puts the phone's top edge along its own radius, pointing
+        // outward — turn zero already points "up", which is outward at the top
+        // of the ring, hence the extra quarter. Tangential adds another
+        // quarter, swinging the long edge round onto the rim.
+        turnDeg: angle * 180 / math.pi + (tangential ? 180 : 90),
         hint: _ringHint(i, count),
       ));
     }
