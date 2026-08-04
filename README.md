@@ -351,10 +351,9 @@ only appear during placement, then get out of the way — a round is your canvas
 alone.
 
 **A wrong-looking connector is never a bug in your game.** It comes from the plan
-or from a phone's measurements, most often `bezelMm`. The host prints a
-`BoardAudit` on every round — every pair, with the reason it did or did not join
-— readable in the lobby, in the console, or in a browser at the host's
-`http://<ip>:8080`. Read that before touching anything.
+or from a phone's measurements, most often `bezelMm`. `BoardLinks.explain()`
+judges every pair and returns the reason it did or did not join, in words — call
+it on `board.slices` and read the verdicts before touching anything of your own.
 
 ## Scoring
 

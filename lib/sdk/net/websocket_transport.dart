@@ -14,14 +14,6 @@ class WebSocketHostTransport implements HostTransport {
 
   final int port;
 
-  /// Served as plain text to anything that hits the port with an ordinary GET.
-  ///
-  /// The host already answered non-upgrade requests with a one-line greeting;
-  /// this makes that endpoint useful. Point a browser at the host's address and
-  /// you get the last board audit — which is the only practical way to read
-  /// diagnostics off a phone that is hosting.
-  String Function()? diagnostics;
-
   HttpServer? _server;
   final _peers = StreamController<PeerLink>.broadcast();
   final _links = <_WebSocketPeerLink>[];
@@ -61,8 +53,7 @@ class WebSocketHostTransport implements HostTransport {
           req.response
             ..statusCode = HttpStatus.ok
             ..headers.contentType = ContentType.text
-            ..write(diagnostics?.call() ??
-                'MultiDevicesGame host — connect a WebSocket here');
+            ..write('MultiDevicesGame host — connect a WebSocket here');
           await req.response.close();
           return;
         }

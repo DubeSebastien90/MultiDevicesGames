@@ -66,8 +66,8 @@ class EdgeMarker {
 ///
 /// Every pair produces one of these, joined or not. The markers are *derived*
 /// from these verdicts rather than computed separately, so there is exactly one
-/// decision path — and an audit of a real session is a dump of these, which
-/// means the algorithm explains itself instead of needing to be reverse
+/// decision path — which means a stripe cannot exist that no verdict explains,
+/// and a board that looks wrong can be interrogated instead of reverse
 /// engineered from a screenshot.
 class LinkVerdict {
   const LinkVerdict({
@@ -96,8 +96,8 @@ class LinkVerdict {
 
   final bool joined;
 
-  /// Plain English, for the audit: 'joined', 'gap 4.20 > 3.00', 'no shared
-  /// edge', 'p2 is turned 72.0°'.
+  /// Plain English: 'joined', 'gap 4.20 exceeds 4.00', 'no shared edge on
+  /// either axis', 'p2 is turned 72.0°'.
   final String reason;
 
   Map<String, dynamic> toJson() => {

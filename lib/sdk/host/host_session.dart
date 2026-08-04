@@ -13,7 +13,6 @@ import '../catalog.dart';
 import '../contract/entity.dart';
 import '../contract/game.dart';
 import '../contract/sim.dart';
-import '../layout/board_audit.dart';
 import '../layout/board_compiler.dart';
 import '../layout/board_plan.dart';
 import '../layout/phone_spec.dart';
@@ -178,12 +177,6 @@ class HostSession extends ChangeNotifier {
   String? get planError => _planError;
   String? _planError;
 
-  /// A full record of the last board that was laid out — measurements, plan,
-  /// compiled geometry, and the reason every pair of screens was or was not
-  /// joined. Readable from any browser at the host's own address.
-  String? get lastAudit => _lastAudit;
-  String? _lastAudit;
-
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming =>
       GameCatalog.playableFrom(_gameIndex, _phones.length);
@@ -223,14 +216,6 @@ class HostSession extends ChangeNotifier {
     _address = uri;
     _phase = HostPhase.lobby;
     _subs.add(_transport.onPeer.listen(_attachPeer));
-
-    // Make the audit readable from any browser on the same WiFi. The only way
-    // to get diagnostics off a phone that is hosting.
-    final ws = _transport;
-    if (ws is WebSocketHostTransport) {
-      ws.diagnostics = () =>
-          _lastAudit ?? 'MultiDevicesGame host — no board laid out yet';
-    }
 
     if (_advertise) {
       final beacon = DiscoveryBroadcaster(
@@ -525,18 +510,6 @@ class HostSession extends ChangeNotifier {
       notifyListeners();
       return;
     }
-
-    // Recorded quietly, and only read if someone goes looking for it at the
-    // host's own address. It used to print in full on every round, which earned
-    // its keep while the connectors were wrong and was pure noise the moment
-    // they were right. Four phones on a table still produce measurements no
-    // synthetic test will guess, so the data stays — it just stops shouting.
-    _lastAudit = BoardAudit.toPrettyJson(BoardAudit.of(
-      gameId: game.manifest.id,
-      lobby: lobby,
-      plan: plan,
-      board: solved,
-    ));
 
     _layout = solved;
     _phase = HostPhase.placing;
