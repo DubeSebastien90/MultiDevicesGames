@@ -144,8 +144,12 @@ class BoardCompiler {
         placement: placement.hint ?? _defaultHint(i, ordered.length),
       );
       layouts.add(layout);
-      slices.add(PhoneSlice(spec.phoneId, _screenOf(layout),
-          label: spec.label));
+      slices.add(PhoneSlice(
+        spec.phoneId,
+        _screenOf(layout),
+        label: spec.label,
+        color: spec.color,
+      ));
     }
 
     return BoardLayout(

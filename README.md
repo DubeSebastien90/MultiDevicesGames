@@ -56,9 +56,58 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | **Hot Potato** | `Layouts.circle`, join order | a ring | not holding it at the end |
 | **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
 | **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
+| **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
 
-Adding a third is a folder under `games/` and one line in `sdk/catalog.dart`.
+Adding another is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
+
+## Who a player is
+
+A phone had two names — `phoneId` for the wire and a label for diagrams — and
+neither survives being read from across a table. So the platform now also knows
+a **colour**: `PlayerPalette` of eight, one per phone, unique for the session.
+
+Uniqueness is the host's promise, because only the host can make it. A phone is
+seated the moment it joins, so nobody is *gated* on choosing; picking in the
+lobby is a change, not a step. Two phones tapping the same swatch at once both
+send a request and the host answers with an ordinary lobby broadcast in which
+one of them holds it — the loser's swatch simply never lights up, with no error
+path and no special case on the client.
+
+Colour rides on `PhoneSpec` and on the compiled `PhoneSlice`, so a game reads
+`context.players` and `context.phoneOfColor(...)` and never asks the lobby
+anything.
+
+## Guac-a-Mole, and why points follow the colour
+
+Four phones or more in a block. Each screen has four holes, so a table has 4N.
+Avocados pop up in a uniformly random hole *anywhere on the board*, tinted one
+player's colour, and squishing one scores **its owner** — whoever's finger did
+it. Purely additive: nothing is ever deducted.
+
+That last rule looks strange until you notice what the game physically is. With
+four players only a quarter of the moles on your own screen are yours; the rest
+of yours are on other people's phones, so you play it leaning across the table.
+
+Which means a touch cannot identify a player. It arrives tagged with the phone
+whose *glass* was pressed, and once people are reaching, that phone is usually
+not the person reaching — a green mole tapped on p3's screen is Green stretching
+over, or p3 fumbling, and the two are the same event with the same data. The
+tapper is genuinely unknowable, so the game never asks. Points follow the mole's
+colour, which is unambiguous, and a wrong tap punishes itself by handing a rival
+a point. Anything richer — a bonus for squishing your own — would need the one
+fact the hardware cannot supply.
+
+Spawn *position* is uniform over every hole, with no bias toward anyone's own
+screen: reaching is the game. Spawn *colour* is dealt from a shuffled bag, so
+across a round no player is more than one deal behind another. Independent random
+colours would let somebody get visibly fewer moles by luck, and losing to the
+dice is not losing to a person.
+
+It is also the first game here that does not use the seam. Nothing crosses the
+gap. What it borrows from the platform instead is the single authoritative clock
+and the single spawner — which is exactly what makes "an equal number of moles
+each" a promise one machine can keep.
 
 ---
 
@@ -496,9 +545,12 @@ lib/
   games/
     slingshot/     game + sim + view + config
     ball_bin/      game + sim + view + config
+    hot_potato/    game + sim + view + config
+    arena/         game + sim + view + config
     flood_common/  board, config, and the sim/view both variants share
     flood/         Flood — growing tap power
     flood_closing/ Flood: Closing In — shrinking field
+    guacamole/     game + sim + view + config
   main.dart
 ```
 
@@ -650,5 +702,14 @@ inside it.
 - Launch feel is tuned for a two-phone board and scaled by `sqrt(width)` from
   there, so a four-phone board needs more shots to cross.
 - Measurements are not persisted, so they need re-entering each launch.
+- `Layouts.grid` sizes every cell to the largest phone and centres smaller ones
+  inside theirs. A grid of mismatched screens has no honest answer — a short
+  phone in the top row leaves a hole that is neither bezel nor playfield — so
+  the error is confined to a visible margin instead of being smeared across the
+  board. Guac-a-Mole's holes are placed per screen, so they stay correct either
+  way; a grid game that wanted one continuous surface would need more.
+- Guac-a-Mole never checks that a mole is *reachable*. On a table of eight in a
+  4x2 block, a mole at the far corner is a lunge, and whoever sits centrally has
+  a real advantage. Four phones is the size it is designed around.
 - On desktop, resizing the window after the board is laid out leaves the recorded
   viewport extent stale (phones do not resize).

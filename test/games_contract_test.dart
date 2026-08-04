@@ -71,6 +71,7 @@ void main() {
       expect(GameCatalog.byId('hotpotato'), isNotNull);
       expect(GameCatalog.byId('flood'), isNotNull);
       expect(GameCatalog.byId('floodclosing'), isNotNull);
+      expect(GameCatalog.byId('guacamole'), isNotNull);
       expect(GameCatalog.byId('nope'), isNull);
     });
 

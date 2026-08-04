@@ -11,6 +11,12 @@ class ClientMsg {
   /// catalog fingerprint. The host answers nothing else until both check out.
   static const join = 'join';
   static const calibration = 'calibration';
+
+  /// 'I want to be Green.' A request, not a statement: only the host can know
+  /// whether Green is still free, so the answer comes back in the next lobby
+  /// broadcast rather than being assumed here.
+  static const pickColor = 'pickColor';
+
   static const confirmPlacement = 'confirmPlacement';
   static const touch = 'touch';
   static const ping = 'ping';

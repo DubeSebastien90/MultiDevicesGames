@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../platform_config.dart';
 import '../model/device_metrics.dart';
+import '../model/player_color.dart';
 import '../net/discovery.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
@@ -76,6 +77,11 @@ class PhoneRecord {
   DeviceMetrics? metrics;
   bool confirmed = false;
   bool connected = true;
+
+  /// Assigned the moment this phone is admitted, changeable in the lobby.
+  /// Unique across the session — the host is the only thing that can promise
+  /// that, so the host is the only thing that writes it.
+  PlayerColor? color;
 
   /// Round-trip time in ms, from the client's pings. Display only.
   double? rttMs;
@@ -337,6 +343,9 @@ class HostSession extends ChangeNotifier {
   void _admit(PhoneRecord record) {
     record.authenticated = true;
     record.phoneId = 'p${_nextPhoneNumber++}';
+    // Seat them immediately. A player who never opens the picker still has an
+    // identity, so choosing is a change rather than a gate on starting.
+    record.color = PlayerPalette.firstFree(_takenColorIds());
     _phones.add(record);
     scores.register(record.phoneId, record.label);
     record.link.send({
@@ -354,6 +363,37 @@ class HostSession extends ChangeNotifier {
     link.send({'type': HostMsg.welcome, 'rejected': true, 'reason': reason});
     // Long enough for the frame to make it out before the socket shuts.
     Future<void>.delayed(const Duration(milliseconds: 300), link.close);
+  }
+
+  Iterable<String> _takenColorIds() sync* {
+    for (final p in _phones) {
+      final c = p.color;
+      if (c != null) yield c.id;
+    }
+  }
+
+  /// First come, first served, decided here because only here can decide it.
+  ///
+  /// Two phones tapping Green in the same instant both send a request; the one
+  /// whose packet arrives second is simply told no, by receiving a lobby
+  /// snapshot in which Green belongs to somebody else. No error message and no
+  /// special case on the client — the broadcast is already the source of truth
+  /// about who is what colour, so losing the race just looks like the swatch
+  /// not taking.
+  void _handlePickColour(PhoneRecord record, String? colorId) {
+    if (_phase != HostPhase.lobby) return;
+
+    final wanted = PlayerPalette.byId(colorId);
+    if (wanted == null) return;
+    if (record.color?.id == wanted.id) return;
+
+    for (final other in _phones) {
+      if (other != record && other.color?.id == wanted.id) return;
+    }
+
+    record.color = wanted;
+    _broadcastLobby();
+    notifyListeners();
   }
 
   void _updateBeacon() => _beacon?.update(
@@ -399,6 +439,9 @@ class HostSession extends ChangeNotifier {
         scores.register(record.phoneId, record.label);
         _broadcastLobby();
         notifyListeners();
+
+      case ClientMsg.pickColor:
+        _handlePickColour(record, msg['color'] as String?);
 
       case ClientMsg.confirmPlacement:
         if (_phase != HostPhase.placing) return;
@@ -497,7 +540,7 @@ class HostSession extends ChangeNotifier {
 
     final lobby = LobbyInfo([
       for (final p in _phones)
-        PhoneSpec.fromMetrics(p.phoneId, p.metrics!),
+        PhoneSpec.fromMetrics(p.phoneId, p.metrics!, color: p.color),
     ]);
 
     final BoardLayout solved;
@@ -845,6 +888,7 @@ class HostSession extends ChangeNotifier {
             'phoneId': p.phoneId,
             'index': i,
             'label': p.label,
+            if (p.color != null) 'color': p.color!.id,
             'calibrated': p.calibrated,
             'confirmed': p.confirmed,
             'connected': p.connected,

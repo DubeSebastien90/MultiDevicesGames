@@ -6,6 +6,7 @@ import '../layout/board_links.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
 import '../model/phone_layout.dart';
+import '../model/player_color.dart';
 import '../model/world_rect.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
@@ -280,6 +281,38 @@ class ClientSession extends ChangeNotifier {
     _phase = phase;
     _message = message;
     notifyListeners();
+  }
+
+  /// This phone's colour, as the host last confirmed it.
+  ///
+  /// Read from the lobby broadcast rather than remembered locally, so a pick
+  /// that lost a race to another phone corrects itself with no special case:
+  /// the swatch simply never lights up.
+  PlayerColor? get myColor => _colorOf(_phoneId);
+
+  PlayerColor? _colorOf(String? phoneId) {
+    if (phoneId == null) return null;
+    for (final p in _lobbyPhones) {
+      if (p['phoneId'] == phoneId) {
+        return PlayerPalette.byId(p['color'] as String?);
+      }
+    }
+    return null;
+  }
+
+  /// Colours already spoken for, including this phone's own.
+  Set<String> get takenColorIds => {
+    for (final p in _lobbyPhones)
+      if (p['color'] is String) p['color'] as String,
+  };
+
+  /// Ask to be [color]. The host decides; watch [myColor] for the answer.
+  void pickColor(PlayerColor color) {
+    _transport.send({
+      'type': ClientMsg.pickColor,
+      'phoneId': _phoneId,
+      'color': color.id,
+    });
   }
 
   /// Re-report our physical size (the user corrected a measurement).
