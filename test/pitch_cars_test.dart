@@ -694,6 +694,11 @@ void main() {
         // moved, regardless of which row of the grid it starts in.
         for (final started in [start(count), startRing(count)]) {
           final sim = started.sim;
+          // Cars start at rest, so a dt=0 step moves nothing via physics —
+          // it only exercises `_updateProgress`'s first-step delta
+          // bookkeeping, which is what actually reads `_rawProgress` and
+          // would leak a staggered-grid head start into `sharedState`.
+          sim.step(0.0);
           for (var i = 1; i <= count; i++) {
             expect(sim.sharedState['progress_p$i'], 0.0,
                 reason: 'p$i has nonzero progress before the race has even '
