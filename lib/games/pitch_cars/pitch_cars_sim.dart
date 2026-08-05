@@ -27,6 +27,7 @@ class PitchCarsSim extends Forge2DGameSim {
       random: _random,
     );
     _buildTrackEntities();
+    _buildTrackWalls();
     _order = context.phoneIds;
     _placeCars();
     _preTurnPosition = carOf(currentTurn).position.clone();
@@ -59,6 +60,11 @@ class PitchCarsSim extends Forge2DGameSim {
   bool _moving = false;
   Duration _sinceLaunch = Duration.zero;
   Duration _atRest = Duration.zero;
+
+  /// Where the current turn's car last was, for the stall watchdog — reset
+  /// whenever it moves more than [PitchCarsConfig.stallDisplacement] away.
+  Vector2? _stallAnchor;
+  Duration _sinceStallAnchor = Duration.zero;
 
   String? _winner;
   bool _awarded = false;
@@ -105,6 +111,7 @@ class PitchCarsSim extends Forge2DGameSim {
           type: BodyType.dynamic,
           position: pos,
           linearDamping: PitchCarsConfig.carLinearDamping,
+          angularDamping: PitchCarsConfig.carAngularDamping,
           bullet: true,
         ),
         props: {
@@ -153,6 +160,50 @@ class PitchCarsSim extends Forge2DGameSim {
     }
   }
 
+  /// Static bumpers along both edges of the ribbon, mirroring the segment
+  /// walk in [_buildTrackEntities] but as invisible physics-only bodies
+  /// (`world.createBody` directly, not [addBody] — same pattern as
+  /// `Forge2DGameSim.addBoundaryWalls`) rather than drawn ones.
+  ///
+  /// Without these, top speed was capped by geometry: a fast car travels in
+  /// a near-straight line right after launch, and a bad enough chord
+  /// deviates past the ribbon's edge before curvature (or the old,
+  /// much-lower speed) had a chance to bend it back — the game's off-track
+  /// rule then treated a *fast, well-aimed* shot the same as a *reckless*
+  /// one. With a real edge to bounce off, speed is limited by chaos and
+  /// pacing, not by track geometry.
+  void _buildTrackWalls() {
+    final pts = track.closed
+        ? [...track.waypoints, track.waypoints.first]
+        : track.waypoints;
+    final offset = track.widthWorld / 2 + PitchCarsConfig.wallThickness / 2;
+    for (var i = 0; i < pts.length - 1; i++) {
+      final a = pts[i];
+      final b = pts[i + 1];
+      final dx = b.x - a.x;
+      final dy = b.y - a.y;
+      final segLen = math.sqrt(dx * dx + dy * dy);
+      if (segLen < 1e-6) continue;
+      final angle = math.atan2(dy, dx);
+      final nx = -dy / segLen;
+      final ny = dx / segLen;
+      final midX = (a.x + b.x) / 2;
+      final midY = (a.y + b.y) / 2;
+      for (final side in [-1, 1]) {
+        world
+            .createBody(BodyDef(
+              position: Vector2(midX + nx * offset * side, midY + ny * offset * side),
+              angle: angle,
+            ))
+            .createFixture(FixtureDef(
+              PolygonShape()..setAsBoxXY(segLen / 2, PitchCarsConfig.wallThickness / 2),
+              friction: PitchCarsConfig.wallFriction,
+              restitution: PitchCarsConfig.wallRestitution,
+            ));
+      }
+    }
+  }
+
   // ----------------------------------------------------------------- input
 
   @override
@@ -172,7 +223,9 @@ class PitchCarsSim extends Forge2DGameSim {
       case TouchPhase.move:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
         _pull = _clampPull(p);
-        car.setTransform(_pull!, car.angle);
+        // The car itself never moves during the pull — pool cue, not
+        // slingshot. `_pull` alone drives the aim indicator in
+        // `sharedState` and the eventual launch impulse.
 
       case TouchPhase.up:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
@@ -211,6 +264,8 @@ class PitchCarsSim extends Forge2DGameSim {
     _moving = true;
     _sinceLaunch = Duration.zero;
     _atRest = Duration.zero;
+    _stallAnchor = _preTurnPosition.clone();
+    _sinceStallAnchor = Duration.zero;
     // The hit ledger is timestamped against `_sinceLaunch`, which restarts
     // here — so any contact recorded during the idle window between the last
     // `_endTurn` and this launch (the pull-back `setTransform` nudging a
@@ -255,8 +310,23 @@ class PitchCarsSim extends Forge2DGameSim {
     }
     _atRest = maxSpeed < PitchCarsConfig.restSpeed ? _atRest + elapsed : Duration.zero;
 
+    // A car spinning in place can keep re-injecting just enough linear
+    // velocity through contact friction to stay above restSpeed forever —
+    // angular damping (see PitchCarsConfig.carAngularDamping) is meant to
+    // stop that at the source, but this watchdog is the guarantee: track
+    // actual translation, independent of velocity, and force the turn to
+    // end if the car hasn't gone anywhere in a while regardless of why.
+    final currentPos = carOf(currentTurn).position;
+    if (_stallAnchor == null || currentPos.distanceTo(_stallAnchor!) > PitchCarsConfig.stallDisplacement) {
+      _stallAnchor = currentPos.clone();
+      _sinceStallAnchor = Duration.zero;
+    } else {
+      _sinceStallAnchor += elapsed;
+    }
+
     if (_atRest >= PitchCarsConfig.restDelay ||
-        _sinceLaunch >= PitchCarsConfig.maxFlightTime) {
+        _sinceLaunch >= PitchCarsConfig.maxFlightTime ||
+        _sinceStallAnchor >= PitchCarsConfig.stallTimeout) {
       _endTurn();
     }
   }
@@ -342,8 +412,11 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   Iterable<Entity> get entities sync* {
-    yield* super.entities;
+    // Track segments paint first (bottom layer) so cars, yielded after,
+    // are never drawn underneath the ribbon — ShapeView has no z-sorting,
+    // it just paints entities in this iteration order.
     yield* _trackEntities;
+    yield* super.entities;
   }
 
   @override
@@ -354,6 +427,12 @@ class PitchCarsSim extends Forge2DGameSim {
           'progress_$id': track.length < 1e-9
               ? 0.0
               : double.parse(((_progress[id] ?? 0) / track.length).clamp(0.0, 1.0).toStringAsFixed(3)),
+        // The pull point, world coords, while aiming — null once released or
+        // idle. The view draws the launch-direction arrow from this and the
+        // (stationary) current car's own entity position; it never needs to
+        // know who is dragging, only where the finger currently is.
+        'pullX': _pull == null ? null : double.parse(_pull!.x.toStringAsFixed(3)),
+        'pullY': _pull == null ? null : double.parse(_pull!.y.toStringAsFixed(3)),
       };
 
   @override
@@ -370,6 +449,8 @@ class PitchCarsSim extends Forge2DGameSim {
     _awarded = false;
     _sinceLaunch = Duration.zero;
     _atRest = Duration.zero;
+    _stallAnchor = null;
+    _sinceStallAnchor = Duration.zero;
     _lastHitBy.clear();
     _lastHitAt.clear();
 

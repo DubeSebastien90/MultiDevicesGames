@@ -370,8 +370,15 @@ void main() {
         phase: TouchPhase.move,
       ));
 
+      // The car itself never moves during the pull (pool cue, not
+      // slingshot) — the drag being accepted shows up in sharedState's
+      // aim point instead.
       final pulled = sim.entities.firstWhere((e) => e.id == sim.currentTurn);
-      expect(pulled.x, closeTo(car.x - 1, 1e-6));
+      expect(pulled.x, closeTo(car.x, 1e-6));
+      expect(pulled.y, closeTo(car.y, 1e-6));
+      // sharedState rounds to 3 decimals to avoid rebroadcasting float noise.
+      expect(sim.sharedState['pullX'], closeTo(car.x - 1, 1e-3));
+      expect(sim.sharedState['pullY'], closeTo(car.y, 1e-3));
     });
 
     test('a touch far from the current car is ignored', () {
@@ -430,6 +437,54 @@ void main() {
 
       expect(sim.currentTurn, isNot(firstTurn),
           reason: 'the turn never advanced after the car settled');
+    });
+
+    test('a car that spins without ever really translating still ends its turn', () {
+      final started = start(2);
+      final sim = started.sim;
+      final firstTurn = sim.currentTurn;
+      final car = sim.entities.firstWhere((e) => e.id == firstTurn);
+
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x,
+        worldY: car.y,
+        phase: TouchPhase.down,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x - PitchCarsConfig.maxPull,
+        worldY: car.y,
+        phase: TouchPhase.move,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x - PitchCarsConfig.maxPull,
+        worldY: car.y,
+        phase: TouchPhase.up,
+      ));
+
+      // Forces the pathological case directly: velocity that stays above
+      // restSpeed forever (so the ordinary rest-delay check never fires) by
+      // flipping direction every tick, plus heavy spin — but net
+      // translation stays near zero, which is exactly "spinning in place"
+      // as reported from actual play. Only the stall watchdog
+      // (PitchCarsConfig.stallTimeout) can end a turn like this.
+      final body = sim.carOf(firstTurn);
+      final dt = 1 / PlatformConfig.simHz;
+      var steps = 0;
+      // 3s budget: past stallTimeout (2s), comfortably under maxFlightTime
+      // (6s) — a pass here is specifically the watchdog, not the other cap.
+      while (sim.currentTurn == firstTurn && steps < PlatformConfig.simHz * 3) {
+        body
+          ..linearVelocity = Vector2(steps.isEven ? 1.0 : -1.0, 0) * (PitchCarsConfig.restSpeed * 2)
+          ..angularVelocity = 25.0;
+        sim.step(dt);
+        steps++;
+      }
+
+      expect(sim.currentTurn, isNot(firstTurn),
+          reason: 'a car stuck oscillating in place must not hang the turn forever');
     });
 
     test('a tap too small to count as a pull does not consume the turn', () {

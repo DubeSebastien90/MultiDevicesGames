@@ -31,8 +31,39 @@ class PitchCarsConfig {
   static const double carRestitution = 0.5;
   static const double carFriction = 0.3;
 
-  /// Cars scrub to a stop on their own, unlike a bird in flight.
-  static const double carLinearDamping = 0.6;
+  /// Cars scrub to a stop on their own, unlike a bird in flight. High on
+  /// purpose: the real board game's felt track kills speed abruptly, which
+  /// is what makes a shot hard to read.
+  ///
+  /// A first attempt at "faster" (0.6 → 1.5 here, 0.8 → 1.0 on
+  /// [impulsePerPull]) hit a hard ceiling well short of "fast": with no
+  /// physical rail, a car's launch speed alone set how far it travelled in
+  /// a near-straight line before curvature had any chance to bend it back
+  /// onto a curved track — push speed higher and it exits the ribbon
+  /// before the curve ever catches it, no matter how fast it decelerates
+  /// afterward. [wallThickness] and friends exist to remove that ceiling:
+  /// with a real edge to bounce off, a fast, well-aimed shot ricochets
+  /// back onto the track instead of being judged off it, and speed is
+  /// limited by chaos and pacing, not by geometry. Both this and
+  /// [impulsePerPull] moved again once the walls existed.
+  static const double carLinearDamping = 1.0;
+
+  /// Unlike linear motion, nothing was slowing rotation on its own — a car
+  /// that picked up spin (an off-centre hit, a glancing collision) could
+  /// keep spinning indefinitely, and contact friction from that spin could
+  /// keep re-injecting just enough linear velocity to stay above [restSpeed]
+  /// forever, hanging the turn. This decays spin on its own regardless of
+  /// contact.
+  static const double carAngularDamping = 2.0;
+
+  /// Independent safety net for the same failure, in case some contact
+  /// pattern still slips past the damping above (e.g. two cars locked in
+  /// repeated contact, or a car stuck oscillating on and off the track):
+  /// if the current turn's car hasn't meaningfully *translated* — spin
+  /// alone doesn't count — in this long, the turn ends wherever the car is,
+  /// no matter what its velocity currently reads.
+  static const double stallDisplacement = 0.1;
+  static const Duration stallTimeout = Duration(seconds: 2);
 
   /// How far past a car's edge a grab still counts (fingers are wide).
   static const double grabSlack = 1.0;
@@ -40,8 +71,19 @@ class PitchCarsConfig {
   /// Maximum pull distance from the car's rest position.
   static const double maxPull = 3.0;
 
-  /// Impulse magnitude per world unit of pull.
-  static const double impulsePerPull = 0.8;
+  /// Impulse magnitude per world unit of pull. See [carLinearDamping] — with
+  /// track-edge walls now catching a fast car instead of the geometry
+  /// having to, this is tuned so a full-power pull covers roughly one
+  /// phone's length in the open, not the couple of world units it managed
+  /// before the walls existed.
+  static const double impulsePerPull = 5.5;
+
+  /// Track-edge bumpers a fast car ricochets off (see [carLinearDamping]).
+  /// Thin and low-friction, high restitution — meant to read as a sharp
+  /// carom, not a sticky bump.
+  static const double wallThickness = 0.3;
+  static const double wallFriction = 0.1;
+  static const double wallRestitution = 0.75;
 
   /// Auto-advance-the-turn triggers, once a flick has been launched.
   static const double restSpeed = 0.3;
