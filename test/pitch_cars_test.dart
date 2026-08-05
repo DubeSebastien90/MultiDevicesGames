@@ -682,6 +682,25 @@ void main() {
               reason: '${car.id} starts off the track');
         }
       });
+
+      test(
+          '$count cars all read 0% progress at the start of a race, on '
+          'both topologies', () {
+        // The staggered grid (`_startPositionFor`) places some cars ahead of
+        // others in track arclength — a nonzero raw starting position. If
+        // `_rawProgress` were still seeded to 0 for those cars, the very
+        // first `_updateProgress` step would read that whole head start as
+        // free progress. Every car must read exactly 0.0 before anyone has
+        // moved, regardless of which row of the grid it starts in.
+        for (final started in [start(count), startRing(count)]) {
+          final sim = started.sim;
+          for (var i = 1; i <= count; i++) {
+            expect(sim.sharedState['progress_p$i'], 0.0,
+                reason: 'p$i has nonzero progress before the race has even '
+                    'started — a starting-grid head start leaking through');
+          }
+        }
+      });
     }
   });
 

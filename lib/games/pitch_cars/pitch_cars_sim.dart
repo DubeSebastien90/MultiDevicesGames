@@ -31,8 +31,9 @@ class PitchCarsSim extends Forge2DGameSim {
     _placeCars();
     _preTurnPosition = carOf(currentTurn).position.clone();
     for (final id in _order) {
-      _lastOnTrack[id] = carOf(id).position.clone();
-      _rawProgress[id] = 0;
+      final pos = carOf(id).position;
+      _lastOnTrack[id] = pos.clone();
+      _rawProgress[id] = track.progressAt(pos.x, pos.y);
       _progress[id] = 0;
     }
     world.setContactListener(_CarContactListener(this));
@@ -380,7 +381,7 @@ class PitchCarsSim extends Forge2DGameSim {
         ..angularVelocity = 0
         ..setAwake(true);
       _lastOnTrack[_order[i]] = car.position.clone();
-      _rawProgress[_order[i]] = 0;
+      _rawProgress[_order[i]] = track.progressAt(car.position.x, car.position.y);
       _progress[_order[i]] = 0;
     }
     _preTurnPosition = carOf(currentTurn).position.clone();
