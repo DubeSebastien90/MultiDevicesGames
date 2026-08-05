@@ -1,4 +1,4 @@
-# Multiscreen Slingshot — v1 prototype
+# Multiscreen game engine v1
 
 Several phones laid side by side on a table become **one shared game world**. One
 phone runs the authoritative simulation; every phone is a viewport onto it.
