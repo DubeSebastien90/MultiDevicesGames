@@ -423,6 +423,220 @@ class Layouts {
     return 'A block $columns wide and $rows deep, $pose, edges touching.';
   }
 
+  /// A winding path: each phone laid against an edge of the one before,
+  /// turning wherever it likes.
+  ///
+  /// The only helper here that is **different every time it is called**, which
+  /// is the point of it — a board nobody can lay out from memory. Pass a seeded
+  /// [random] to pin one down; the platform calls `planBoard` once per round, so
+  /// the shape holds for that round and is rebuilt for the next.
+  ///
+  /// Every phone still shares a real edge with its neighbour, so the seam and
+  /// the connector stripes work exactly as they do in a row — the stripes mark
+  /// the *overlapping* part of the two edges, which is the length there is to
+  /// line up when a portrait phone meets a sideways one.
+  ///
+  /// Two phones always meet **corner to corner**, flush at one end of the edge
+  /// they share, so the join is the whole of the shorter of the two edges — the
+  /// most connection there can be between them. Nothing is offset by a random
+  /// amount: half an edge against half an edge is both harder to place and
+  /// leaves less to line up.
+  static BoardPlan path(
+    List<PhoneSpec> phones, {
+    PhoneSort sort = PhoneSort.joinOrder,
+    Gaps gap = Gaps.casingsTouching,
+    math.Random? random,
+    String? instruction,
+  }) {
+    if (phones.isEmpty) {
+      throw const BoardPlanError('no phones to place');
+    }
+
+    final rng = random ?? math.Random();
+    final ordered = List.of(phones)..sort(sort.compare);
+
+    final laid = <_LaidPhone>[
+      _LaidPhone(ordered.first, 0, 0, rng.nextBool()),
+    ];
+
+    for (var i = 1; i < ordered.length; i++) {
+      final next = _attach(ordered[i], laid, rng, gap);
+      if (next == null) {
+        // Every edge of every phone already has something against it. Possible
+        // in principle, absurd in practice — and refusing beats emitting a
+        // board with a phone sitting on top of another one.
+        throw BoardPlanError(
+          'nowhere left to put ${ordered[i].phoneId} on this path',
+        );
+      }
+      laid.add(next);
+    }
+
+    // Shift so the board starts at the origin, as every other helper does.
+    final minX = laid.map((l) => l.left).reduce(math.min);
+    final minY = laid.map((l) => l.top).reduce(math.min);
+
+    return BoardPlan(
+      [
+        for (var i = 0; i < laid.length; i++)
+          PhonePlacement(
+            laid[i].spec.phoneId,
+            xMm: laid[i].cx - minX,
+            yMm: laid[i].cy - minY,
+            turnDeg: laid[i].sideways ? 90 : 0,
+            hint: i == 0 ? 'the start of the path' : 'against phone $i',
+          ),
+      ],
+      instruction: instruction ??
+          'Lay the phones out in a path, each against the last — '
+              'match the coloured edges.',
+    );
+  }
+
+  /// Somewhere free against something already on the table.
+  ///
+  /// Anchors are tried newest first so the board grows end to end; falling back
+  /// to an earlier phone only matters once the head has no room left, and keeps
+  /// a crowded board from failing outright.
+  static _LaidPhone? _attach(
+    PhoneSpec spec,
+    List<_LaidPhone> laid,
+    math.Random rng,
+    Gaps gap,
+  ) {
+    for (var i = laid.length - 1; i >= 0; i--) {
+      final anchor = laid[i];
+      final options = _sevenWays(anchor, spec, gap)..shuffle(rng);
+
+      for (final candidate in options) {
+        if (laid.any(candidate.overlaps)) continue;
+        // A join running the whole length of a phone is the one thing this
+        // layout will not have — see [_sharesAWholeLength].
+        if (laid.any((other) => _sharesAWholeLength(candidate, other))) {
+          continue;
+        }
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  /// Every way the next phone may be laid against this one. There are seven.
+  ///
+  /// Take the anchor as a phone with the path running *along* it. Three of its
+  /// four edges are free — the fourth is where the path came from — and each
+  /// offers a way to carry on:
+  ///
+  /// - **at the end**: straight on, or turned a quarter each way (3)
+  /// - **on each side**: turned a quarter, or alongside (2 + 2)
+  ///
+  /// Everything is flush at a corner except the last pair. Two phones laid
+  /// alongside each other *flush* would share one whole long edge, and a join
+  /// running the entire length of a phone is what this layout exists to avoid:
+  /// it stops being a path and becomes a slab. So a phone laid alongside is
+  /// pushed half a length along, and the join is half an edge.
+  static List<_LaidPhone> _sevenWays(
+    _LaidPhone anchor,
+    PhoneSpec spec,
+    Gaps gap,
+  ) {
+    // Where the path is heading, and the two ways off it.
+    //
+    // Every phone lies *along* the path — that is the premise the seven ways
+    // are counted from, so the very first one sets the direction from the way
+    // it is lying rather than the other way round.
+    final ahead = anchor.arrivedBy >= 0
+        ? anchor.arrivedBy
+        : (anchor.sideways ? 0 : 1);
+    final left = (ahead + 3) % 4;
+    final right = (ahead + 1) % 4;
+
+    final between = gap.between(anchor.spec, spec);
+    final straight = _LaidPhone(spec, 0, 0, anchor.sideways);
+    final turned = _LaidPhone(spec, 0, 0, !anchor.sideways);
+
+    /// [along] is measured in the direction of travel, [across] to its left.
+    _LaidPhone at(_LaidPhone shape, double along, double across, int heading) {
+      final a = _unitOf(ahead);
+      final c = _unitOf((ahead + 3) % 4);
+      return _LaidPhone(
+        spec,
+        anchor.cx + a.x * along + c.x * across,
+        anchor.cy + a.y * along + c.y * across,
+        shape.sideways,
+        arrivedBy: heading,
+      );
+    }
+
+    double halfAlong(_LaidPhone p) => _isVertical(ahead) ? p.halfH : p.halfW;
+    double halfAcross(_LaidPhone p) => _isVertical(ahead) ? p.halfW : p.halfH;
+
+    final aAlong = halfAlong(anchor);
+    final aAcross = halfAcross(anchor);
+
+    // Beyond the far edge: the end of the anchor.
+    final endAlong = aAlong + between;
+    // Beyond a side edge: past its flank.
+    final sideAcross = aAcross + between;
+
+    return [
+      // 1. Straight on, corner to corner all the way across.
+      at(straight, endAlong + halfAlong(straight), 0, ahead),
+
+      // 2 and 3. A quarter turn at the end, flush with one flank or the other.
+      at(turned, endAlong + halfAlong(turned),
+          aAcross - halfAcross(turned), left),
+      at(turned, endAlong + halfAlong(turned),
+          halfAcross(turned) - aAcross, right),
+
+      // 4 and 5. A quarter turn out to the side, flush with the far end.
+      at(turned, aAlong - halfAlong(turned),
+          sideAcross + halfAcross(turned), left),
+      at(turned, aAlong - halfAlong(turned),
+          -sideAcross - halfAcross(turned), right),
+
+      // 6 and 7. Alongside, pushed half a length on so the two do not share a
+      // whole edge. The heading does not turn: this phone lies the same way as
+      // the one it is beside, so the path has stepped sideways, not turned.
+      at(straight, aAlong, sideAcross + halfAcross(straight), ahead),
+      at(straight, aAlong, -sideAcross - halfAcross(straight), ahead),
+    ];
+  }
+
+  /// Do these two meet along the entire long edge of either of them?
+  ///
+  /// The one arrangement this layout refuses. Two phones flush side by side
+  /// share every millimetre of one edge each: the pair reads as a single fat
+  /// screen rather than as two steps of a path, and the stripe marking it is a
+  /// full-length bar that says nothing about which way to go next.
+  static bool _sharesAWholeLength(_LaidPhone a, _LaidPhone b) {
+    const skin = 0.5;
+
+    final apart = math.max(b.left - a.right, a.left - b.right);
+    final overlap =
+        math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
+    if (apart.abs() < skin && overlap > skin) {
+      return overlap > math.max(a.longEdge, b.longEdge) - skin;
+    }
+
+    final apartY = math.max(b.top - a.bottom, a.top - b.bottom);
+    final overlapX = math.min(a.right, b.right) - math.max(a.left, b.left);
+    if (apartY.abs() < skin && overlapX > skin) {
+      return overlapX > math.max(a.longEdge, b.longEdge) - skin;
+    }
+    return false;
+  }
+
+  static bool _isVertical(int side) => side == 1 || side == 3;
+
+  /// 0 right, 1 down, 2 left, 3 up.
+  static ({double x, double y}) _unitOf(int side) => switch (side) {
+        0 => (x: 1.0, y: 0.0),
+        1 => (x: 0.0, y: 1.0),
+        2 => (x: -1.0, y: 0.0),
+        _ => (x: 0.0, y: -1.0),
+      };
+
   static BoardPlan _pack(
     List<PhoneSpec> phones, {
     required bool horizontal,
@@ -544,4 +758,49 @@ class Layouts {
         (CrossAlign.end, false) => 'right edges flush',
         (CrossAlign.center, _) => 'centred on each other',
       };
+
+}
+
+/// One phone already on the table, as the path builder sees it.
+///
+/// Axis aligned by construction: a path only ever turns by quarters, which is
+/// also what keeps the connector stripes computable.
+class _LaidPhone {
+  const _LaidPhone(
+    this.spec,
+    this.cx,
+    this.cy,
+    this.sideways, {
+    this.arrivedBy = -1,
+  });
+
+  final PhoneSpec spec;
+  final double cx;
+  final double cy;
+  final bool sideways;
+
+  /// Which way the path was travelling when it arrived here — 0 right, 1 down,
+  /// 2 left, 3 up, and -1 for the phone it started from. The next phone carries
+  /// on or turns a quarter; it never goes back over this one.
+  final int arrivedBy;
+
+  double get halfW => (sideways ? spec.heightMm : spec.widthMm) / 2;
+  double get halfH => (sideways ? spec.widthMm : spec.heightMm) / 2;
+
+  /// The phone's own long side, whichever way it is lying.
+  double get longEdge => math.max(spec.widthMm, spec.heightMm);
+
+  double get left => cx - halfW;
+  double get right => cx + halfW;
+  double get top => cy - halfH;
+  double get bottom => cy + halfH;
+
+  /// Touching is fine — that is the whole idea. Sharing area is not.
+  bool overlaps(_LaidPhone o) {
+    const skin = 0.01;
+    return left < o.right - skin &&
+        o.left < right - skin &&
+        top < o.bottom - skin &&
+        o.top < bottom - skin;
+  }
 }

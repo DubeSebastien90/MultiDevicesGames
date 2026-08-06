@@ -58,6 +58,7 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
 | **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
 | **Reaction Time** | `Layouts.circle`, or a row for two | a ring | the fastest average over thirty seconds |
+| **Random Path** | `Layouts.path` — a different shape every round | a winding path | nothing: five seconds and everybody wins |
 
 Adding another is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
@@ -243,6 +244,7 @@ Layouts.row(lobby.phones, sort: PhoneSort.smallestFirst)   // wide runway
 Layouts.column(lobby.phones, sort: PhoneSort.largestLast)  // tall well
 Layouts.circle(lobby.phones)                               // ring, 3+ phones
 Layouts.grid(lobby.phones, rows: 2)                        // teams facing off
+Layouts.path(lobby.phones)                                 // a winding path, never the same twice
 ```
 
 `grid` is the two-axis one: it fills row by row, so with `rows: 2` the first
