@@ -57,6 +57,7 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
 | **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
 | **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
+| **Reaction Time** | `Layouts.circle`, or a row for two | a ring | the fastest average over thirty seconds |
 
 Adding another is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
