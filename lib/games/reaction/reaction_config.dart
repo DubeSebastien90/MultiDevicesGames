@@ -37,8 +37,13 @@ class ReactionConfig {
   /// by a margin. Missing should mean missing, not grazing.
   static const double hitTolerance = 1.35;
 
-  /// How long the red edge stays up after a mistake.
-  static const double faultFlashMs = 450;
+  /// How long the red wash lasts after a mistake, swell and ebb together.
+  static const double faultFlashMs = 700;
+
+  /// How far in from each edge the wash reaches, as a fraction of the screen's
+  /// short side. Wide enough to be unmistakable in the corner of the eye,
+  /// short of the middle where the dot appears.
+  static const double faultEdgeFraction = 0.28;
 
   /// Points for the fastest average, sliding to zero for the slowest.
   static const int bestScore = 30;

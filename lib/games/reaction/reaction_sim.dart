@@ -36,11 +36,21 @@ class ReactionSim implements GameSim {
   double _dotX = 0;
   double _dotY = 0;
 
-  /// Mistakes per phone, only ever going up. The view watches its own number
-  /// and buzzes when it changes — a count rather than a flag because two
-  /// fumbles in quick succession are two pieces of feedback, and a flag that
-  /// was already true would swallow the second.
+  /// Mistakes per phone, only ever going up.
   final _faults = <String, int>{};
+
+  /// The last fumble: who, and which one it was.
+  ///
+  /// Two scalars rather than the map above, because the host diffs shared state
+  /// value by value with `==` — and two Maps are never equal in Dart, however
+  /// identical their contents. Publishing the map meant a packet sixty times a
+  /// second for a game in which nothing moves at all.
+  ///
+  /// A running number rather than a flag: two fumbles in quick succession are
+  /// two pieces of feedback, and a flag that was already raised would swallow
+  /// the second.
+  int _faultSeq = 0;
+  String? _faultBy;
 
   /// When the next screen lights.
   double _nextPromptAt = 0;
@@ -151,8 +161,13 @@ class ReactionSim implements GameSim {
 
   void _fault(String phoneId) {
     _faults[phoneId] = (_faults[phoneId] ?? 0) + 1;
+    _faultSeq++;
+    _faultBy = phoneId;
     _record(phoneId, ReactionConfig.falseStartSeconds);
   }
+
+  /// How many mistakes [phoneId] has made this round.
+  int faultsOf(String phoneId) => _faults[phoneId] ?? 0;
 
   void _scheduleNext({required double from}) {
     final spread = ReactionConfig.maxDarkSeconds - ReactionConfig.minDarkSeconds;
@@ -209,9 +224,10 @@ class ReactionSim implements GameSim {
     'dotX': _lit == null ? null : double.parse(_dotX.toStringAsFixed(2)),
     'dotY': _lit == null ? null : double.parse(_dotY.toStringAsFixed(2)),
     'dotR': ReactionConfig.dotRadiusWorld,
-    // Only ever changes when somebody gets it wrong, so it costs nothing on a
-    // clean round.
-    'faults': Map<String, int>.from(_faults),
+    // Only ever change when somebody gets it wrong, so a clean round costs
+    // nothing.
+    'faultSeq': _faultSeq,
+    'faultBy': _faultBy,
     'secondsLeft': secondsLeft,
     'over': _over,
   };
@@ -300,6 +316,8 @@ class ReactionSim implements GameSim {
     _count.clear();
     _answers.clear();
     _faults.clear();
+    _faultSeq = 0;
+    _faultBy = null;
     _bag.clear();
     _awarded = false;
     // The latched verdict belongs to the round that just ended.

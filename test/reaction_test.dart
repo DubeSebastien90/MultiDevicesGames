@@ -1,9 +1,12 @@
 import 'dart:math' as math;
+import 'dart:ui' show Canvas, PictureRecorder;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/reaction/reaction_config.dart';
 import 'package:multiscreen_slingshot/games/reaction/reaction_game.dart';
 import 'package:multiscreen_slingshot/games/reaction/reaction_sim.dart';
+import 'package:multiscreen_slingshot/games/reaction/reaction_view.dart';
+import 'package:multiscreen_slingshot/sdk/contract/view.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
@@ -97,8 +100,17 @@ BoardLayout boardOf(int phoneCount) {
       .compile(const ReactionGame().planBoard(lobby), lobby);
 }
 
-int faultsOf(ReactionSim sim, String phoneId) =>
-    ((sim.sharedState['faults'] as Map)[phoneId] as int?) ?? 0;
+int faultsOf(ReactionSim sim, String phoneId) => sim.faultsOf(phoneId);
+
+/// Exactly how the host decides whether shared state is worth sending: value
+/// by value, with `==`.
+bool sameShared(Map<String, Object?> a, Map<String, Object?> b) {
+  if (a.length != b.length) return false;
+  for (final entry in a.entries) {
+    if (b[entry.key] != entry.value) return false;
+  }
+  return true;
+}
 
 /// Step until somebody's screen lights, then answer it after [afterSeconds].
 ///
@@ -509,6 +521,20 @@ void main() {
     });
   });
 
+  reactionViewTests();
+
+  test('an unchanged round is not worth a packet', () {
+    // The host compares shared state value by value with `==`, and in Dart two
+    // Maps are never equal however identical their contents. A Map in here is
+    // therefore a broadcast sixty times a second for a game in which nothing
+    // moves — which is exactly what publishing the fault tally as a map did.
+    final started = start(3);
+    run(started.sim, 0.1);
+
+    expect(sameShared(started.sim.sharedState, started.sim.sharedState), isTrue,
+        reason: 'a value in sharedState is not comparable to itself');
+  });
+
   test('the screen state is quiet enough to send every tick', () {
     // `sharedState` is diffed and sent when it changes, so a value that always
     // differs is a packet sixty times a second for a game with nothing moving.
@@ -525,5 +551,111 @@ void main() {
 
     // Ten seconds is a handful of prompts and ten ticks of the countdown.
     expect(changes, lessThan(40), reason: '$changes changes in ten seconds');
+  });
+}
+
+/// A frame as the platform would hand one to a view.
+Frame frameFor(
+  BoardLayout board,
+  int index, {
+  required Map<String, Object?> state,
+  double timeMs = 0,
+  double dt = 1 / 60,
+}) {
+  final me = board.phones[index];
+  return Frame(
+    entities: const {},
+    sharedState: state,
+    scores: ScoreView.empty,
+    timeMs: timeMs,
+    dt: dt,
+    me: me,
+    board: me.board,
+    coverage: board.coverage,
+  );
+}
+
+void renderFor(
+  ReactionView view,
+  BoardLayout board,
+  int index, {
+  required Map<String, Object?> state,
+  double timeMs = 0,
+  double dt = 1 / 60,
+}) {
+  view.render(
+    Canvas(PictureRecorder()),
+    frameFor(board, index, state: state, timeMs: timeMs, dt: dt),
+  );
+}
+
+void reactionViewTests() {
+  group('the red wash', () {
+    final board = boardOf(2);
+    Map<String, Object?> state({int seq = 0, String? by}) => {
+          'lit': null,
+          'litColor': null,
+          'dotX': null,
+          'dotY': null,
+          'dotR': ReactionConfig.dotRadiusWorld,
+          'faultSeq': seq,
+          'faultBy': by,
+          'secondsLeft': 10,
+          'over': false,
+        };
+
+    testWidgets('shows for the phone that fumbled, and nobody else',
+        (tester) async {
+      final mine = ReactionView(ViewContext(phoneId: 'p1', board: board.board));
+      final theirs =
+          ReactionView(ViewContext(phoneId: 'p2', board: board.board));
+
+      renderFor(mine, board, 0, state: state());
+      renderFor(theirs, board, 1, state: state());
+      expect(mine.isFlashing, isFalse);
+
+      renderFor(mine, board, 0, state: state(seq: 1, by: 'p1'));
+      renderFor(theirs, board, 1, state: state(seq: 1, by: 'p1'));
+
+      expect(mine.isFlashing, isTrue);
+      expect(theirs.isFlashing, isFalse,
+          reason: 'somebody else fumbling must not light up your screen');
+    });
+
+    testWidgets('fades out on its own', (tester) async {
+      final view = ReactionView(ViewContext(phoneId: 'p1', board: board.board));
+      renderFor(view, board, 0, state: state(seq: 1, by: 'p1'));
+      expect(view.isFlashing, isTrue);
+
+      // Long enough to have finished, one ordinary frame at a time.
+      for (var i = 0; i < 60; i++) {
+        renderFor(view, board, 0, state: state(seq: 1, by: 'p1'));
+      }
+      expect(view.isFlashing, isFalse);
+    });
+
+    testWidgets('does not come back when the round clock restarts',
+        (tester) async {
+      // The reported bug, exactly: nobody touches anything and two phones wash
+      // red together. `frame.timeMs` is the *round's* clock and returns to zero
+      // at every new round, so an effect that remembered the instant it started
+      // fired again when the new clock reached that number.
+      final view = ReactionView(ViewContext(phoneId: 'p1', board: board.board));
+
+      renderFor(view, board, 0, state: state(seq: 1, by: 'p1'), timeMs: 12000);
+      for (var i = 0; i < 60; i++) {
+        renderFor(view, board, 0,
+            state: state(seq: 1, by: 'p1'), timeMs: 12000 + i * 16.0);
+      }
+      expect(view.isFlashing, isFalse, reason: 'the wash should be spent');
+
+      // A new round: the clock starts again from nothing and climbs back past
+      // where the mistake happened. Nobody has touched anything.
+      for (var ms = 0.0; ms < 20000; ms += 100) {
+        renderFor(view, board, 0, state: state(), timeMs: ms, dt: 0.1);
+        expect(view.isFlashing, isFalse,
+            reason: 'red at ${ms}ms of a round nobody has touched');
+      }
+    });
   });
 }

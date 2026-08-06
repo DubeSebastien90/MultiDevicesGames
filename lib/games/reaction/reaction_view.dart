@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter/widgets.dart';
 
@@ -12,9 +14,9 @@ import 'reaction_config.dart';
 /// have measured how long a *neighbour* took to notice. A dot has to be found
 /// on your own phone, which is the thing the game claims to be timing.
 ///
-/// Getting it wrong buzzes the phone and rims the screen in red. Both are for
-/// the player who fumbled and nobody else — the table can hear a buzz, but only
-/// one person has to know which of the two mistakes it was.
+/// Getting it wrong buzzes the phone and washes the edges red. Both are for the
+/// player who fumbled and nobody else — the table can hear a buzz, but only one
+/// person has to know which of the two mistakes it was.
 class ReactionView extends GameView {
   ReactionView(this.context);
 
@@ -24,16 +26,26 @@ class ReactionView extends GameView {
   static const _fault = Color(0xFFFF3B30);
 
   final _fill = Paint();
-  final _rim = Paint()..style = PaintingStyle.stroke;
+  final _glow = Paint();
 
-  /// The last mistake this phone knows about, and when it was noticed.
+  /// The last mistake this phone knows about, and how much of the wash is left.
   ///
   /// Local, and deliberately so. Everything the platform insists be driven by
   /// the shared clock is something two screens have to agree about; this is one
   /// phone's own apology to the person holding it, and no other screen shows it
   /// at all.
-  int _seenFaults = 0;
-  double _flashUntilMs = 0;
+  ///
+  /// A countdown rather than "the instant it started", which is what this was
+  /// and what made it wrong: `frame.timeMs` is the *round's* clock and goes back
+  /// to zero at every new one. A stored timestamp therefore came round again a
+  /// few seconds into the next game, and phones that had fumbled in the last one
+  /// all lit up red together with nobody having touched anything.
+  int _seenFault = 0;
+  double _flashLeftMs = 0;
+
+  /// Whether the red wash is showing. For tests — the effect is otherwise
+  /// invisible to anything but an eye.
+  bool get isFlashing => _flashLeftMs > 0;
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -44,12 +56,13 @@ class ReactionView extends GameView {
       _fill,
     );
 
-    _noticeFaults(frame);
+    // Counted down from the local frame delta, which only ever moves forward.
+    _flashLeftMs = math.max(0, _flashLeftMs - frame.dt * 1000);
+    _noticeFault(frame);
 
-    final lit = frame.sharedState['lit'] as String?;
-    if (lit == frame.me.phoneId) _drawDot(canvas, frame);
+    if (frame.sharedState['lit'] == frame.me.phoneId) _drawDot(canvas, frame);
 
-    _drawFaultRim(canvas, frame);
+    _drawFaultGlow(canvas, frame);
   }
 
   void _drawDot(Canvas canvas, Frame frame) {
@@ -66,49 +79,93 @@ class ReactionView extends GameView {
     canvas.drawCircle(Offset(x, y), r, _fill);
   }
 
-  /// The buzz, once per mistake.
-  void _noticeFaults(Frame frame) {
-    final faults = frame.sharedState['faults'];
-    final mine = faults is Map
-        ? ((faults[frame.me.phoneId] as num?)?.toInt() ?? 0)
-        : 0;
-    // Going down means the round was reset, which is not a mistake to buzz
-    // about — just catch up quietly.
-    if (mine <= _seenFaults) {
-      _seenFaults = mine;
+  /// The buzz, once per mistake, and only for the phone that made it.
+  void _noticeFault(Frame frame) {
+    final seq = (frame.sharedState['faultSeq'] as num?)?.toInt() ?? 0;
+
+    // Going down means the round was reset, which is nothing to buzz about —
+    // and anything still on screen belongs to a round that is over.
+    if (seq <= _seenFault) {
+      if (seq < _seenFault) _flashLeftMs = 0;
+      _seenFault = seq;
       return;
     }
+    _seenFault = seq;
 
-    _seenFaults = mine;
-    _flashUntilMs = frame.timeMs + ReactionConfig.faultFlashMs;
-    HapticFeedback.heavyImpact();
+    if (frame.sharedState['faultBy'] != frame.me.phoneId) return;
+
+    _flashLeftMs = ReactionConfig.faultFlashMs;
+    // Deliberately the long-press buzz rather than a light impact: this has to
+    // be felt by somebody whose attention is on the table, through a phone lying
+    // flat on it. The subtle ones are for confirming a button press.
+    HapticFeedback.vibrate();
   }
 
-  /// A red edge, fading out. Around the rim rather than over the middle so it
-  /// cannot be mistaken for the dot it is telling you that you missed.
-  void _drawFaultRim(Canvas canvas, Frame frame) {
-    final left = _flashUntilMs - frame.timeMs;
-    if (left <= 0) return;
+  /// A red wash that swells in from the edges and ebbs away.
+  ///
+  /// Four bands, each fading to nothing as it reaches inward, so the middle of
+  /// the screen — where the dot appears — is never covered. The corners overlap
+  /// and sit slightly deeper, which is what the eye expects from a vignette.
+  void _drawFaultGlow(Canvas canvas, Frame frame) {
+    if (_flashLeftMs <= 0) return;
+    final t = 1 - _flashLeftMs / ReactionConfig.faultFlashMs;
 
-    final fade = (left / ReactionConfig.faultFlashMs).clamp(0.0, 1.0);
+    final alpha = 0.75 * _envelope(t);
+    if (alpha <= 0.004) return;
+
     final screen = frame.me.viewport;
-    final width = frame.onePixel * 14;
+    final depth =
+        math.min(screen.width, screen.height) * ReactionConfig.faultEdgeFraction;
+    final colors = [
+      _fault.withValues(alpha: alpha),
+      _fault.withValues(alpha: 0),
+    ];
 
-    _rim
-      ..color = _fault.withValues(alpha: 0.55 * fade)
-      ..strokeWidth = width;
+    void band(Rect rect, Alignment from, Alignment to) {
+      _glow.shader = LinearGradient(begin: from, end: to, colors: colors)
+          .createShader(rect);
+      canvas.drawRect(rect, _glow);
+    }
 
-    // Inset by half the stroke, or half of it falls outside the glass.
-    final inset = width / 2;
-    canvas.drawRect(
-      Rect.fromLTWH(
-        screen.left + inset,
-        screen.top + inset,
-        screen.width - width,
-        screen.height - width,
-      ),
-      _rim,
+    band(
+      Rect.fromLTWH(screen.left, screen.top, screen.width, depth),
+      Alignment.topCenter,
+      Alignment.bottomCenter,
     );
+    band(
+      Rect.fromLTWH(
+          screen.left, screen.bottom - depth, screen.width, depth),
+      Alignment.bottomCenter,
+      Alignment.topCenter,
+    );
+    band(
+      Rect.fromLTWH(screen.left, screen.top, depth, screen.height),
+      Alignment.centerLeft,
+      Alignment.centerRight,
+    );
+    band(
+      Rect.fromLTWH(
+          screen.right - depth, screen.top, depth, screen.height),
+      Alignment.centerRight,
+      Alignment.centerLeft,
+    );
+
+    _glow.shader = null;
+  }
+
+  /// Nothing to full and back again: a quick swell, a longer ebb.
+  ///
+  /// Asymmetric on purpose. A mistake should register immediately — the buzz and
+  /// the colour arriving together — and then let go slowly enough to be seen
+  /// rather than merely glimpsed.
+  static double _envelope(double t) {
+    const attack = 0.18;
+    if (t < attack) {
+      final x = t / attack;
+      return x * x * (3 - 2 * x); // smooth in, no hard edge at the start
+    }
+    final x = (t - attack) / (1 - attack);
+    return (1 - x) * (1 - x); // and away, easing out
   }
 
   @override
