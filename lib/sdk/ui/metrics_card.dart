@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/device_metrics.dart';
+import '../platform/native_dpi_channel.dart';
 import 'card_calibrate_screen.dart';
 
 /// Lets the player correct what the platform guessed about this screen.
@@ -32,6 +34,7 @@ class _MetricsCardState extends State<MetricsCard> {
   late final TextEditingController _height;
   late final TextEditingController _bezel;
   late bool _expanded;
+  bool _detecting = false;
 
   @override
   void initState() {
@@ -58,6 +61,24 @@ class _MetricsCardState extends State<MetricsCard> {
       heightMm: double.tryParse(_height.text) ?? m.heightMm,
       bezelMm: double.tryParse(_bezel.text) ?? m.bezelMm,
     ));
+  }
+
+  Future<void> _redetect() async {
+    setState(() => _detecting = true);
+    try {
+      final m = widget.metrics;
+      final result = await NativeDpiChannel.detect(
+        physicalPx: Size(m.activePxWidth, m.activePxHeight),
+        devicePixelRatio: m.devicePixelRatio,
+        platform: defaultTargetPlatform,
+      );
+      if (!mounted) return;
+      _width.text = result.widthMm.toStringAsFixed(1);
+      _height.text = result.heightMm.toStringAsFixed(1);
+      widget.onChanged(result.copyWith(bezelMm: m.bezelMm, label: m.label));
+    } finally {
+      if (mounted) setState(() => _detecting = false);
+    }
   }
 
   Future<void> _calibrate() async {
@@ -117,6 +138,18 @@ class _MetricsCardState extends State<MetricsCard> {
                 'whether the seam lines up. Measure the lit glass (not the '
                 'casing) and the dead border around it.',
                 style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _detecting ? null : _redetect,
+                icon: _detecting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.autorenew, size: 18),
+                label: const Text('Re-detect automatically'),
               ),
               const SizedBox(height: 12),
               Row(
