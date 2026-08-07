@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/device_metrics.dart';
+import 'card_calibrate_screen.dart';
 
 /// Lets the player correct what the platform guessed about this screen.
 ///
@@ -63,6 +64,19 @@ class _MetricsCardState extends State<MetricsCard> {
     ));
   }
 
+  Future<void> _calibrate() async {
+    final result = await Navigator.of(context).push<DeviceMetrics>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => CardCalibrateScreen(metrics: widget.metrics),
+      ),
+    );
+    if (result == null) return;
+    _width.text = result.widthMm.toStringAsFixed(1);
+    _height.text = result.heightMm.toStringAsFixed(1);
+    widget.onChanged(result);
+  }
+
   @override
   Widget build(BuildContext context) {
     final m = widget.metrics;
@@ -115,6 +129,12 @@ class _MetricsCardState extends State<MetricsCard> {
                   const SizedBox(width: 10),
                   Expanded(child: _field(_height, 'Screen height (mm)')),
                 ],
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _calibrate,
+                icon: const Icon(Icons.credit_card, size: 18),
+                label: const Text('Auto-calibrate with ID card'),
               ),
               const SizedBox(height: 10),
               Row(
