@@ -6,6 +6,7 @@ import 'game_view.dart';
 import 'lobby_view.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
+import 'theme/app_theme.dart';
 
 /// Routes on the *client* phase, even on the host.
 ///
@@ -37,26 +38,30 @@ class SessionScreen extends StatelessWidget {
         // a State across rounds, and this screen's state is "have I confirmed
         // yet". Carried into the next round that answer is both wrong and
         // unchangeable.
-        return PlacementView(
-          key: ValueKey(
-            '${client.manifest?.id}-${client.phoneId}-'
-            '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}',
+        return _onCanvas(
+          PlacementView(
+            key: ValueKey(
+              '${client.manifest?.id}-${client.phoneId}-'
+              '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}',
+            ),
+            controller: controller,
           ),
-          controller: controller,
         );
 
       case ClientPhase.playing:
-        return GameView(
-          // Keyed on the game and the layout so a new round — or a
-          // re-calibrated board — rebuilds with a fresh camera rather than
-          // reusing a stale one. The game id matters on its own: stacking two
-          // phones can leave phone 1 at the same offset it had in a row.
-          key: ValueKey(
-            '${client.manifest?.id}-${client.phoneId}-'
-            '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}-'
-            '${client.layout?.total}',
+        return _onCanvas(
+          GameView(
+            // Keyed on the game and the layout so a new round — or a
+            // re-calibrated board — rebuilds with a fresh camera rather than
+            // reusing a stale one. The game id matters on its own: stacking two
+            // phones can leave phone 1 at the same offset it had in a row.
+            key: ValueKey(
+              '${client.manifest?.id}-${client.phoneId}-'
+              '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}-'
+              '${client.layout?.total}',
+            ),
+            controller: controller,
           ),
-          controller: controller,
         );
 
       case ClientPhase.finished:
@@ -70,6 +75,16 @@ class SessionScreen extends StatelessWidget {
         );
     }
   }
+
+  /// The two phases that draw a board rather than a page.
+  ///
+  /// Both paint their own dark surface and then put theme-coloured text on top
+  /// of it — the placement legend reads `onSurfaceVariant`, the hold ring reads
+  /// `primary`. Under the app's light theme that legend would be dark grey on
+  /// dark navy, which is to say invisible. So the playfield keeps the dark
+  /// theme the whole app used to have, and the lobby chrome gets the light one.
+  static Widget _onCanvas(Widget child) =>
+      Theme(data: AppTheme.dark, child: child);
 }
 
 class _Waiting extends StatelessWidget {

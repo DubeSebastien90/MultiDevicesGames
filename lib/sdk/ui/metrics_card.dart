@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/device_metrics.dart';
+import 'theme/app_dimens.dart';
+import 'widgets/section_card.dart';
 
 /// Lets the player correct what the platform guessed about this screen.
 ///
@@ -65,75 +67,57 @@ class _MetricsCardState extends State<MetricsCard> {
     final m = widget.metrics;
     final theme = Theme.of(context);
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return SectionCard(
+      icon: Icons.straighten,
+      title: 'This screen: ${m.widthMm.toStringAsFixed(0)} × '
+          '${m.heightMm.toStringAsFixed(0)} mm',
+      trailing: TextButton(
+        onPressed: () => setState(() => _expanded = !_expanded),
+        child: Text(_expanded ? 'Done' : 'Measure'),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${m.activePxWidth.toInt()} × ${m.activePxHeight.toInt()} px  ·  '
+            '${m.dpi.toStringAsFixed(0)} dpi  ·  bezel '
+            '${m.bezelMm.toStringAsFixed(1)} mm',
+            style: theme.textTheme.bodySmall,
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'The board is built in millimetres, so these numbers decide '
+              'whether the seam lines up. Measure the lit glass (not the '
+              'casing) and the dead border around it.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
-                const Icon(Icons.straighten, size: 18),
-                const SizedBox(width: 8),
+                Expanded(child: _field(_width, 'Screen width (mm)')),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: _field(_height, 'Screen height (mm)')),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(child: _field(_bezel, 'Bezel per edge (mm)')),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text(
-                    'This screen: ${m.widthMm.toStringAsFixed(0)} × '
-                    '${m.heightMm.toStringAsFixed(0)} mm',
-                    style: theme.textTheme.titleSmall,
+                  child: TextField(
+                    controller: _label,
+                    onChanged: (_) => _push(),
+                    decoration: const InputDecoration(
+                      labelText: 'Name this phone',
+                    ),
                   ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _expanded = !_expanded),
-                  child: Text(_expanded ? 'Done' : 'Measure'),
                 ),
               ],
             ),
-            Text(
-              '${m.activePxWidth.toInt()} × ${m.activePxHeight.toInt()} px  ·  '
-              '${m.dpi.toStringAsFixed(0)} dpi  ·  bezel '
-              '${m.bezelMm.toStringAsFixed(1)} mm',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            if (_expanded) ...[
-              const SizedBox(height: 12),
-              Text(
-                'The board is built in millimetres, so these numbers decide '
-                'whether the seam lines up. Measure the lit glass (not the '
-                'casing) and the dead border around it.',
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _field(_width, 'Screen width (mm)')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_height, 'Screen height (mm)')),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _field(_bezel, 'Bezel per edge (mm)')),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _label,
-                      onChanged: (_) => _push(),
-                      decoration: const InputDecoration(
-                        labelText: 'Name this phone',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -143,10 +127,6 @@ class _MetricsCardState extends State<MetricsCard> {
     keyboardType: const TextInputType.numberWithOptions(decimal: true),
     inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
     onChanged: (_) => _push(),
-    decoration: InputDecoration(
-      labelText: label,
-      isDense: true,
-      border: const OutlineInputBorder(),
-    ),
+    decoration: InputDecoration(labelText: label),
   );
 }

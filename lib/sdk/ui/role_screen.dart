@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
+import '../model/player_color.dart';
 import 'join_sheet.dart';
 import 'metrics_card.dart';
+import 'theme/app_colors.dart';
+import 'theme/app_dimens.dart';
+import 'widgets/notice_banner.dart';
 
 /// Pick a role. One app, two jobs: run the world, or be a window onto it.
 class RoleScreen extends StatefulWidget {
@@ -85,82 +89,89 @@ class _RoleScreenState extends State<RoleScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 620),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const _HeroBlobs(),
+                  const SizedBox(height: AppSpacing.xl),
+                  // Left-aligned, not centred: a 34pt weight-800 line ragged
+                  // right reads as a headline, the same line centred reads as
+                  // a splash screen.
                   Text(
-                    'MultiDevicesGame',
-                    style: theme.textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
+                    'Lay the phones\ntogether!',
+                    style: theme.textTheme.displaySmall,
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.sm),
                   Text(
-                    'Lay the phones together on a table. They become one '
-                    'board, and each game arranges them its own way.',
+                    'Each screen is one piece of the board, and every game '
+                    'arranges them its own way.',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: AppColors.inkSoft,
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: AppSpacing.xl),
                   if (_surfaceIsLandscape) ...[
-                    _LandscapeWarning(),
-                    const SizedBox(height: 14),
+                    const NoticeBanner(
+                      icon: Icons.screen_rotation,
+                      message:
+                          'Hold this device upright. It is drawing sideways, '
+                          'so its measurements — and its place on the board — '
+                          'would be wrong.',
+                    ),
+                    const SizedBox(height: AppSpacing.md),
                   ],
+                  if (error != null) ...[
+                    NoticeBanner(
+                      icon: Icons.error_outline,
+                      message: error,
+                      onDismiss: widget.controller.clearError,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                  if (widget.controller.busy)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 28),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else ...[
+                    FilledButton.icon(
+                      onPressed: metrics == null ? null : _host,
+                      icon: const Icon(Icons.podcasts),
+                      label: const Text('Host a game'),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    // Ink rather than an outline. Joining is not the lesser
+                    // action — most people at the table do it — so it gets a
+                    // solid button too, just not the accent one.
+                    FilledButton.icon(
+                      onPressed: metrics == null ? null : _join,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.ink,
+                        foregroundColor: AppColors.onInk,
+                      ),
+                      icon: const Icon(Icons.search),
+                      label: const Text('Join a game'),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.xl),
+                  // Demoted below the buttons. This is a ruler-and-millimetres
+                  // form: correct to keep, wrong to make the first thing the
+                  // menu is about.
                   if (metrics != null)
                     MetricsCard(
                       metrics: metrics,
                       onChanged: (m) => setState(() => _metrics = m),
                     ),
-                  const SizedBox(height: 18),
-                  if (error != null) ...[
-                    _ErrorBanner(
-                      message: error,
-                      onDismiss: widget.controller.clearError,
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (widget.controller.busy)
-                    const Center(child: CircularProgressIndicator())
-                  else
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: metrics == null ? null : _host,
-                            icon: const Icon(Icons.podcasts),
-                            label: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Host a game'),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: metrics == null ? null : _join,
-                            icon: const Icon(Icons.search),
-                            label: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Join a game'),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.md),
                   Text(
                     'Both phones must be on the same WiFi, and that network '
                     'must let devices talk to each other. Guest and public '
                     'networks often block exactly that — if the join hangs, '
                     'use a hotspot from one phone instead.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -172,37 +183,83 @@ class _RoleScreenState extends State<RoleScreen> {
   }
 }
 
-/// Shown when the device is drawing landscape despite the portrait lock —
-/// an iPad in Split View, or a platform that ignores the lock.
+/// The band of shapes above the title.
 ///
-/// The board is measured in real millimetres, so this is not cosmetic: every
-/// size the app reports about this screen would be sideways, and the seam could
-/// not line up. Better to say so than to draw a confidently wrong diagram.
-class _LandscapeWarning extends StatelessWidget {
+/// Flat geometry only — a wedge, a bar, three dots — because it has to be
+/// drawn from `Container`s rather than shipped as an image: this app already
+/// carries five font files, and a decorative asset that has to look right on
+/// every phone density is a worse trade than sixty lines of layout.
+///
+/// The dots borrow [PlayerPalette], so the one thing the menu says in colour is
+/// the same thing the lobby says: these are the people at the table.
+class _HeroBlobs extends StatelessWidget {
+  const _HeroBlobs();
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
+    return SizedBox(
+      height: 92,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(Icons.screen_rotation, color: scheme.onErrorContainer, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Hold this device upright. It is drawing sideways, so its '
-              'measurements — and its place on the board — would be wrong.',
-              style: TextStyle(color: scheme.onErrorContainer),
+          // A quarter-round wedge — the phones-into-one-board shape, and the
+          // single largest area of brand colour in the app.
+          Container(
+            width: 92,
+            height: 92,
+            decoration: const BoxDecoration(
+              color: AppColors.yellow,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(46),
+                topRight: Radius.circular(46),
+                bottomLeft: Radius.circular(46),
+                bottomRight: Radius.circular(12),
+              ),
             ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 34,
+            height: 92,
+            decoration: BoxDecoration(
+              color: AppColors.ink,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+          ),
+          const Spacer(),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Row(
+                children: [
+                  _Dot(color: PlayerPalette.green.value, size: 22),
+                  const SizedBox(width: 8),
+                  _Dot(color: PlayerPalette.blue.value, size: 14),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _Dot(color: PlayerPalette.pink.value, size: 18),
+            ],
           ),
         ],
       ),
     );
   }
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
 }
 
 /// Names the game. This name is what friends look for in their join list, so
@@ -256,17 +313,14 @@ class _NameDialogState extends State<_NameDialog> {
             decoration: const InputDecoration(
               labelText: 'Game name',
               counterText: '',
-              border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             // JOIN CODE DISABLED — second sentence was: 'You will get a
             // 5-digit code to let them in.'
             'This is how your friends will spot your game in their list.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),
@@ -281,37 +335,3 @@ class _NameDialogState extends State<_NameDialog> {
   }
 }
 
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.onDismiss});
-
-  final String message;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: scheme.onErrorContainer, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: scheme.onErrorContainer),
-            ),
-          ),
-          IconButton(
-            onPressed: onDismiss,
-            icon: Icon(Icons.close, color: scheme.onErrorContainer, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}

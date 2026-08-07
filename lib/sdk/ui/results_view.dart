@@ -56,14 +56,31 @@ class ResultsView extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    verdict.celebrate ? Icons.emoji_events : Icons.replay,
-                    size: 44,
-                    color: verdict.celebrate
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
+                  // Badged rather than a bare tinted glyph: this screen went
+                  // from dark to light with the restyle, and a yellow trophy
+                  // drawn straight onto white sits at about 1.9:1. Putting the
+                  // colour behind the icon instead of in it keeps the gold cue
+                  // and gets the contrast back.
+                  Center(
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: verdict.celebrate
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.surfaceContainerHighest,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        verdict.celebrate ? Icons.emoji_events : Icons.replay,
+                        size: 38,
+                        color: verdict.celebrate
+                            ? theme.colorScheme.onPrimary
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
                   Text(
                     verdict.headline,
                     style: theme.textTheme.headlineMedium,

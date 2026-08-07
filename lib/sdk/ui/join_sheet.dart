@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../net/discovery.dart';
 import '../net/host_address.dart';
 import 'scan_sheet.dart';
+import 'theme/app_colors.dart';
+import 'theme/app_dimens.dart';
 
 /// Everything needed to get into a game: where, and the code to prove you were
 /// asked along.
@@ -146,7 +148,7 @@ class _JoinSheetState extends State<JoinSheet> {
                       game: game,
                       onTap: game.open ? () => _joinDiscovered(game) : null,
                     ),
-                const SizedBox(height: 20),
+                const SizedBox(height: AppSpacing.xl),
                 Row(
                   children: [
                     if (qrScanSupported) ...[
@@ -157,7 +159,7 @@ class _JoinSheetState extends State<JoinSheet> {
                           label: const Text('Scan QR'),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppSpacing.sm),
                     ],
                     Expanded(
                       child: OutlinedButton.icon(
@@ -168,15 +170,13 @@ class _JoinSheetState extends State<JoinSheet> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 Text(
                   'Games show up on their own when both phones are on the same '
                   'WiFi. If yours is missing, the network is probably blocking '
                   'device-to-device traffic — scan the QR on the host screen, '
                   'or type its address.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: theme.textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -199,28 +199,54 @@ class _GameTile extends StatelessWidget {
     final theme = Theme.of(context);
     final players = game.players == 1 ? '1 phone' : '${game.players} phones';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: game.open
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surfaceContainerHighest,
-          child: Icon(
-            game.open ? Icons.videogame_asset : Icons.lock_clock,
-            size: 20,
-            color: game.open
-                ? theme.colorScheme.onPrimaryContainer
-                : theme.colorScheme.onSurfaceVariant,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: game.open ? AppColors.yellow : AppColors.outline,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    game.open ? Icons.videogame_asset : Icons.lock_clock,
+                    size: 21,
+                    color: game.open ? AppColors.onYellow : AppColors.inkSoft,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(game.name, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 1),
+                      Text(
+                        game.open
+                            ? '$players in · tap to join'
+                            : '$players · already started',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (onTap != null)
+                  const Icon(Icons.chevron_right,
+                      size: 20, color: AppColors.inkSoft),
+              ],
+            ),
           ),
         ),
-        title: Text(game.name),
-        subtitle: Text(
-          game.open ? '$players in · tap to join' : '$players · already started',
-          style: theme.textTheme.bodySmall,
-        ),
-        trailing: onTap == null ? null : const Icon(Icons.chevron_right),
       ),
     );
   }
@@ -253,13 +279,11 @@ class _Searching extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Ask your friend to tap “Host a game”.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: theme.textTheme.bodySmall,
             ),
           ] else ...[
-            Icon(Icons.wifi_find, size: 30, color: theme.colorScheme.error),
-            const SizedBox(height: 12),
+            const Icon(Icons.wifi_find, size: 30, color: AppColors.danger),
+            const SizedBox(height: AppSpacing.md),
             Text(
               'This device cannot search the network.',
               style: theme.textTheme.titleSmall,
@@ -268,9 +292,7 @@ class _Searching extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Use the QR or the address instead.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: theme.textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
           ],
@@ -396,10 +418,7 @@ class _AddressDialogState extends State<_AddressDialog> {
         autofocus: true,
         keyboardType: TextInputType.url,
         onSubmitted: (v) => Navigator.of(context).pop(v),
-        decoration: const InputDecoration(
-          hintText: '192.168.1.42:8080',
-          border: OutlineInputBorder(),
-        ),
+        decoration: const InputDecoration(hintText: '192.168.1.42:8080'),
       ),
       actions: [
         TextButton(

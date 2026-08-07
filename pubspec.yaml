@@ -65,6 +65,23 @@ flutter:
   assets:
     - assets/animations/
 
+  # Embedded rather than pulled from google_fonts at runtime: the app is built
+  # to run on a phone hotspot with no route to the internet, and a font that
+  # downloads on first launch would fall back to Roboto in exactly that case.
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Poppins-ExtraBold.ttf
+          weight: 800
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

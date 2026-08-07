@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../score/scoreboard.dart';
+import 'theme/app_colors.dart';
+import 'widgets/section_card.dart';
 
 /// The session standings.
 ///
@@ -32,78 +34,73 @@ class StandingsCard extends StatelessWidget {
     final theme = Theme.of(context);
     final ranked = scores.ranked;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.leaderboard,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 8),
-                Text('Standings', style: theme.textTheme.titleSmall),
-                const Spacer(),
-                if (onReset != null)
-                  TextButton(
-                    onPressed: onReset,
-                    child: const Text('Reset'),
+    return SectionCard(
+      title: 'Standings',
+      icon: Icons.leaderboard,
+      trailing: onReset == null
+          ? null
+          : TextButton(onPressed: onReset, child: const Text('Reset')),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (i, entry) in ranked.indexed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  // The leader gets the accent; everyone else gets a grey
+                  // number. A podium the same colour as the rest of the list
+                  // is not a podium.
+                  Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i == 0 ? AppColors.yellow : AppColors.surface,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${i + 1}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: i == 0 ? AppColors.onYellow : AppColors.inkSoft,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            for (final (i, entry) in ranked.indexed)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 22,
-                      child: Text(
-                        '${i + 1}.',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      entry.phoneId == meId
+                          ? '${entry.label} (you)'
+                          : entry.label,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: entry.phoneId == meId
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    Expanded(
-                      child: Text(
-                        entry.phoneId == meId
-                            ? '${entry.label} (you)'
-                            : entry.label,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          fontWeight: entry.phoneId == meId
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (showDeltas && entry.roundDelta != 0) ...[
-                      Text(
-                        '+${entry.roundDelta}',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
+                  ),
+                  if (showDeltas && entry.roundDelta != 0) ...[
                     Text(
-                      '${entry.total}',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                      '+${entry.roundDelta}',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: AppColors.ink,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(width: 10),
                   ],
-                ),
+                  Text(
+                    '${entry.total}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

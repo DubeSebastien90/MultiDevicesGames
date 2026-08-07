@@ -59,62 +59,71 @@ class PlayerColor {
 /// Chosen to stay separable for the common colour-vision deficiencies: the
 /// red/green pair that deuteranopia collapses is split by a large lightness
 /// gap, and no two adjacent entries rely on hue alone.
+///
+/// These eight are also the app's *only* bright colours — the lobby's accents
+/// are drawn from here rather than from a second decorative set. That is a
+/// deliberate constraint: with one family, a vivid colour anywhere in the app
+/// can be read as "this belongs to a person", and nothing else competes with
+/// the swatches for that meaning.
 class PlayerPalette {
   const PlayerPalette._();
 
   static const green = PlayerColor(
     id: 'green',
     name: 'Green',
-    value: Color(0xFF4CAF50),
-    onColor: Color(0xFF0B2D0D),
+    value: Color(0xFF7BD64B),
+    onColor: Color(0xFF0E2E06),
   );
 
   static const orange = PlayerColor(
     id: 'orange',
     name: 'Orange',
-    value: Color(0xFFFF9800),
-    onColor: Color(0xFF3A2000),
+    value: Color(0xFFFF9A3C),
+    onColor: Color(0xFF3A1B00),
   );
 
   static const blue = PlayerColor(
     id: 'blue',
     name: 'Blue',
-    value: Color(0xFF2196F3),
-    onColor: Color(0xFF04243D),
+    value: Color(0xFF3B82F6),
+    onColor: Color(0xFF06203F),
   );
 
   static const pink = PlayerColor(
     id: 'pink',
     name: 'Pink',
-    value: Color(0xFFEC407A),
+    value: Color(0xFFFF5C8A),
     onColor: Color(0xFF3D0A1C),
   );
 
+  // Lemon, not the brand's golden #FFC83D. The two would be indistinguishable
+  // at swatch size, and "this yellow is a player" has to stay a different
+  // statement from "this yellow is the button you press".
   static const yellow = PlayerColor(
     id: 'yellow',
     name: 'Yellow',
-    value: Color(0xFFFFEB3B),
-    onColor: Color(0xFF3B3600),
+    value: Color(0xFFFFE04D),
+    onColor: Color(0xFF3B3000),
   );
 
   static const purple = PlayerColor(
     id: 'purple',
     name: 'Purple',
-    value: Color(0xFF9C27B0),
-    onColor: Color(0xFF2B0A32),
+    value: Color(0xFFA855F7),
+    onColor: Color(0xFF2A0A3F),
   );
 
   static const cyan = PlayerColor(
     id: 'cyan',
     name: 'Cyan',
-    value: Color(0xFF26C6DA),
+    value: Color(0xFF22D3EE),
     onColor: Color(0xFF04302F),
   );
 
   static const red = PlayerColor(
     id: 'red',
     name: 'Red',
-    value: Color(0xFFE53935),
+    value: Color(0xFFFF4D4D),
     onColor: Color(0xFF3D0A09),
   );
 

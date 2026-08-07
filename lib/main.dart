@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'sdk/app_controller.dart';
 import 'sdk/ui/role_screen.dart';
 import 'sdk/ui/session_screen.dart';
+import 'sdk/ui/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,15 +56,9 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
       // Also what Android shows in the recent-apps switcher.
       title: 'MultiDevicesGame',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4ECDC4),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0B1020),
-      ),
+      // Light is the app's theme: the menu, the lobby, the results. The two
+      // phases that paint a playfield ask SessionScreen for the dark one.
+      theme: AppTheme.light,
       home: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
