@@ -15,10 +15,12 @@ class MetricsCard extends StatefulWidget {
     super.key,
     required this.metrics,
     required this.onChanged,
+    this.initiallyExpanded = false,
   });
 
   final DeviceMetrics metrics;
   final ValueChanged<DeviceMetrics> onChanged;
+  final bool initiallyExpanded;
 
   @override
   State<MetricsCard> createState() => _MetricsCardState();
@@ -29,11 +31,12 @@ class _MetricsCardState extends State<MetricsCard> {
   late final TextEditingController _height;
   late final TextEditingController _bezel;
   late final TextEditingController _label;
-  bool _expanded = false;
+  late bool _expanded;
 
   @override
   void initState() {
     super.initState();
+    _expanded = widget.initiallyExpanded;
     final m = widget.metrics;
     _width = TextEditingController(text: m.widthMm.toStringAsFixed(1));
     _height = TextEditingController(text: m.heightMm.toStringAsFixed(1));

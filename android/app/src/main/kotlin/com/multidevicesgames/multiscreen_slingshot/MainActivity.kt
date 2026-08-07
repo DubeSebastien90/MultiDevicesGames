@@ -2,7 +2,10 @@ package com.multidevicesgames.multiscreen_slingshot
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.util.DisplayMetrics
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
 /**
  * Holds a WiFi multicast lock for as long as the app is in front.
@@ -15,6 +18,44 @@ import io.flutter.embedding.android.FlutterActivity
  */
 class MainActivity : FlutterActivity() {
     private var multicastLock: WifiManager.MulticastLock? = null
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.multidevicesgames/display_metrics",
+        ).setMethodCallHandler { call, result ->
+            if (call.method != "getPhysicalScreenInfo") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            try {
+                val dm = DisplayMetrics()
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay.getRealMetrics(dm)
+                val xdpi = dm.xdpi
+                val ydpi = dm.ydpi
+                val bucketDpi = dm.densityDpi.toFloat()
+                // Trusted only when values are in a plausible phone range and
+                // the OEM didn't simply echo the density bucket.
+                val trusted = xdpi in 200f..800f &&
+                    ydpi in 200f..800f &&
+                    kotlin.math.abs(xdpi - bucketDpi) > 5f
+                result.success(
+                    mapOf(
+                        "widthPx" to dm.widthPixels,
+                        "heightPx" to dm.heightPixels,
+                        "xdpi" to xdpi.toDouble(),
+                        "ydpi" to ydpi.toDouble(),
+                        "source" to "android_metrics",
+                        "trusted" to trusted,
+                    )
+                )
+            } catch (e: Exception) {
+                result.error("UNAVAILABLE", e.message, null)
+            }
+        }
+    }
 
     override fun onStart() {
         super.onStart()

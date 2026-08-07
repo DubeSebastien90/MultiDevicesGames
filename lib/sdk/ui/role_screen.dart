@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
+import '../platform/native_dpi_channel.dart';
 import 'join_sheet.dart';
 import 'metrics_card.dart';
 
@@ -20,40 +21,74 @@ class RoleScreen extends StatefulWidget {
 
 class _RoleScreenState extends State<RoleScreen> {
   DeviceMetrics? _metrics;
-
-  /// Whether the surface we are drawing on is wider than it is tall, despite
-  /// the portrait lock.
   bool _surfaceIsLandscape = false;
+  bool _nativeDone = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Re-measured every time the view changes, not just once. A device that
-    // settles into the locked orientation a beat after launch then corrects
-    // itself instead of carrying a first guess for the rest of the session.
-    _metrics = _detect();
-  }
-
-  DeviceMetrics _detect() {
     final view = View.of(context);
     final px = view.physicalSize;
 
     // The app is locked portrait, so the short edge is the width. Taking the
     // min and max rather than the raw values survives being measured a frame
     // before that lock lands.
-    //
-    // This describes the *panel*, never the placement. A phone lying on its
-    // side in a game's board is still measured portrait here; the turning is
-    // the game's business, and travels as `quarterTurns` on its placement.
     _surfaceIsLandscape = px.width > px.height;
 
-    return DeviceMetrics.estimate(
+    // Immediate Flutter density-bucket estimate so the screen is never blank.
+    _metrics ??= DeviceMetrics.estimate(
       physicalPx: Size(
         math.min(px.width, px.height),
         math.max(px.width, px.height),
       ),
       devicePixelRatio: view.devicePixelRatio,
       platform: defaultTargetPlatform,
+    );
+
+    // Then attempt a one-shot native refinement (Android xdpi/ydpi or iOS
+    // model-lookup). Falls back to the Flutter estimate silently on failure.
+    if (!_nativeDone) {
+      _nativeDone = true;
+      _refineWithNative(view.physicalSize, view.devicePixelRatio);
+    }
+  }
+
+  Future<void> _refineWithNative(Size px, double dpr) async {
+    final refined = await NativeDpiChannel.detect(
+      physicalPx: px,
+      devicePixelRatio: dpr,
+      platform: defaultTargetPlatform,
+    );
+    if (!mounted) return;
+    setState(() {
+      // Preserve any bezel / label the user may have already edited.
+      _metrics = refined.copyWith(
+        bezelMm: _metrics?.bezelMm,
+        label: _metrics?.label,
+      );
+    });
+  }
+
+  void _editScreenSize() {
+    final metrics = _metrics;
+    if (metrics == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Screen size'),
+        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+        content: MetricsCard(
+          metrics: metrics,
+          onChanged: (m) => setState(() => _metrics = m),
+          initiallyExpanded: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -111,9 +146,9 @@ class _RoleScreenState extends State<RoleScreen> {
                     const SizedBox(height: 14),
                   ],
                   if (metrics != null)
-                    MetricsCard(
+                    _ScreenSizeRow(
                       metrics: metrics,
-                      onChanged: (m) => setState(() => _metrics = m),
+                      onEdit: _editScreenSize,
                     ),
                   const SizedBox(height: 18),
                   if (error != null) ...[
@@ -168,6 +203,39 @@ class _RoleScreenState extends State<RoleScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ScreenSizeRow extends StatelessWidget {
+  const _ScreenSizeRow({required this.metrics, required this.onEdit});
+
+  final DeviceMetrics metrics;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(
+          Icons.straighten,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${metrics.widthMm.toStringAsFixed(0)} × '
+            '${metrics.heightMm.toStringAsFixed(0)} mm  ·  '
+            '${metrics.dpi.toStringAsFixed(0)} dpi',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        TextButton(onPressed: onEdit, child: const Text('Edit screen')),
+      ],
     );
   }
 }

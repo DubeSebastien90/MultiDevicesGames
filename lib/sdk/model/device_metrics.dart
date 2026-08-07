@@ -72,7 +72,7 @@ class DeviceMetrics {
       activePxHeight: physicalPx.height,
       widthMm: physicalPx.width / estimatedDpi * 25.4,
       heightMm: physicalPx.height / estimatedDpi * 25.4,
-      bezelMm: _defaultBezelMm(platform),
+      bezelMm: defaultBezelMm(platform),
       devicePixelRatio: devicePixelRatio,
       label: label,
     );
@@ -97,7 +97,7 @@ class DeviceMetrics {
     }
   }
 
-  static double _defaultBezelMm(TargetPlatform platform) {
+  static double defaultBezelMm(TargetPlatform platform) {
     switch (platform) {
       case TargetPlatform.android:
       case TargetPlatform.iOS:
