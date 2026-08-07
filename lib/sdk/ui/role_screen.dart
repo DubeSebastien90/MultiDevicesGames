@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
@@ -23,6 +24,39 @@ class _RoleScreenState extends State<RoleScreen> {
   DeviceMetrics? _metrics;
   bool _surfaceIsLandscape = false;
   bool _nativeDone = false;
+
+  static const _kNameKey = 'player_name';
+  final _nameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedName();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSavedName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_kNameKey);
+    if (saved != null && saved.isNotEmpty && mounted) {
+      setState(() {
+        _nameController.text = saved;
+        _metrics = _metrics?.copyWith(label: saved);
+      });
+    }
+  }
+
+  void _onNameChanged(String name) {
+    SharedPreferences.getInstance()
+        .then((p) => p.setString(_kNameKey, name));
+    final label = name.trim().isEmpty ? 'phone' : name.trim();
+    setState(() => _metrics = _metrics?.copyWith(label: label));
+  }
 
   @override
   void didChangeDependencies() {
@@ -61,12 +95,16 @@ class _RoleScreenState extends State<RoleScreen> {
     );
     if (!mounted) return;
     setState(() {
-      // Preserve any bezel / label the user may have already edited.
       _metrics = refined.copyWith(
         bezelMm: _metrics?.bezelMm,
-        label: _metrics?.label,
+        label: _metrics?.label ?? _currentLabel(),
       );
     });
+  }
+
+  String _currentLabel() {
+    final name = _nameController.text.trim();
+    return name.isEmpty ? 'phone' : name;
   }
 
   void _editScreenSize() {
@@ -141,6 +179,19 @@ class _RoleScreenState extends State<RoleScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 18),
+                  TextField(
+                    controller: _nameController,
+                    onChanged: _onNameChanged,
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 30,
+                    decoration: const InputDecoration(
+                      labelText: 'Your name',
+                      prefixIcon: Icon(Icons.person_outline),
+                      border: OutlineInputBorder(),
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   if (_surfaceIsLandscape) ...[
                     _LandscapeWarning(),
                     const SizedBox(height: 14),

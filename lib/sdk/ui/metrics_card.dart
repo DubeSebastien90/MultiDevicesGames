@@ -31,7 +31,6 @@ class _MetricsCardState extends State<MetricsCard> {
   late final TextEditingController _width;
   late final TextEditingController _height;
   late final TextEditingController _bezel;
-  late final TextEditingController _label;
   late bool _expanded;
 
   @override
@@ -42,7 +41,6 @@ class _MetricsCardState extends State<MetricsCard> {
     _width = TextEditingController(text: m.widthMm.toStringAsFixed(1));
     _height = TextEditingController(text: m.heightMm.toStringAsFixed(1));
     _bezel = TextEditingController(text: m.bezelMm.toStringAsFixed(1));
-    _label = TextEditingController(text: m.label);
   }
 
   @override
@@ -50,7 +48,6 @@ class _MetricsCardState extends State<MetricsCard> {
     _width.dispose();
     _height.dispose();
     _bezel.dispose();
-    _label.dispose();
     super.dispose();
   }
 
@@ -60,7 +57,6 @@ class _MetricsCardState extends State<MetricsCard> {
       widthMm: double.tryParse(_width.text) ?? m.widthMm,
       heightMm: double.tryParse(_height.text) ?? m.heightMm,
       bezelMm: double.tryParse(_bezel.text) ?? m.bezelMm,
-      label: _label.text.trim().isEmpty ? m.label : _label.text.trim(),
     ));
   }
 
@@ -137,23 +133,7 @@ class _MetricsCardState extends State<MetricsCard> {
                 label: const Text('Auto-calibrate with ID card'),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _field(_bezel, 'Bezel per edge (mm)')),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _label,
-                      onChanged: (_) => _push(),
-                      decoration: const InputDecoration(
-                        labelText: 'Name this phone',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              _field(_bezel, 'Bezel per edge (mm)'),
             ],
           ],
         ),
