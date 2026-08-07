@@ -26,12 +26,17 @@ class _RoleScreenState extends State<RoleScreen> {
   bool _nativeDone = false;
 
   static const _kNameKey = 'player_name';
+  static const _kWidthMmKey = 'screen_width_mm';
+  static const _kHeightMmKey = 'screen_height_mm';
+  static const _kBezelMmKey = 'screen_bezel_mm';
+
   final _nameController = TextEditingController();
+  bool _hasSavedScreenSize = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSavedName();
+    _loadSavedPrefs();
   }
 
   @override
@@ -40,22 +45,47 @@ class _RoleScreenState extends State<RoleScreen> {
     super.dispose();
   }
 
-  Future<void> _loadSavedName() async {
+  Future<void> _loadSavedPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_kNameKey);
-    if (saved != null && saved.isNotEmpty && mounted) {
-      setState(() {
-        _nameController.text = saved;
-        _metrics = _metrics?.copyWith(label: saved);
-      });
-    }
+    if (!mounted) return;
+    final name = prefs.getString(_kNameKey);
+    final widthMm = prefs.getDouble(_kWidthMmKey);
+    final heightMm = prefs.getDouble(_kHeightMmKey);
+    final bezelMm = prefs.getDouble(_kBezelMmKey);
+    setState(() {
+      if (name != null && name.isNotEmpty) {
+        _nameController.text = name;
+      }
+      if (widthMm != null && heightMm != null) {
+        _hasSavedScreenSize = true;
+        _metrics = _metrics?.copyWith(
+          widthMm: widthMm,
+          heightMm: heightMm,
+          bezelMm: bezelMm,
+          label: name != null && name.isNotEmpty ? name : null,
+        );
+      } else if (name != null && name.isNotEmpty) {
+        _metrics = _metrics?.copyWith(label: name);
+      }
+    });
   }
 
   void _onNameChanged(String name) {
-    SharedPreferences.getInstance()
-        .then((p) => p.setString(_kNameKey, name));
+    SharedPreferences.getInstance().then((p) => p.setString(_kNameKey, name));
     final label = name.trim().isEmpty ? 'phone' : name.trim();
     setState(() => _metrics = _metrics?.copyWith(label: label));
+  }
+
+  void _onMetricsChanged(DeviceMetrics m) {
+    setState(() {
+      _metrics = m;
+      _hasSavedScreenSize = true;
+    });
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setDouble(_kWidthMmKey, m.widthMm);
+      prefs.setDouble(_kHeightMmKey, m.heightMm);
+      prefs.setDouble(_kBezelMmKey, m.bezelMm);
+    });
   }
 
   @override
@@ -95,10 +125,19 @@ class _RoleScreenState extends State<RoleScreen> {
     );
     if (!mounted) return;
     setState(() {
-      _metrics = refined.copyWith(
-        bezelMm: _metrics?.bezelMm,
-        label: _metrics?.label ?? _currentLabel(),
-      );
+      // If the user has already calibrated this screen, keep their mm values
+      // and only take the pixel dimensions and DPR from native detection.
+      _metrics = _hasSavedScreenSize
+          ? refined.copyWith(
+              widthMm: _metrics?.widthMm,
+              heightMm: _metrics?.heightMm,
+              bezelMm: _metrics?.bezelMm,
+              label: _metrics?.label ?? _currentLabel(),
+            )
+          : refined.copyWith(
+              bezelMm: _metrics?.bezelMm,
+              label: _metrics?.label ?? _currentLabel(),
+            );
     });
   }
 
@@ -117,7 +156,7 @@ class _RoleScreenState extends State<RoleScreen> {
         contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
         content: MetricsCard(
           metrics: metrics,
-          onChanged: (m) => setState(() => _metrics = m),
+          onChanged: _onMetricsChanged,
           initiallyExpanded: true,
         ),
         actions: [
