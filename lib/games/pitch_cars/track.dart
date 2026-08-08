@@ -12,9 +12,6 @@ class Waypoint {
   final double y;
 }
 
-/// Which shape a generated track takes.
-enum PitchTrackTopology { line, loop }
-
 /// A racing line: a centerline with a fixed width, either open (a line, run
 /// once from start to finish) or closed (a loop, one lap back to the start).
 ///

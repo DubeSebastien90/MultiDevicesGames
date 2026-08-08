@@ -22,8 +22,7 @@ class PitchCarsSim extends Forge2DGameSim {
   PitchCarsSim(super.context, {math.Random? random})
     : _random = random ?? math.Random() {
     track = TrackGenerator.generate(
-      topology: _detectTopology(context),
-      board: context.board,
+      slices: context.slices,
       random: _random,
     );
     _buildTrackEntities();
@@ -70,17 +69,6 @@ class PitchCarsSim extends Forge2DGameSim {
   bool _awarded = false;
 
   Body carOf(String id) => bodyOf(id)!;
-
-  /// `Layouts.row` turns every phone by the same amount; `Layouts.circle`
-  /// turns each phone differently, to face outward. Checking whether every
-  /// slice shares one rotation tells the two topologies apart without any
-  /// new field on `BoardContext`.
-  PitchTrackTopology _detectTopology(BoardContext context) {
-    final rotations = context.slices.map((s) => s.screen.turnRadians).toSet();
-    return rotations.length > 1
-        ? PitchTrackTopology.loop
-        : PitchTrackTopology.line;
-  }
 
   /// Where car [index] of [_order] sits on the starting grid. Shared by
   /// initial placement and [reset] so the two can never drift apart.

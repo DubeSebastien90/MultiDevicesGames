@@ -42,33 +42,6 @@ PhoneSpec phone(String id) => PhoneSpec(
   return (sim: sim, board: board, scores: scores);
 }
 
-/// Same as [start], but keeps re-rolling the board plan until it comes back a
-/// ring rather than a row.
-///
-/// `PitchCarsGame.planBoard` flips its own unseeded coin, so the ring path
-/// cannot be reached by choosing a seed. Re-rolling is not probabilistic in
-/// any way that matters: at 4 phones each roll is an even coin, so the loop
-/// below fails only if 200 consecutive flips come up heads. The *sim* is still
-/// seeded, so the track it generates for that ring is fully deterministic.
-({PitchCarsSim sim, BoardLayout board, Scoreboard scores}) startRing(
-  int count, {
-  int seed = 1,
-}) {
-  final lobby = LobbyInfo([for (var i = 0; i < count; i++) phone('p${i + 1}')]);
-  final scores = Scoreboard();
-  for (final p in lobby.phones) {
-    scores.register(p.phoneId, p.label);
-  }
-  var plan = const PitchCarsGame().planBoard(lobby);
-  for (var tries = 0; !plan.allowGaps && tries < 200; tries++) {
-    plan = const PitchCarsGame().planBoard(lobby);
-  }
-  final board = const BoardCompiler().compile(plan, lobby);
-  final sim = PitchCarsSim(board.contextFor(scores), random: math.Random(seed));
-  scores.beginRound();
-  return (sim: sim, board: board, scores: scores);
-}
-
 /// Aims the current turn's car toward the forward tangent of its own
 /// position on the track and releases a full pull, then runs the sim until
 /// the turn advances (or the step budget runs out).
@@ -644,10 +617,7 @@ void main() {
   group('PitchCarsSim — the starting grid', () {
     for (final count in [2, 3, 4]) {
       test('$count cars never spawn touching each other', () {
-        for (final started in [
-          start(count),
-          if (count == 4) startRing(count),
-        ]) {
+        for (final started in [start(count)]) {
           final sim = started.sim;
           final cars = sim.entities.where((e) => e.kind == 'car').toList();
           expect(cars.length, count);
@@ -673,15 +643,14 @@ void main() {
       });
 
       test(
-          '$count cars all read 0% progress at the start of a race, on '
-          'both topologies', () {
+          '$count cars all read 0% progress at the start of a race', () {
         // The staggered grid (`_startPositionFor`) places some cars ahead of
         // others in track arclength — a nonzero raw starting position. If
         // `_rawProgress` were still seeded to 0 for those cars, the very
         // first `_updateProgress` step would read that whole head start as
         // free progress. Every car must read exactly 0.0 before anyone has
         // moved, regardless of which row of the grid it starts in.
-        for (final started in [start(count), startRing(count)]) {
+        for (final started in [start(count)]) {
           final sim = started.sim;
           // Cars start at rest, so a dt=0 step moves nothing via physics —
           // it only exercises `_updateProgress`'s first-step delta
@@ -705,22 +674,12 @@ void main() {
       expect(view, isA<PitchCarsView>());
     });
 
-    test('with 2 or 3 phones it always plans a row, never a ring', () {
-      for (final count in [2, 3]) {
+    test('always plans a connected path, never a ring', () {
+      for (final count in [2, 3, 4]) {
         final lobby = LobbyInfo([for (var i = 0; i < count; i++) phone('p${i + 1}')]);
         final plan = const PitchCarsGame().planBoard(lobby);
         expect(plan.allowGaps, isFalse);
       }
-    });
-
-    test('with 4 phones it can plan either a row or a ring', () {
-      final lobby = LobbyInfo([for (var i = 0; i < 4; i++) phone('p${i + 1}')]);
-      final seen = <bool>{};
-      for (var i = 0; i < 40; i++) {
-        seen.add(const PitchCarsGame().planBoard(lobby).allowGaps);
-      }
-      expect(seen, containsAll(<bool>{true, false}),
-          reason: '40 trials at 4 phones should see both a row and a ring');
     });
   });
 }

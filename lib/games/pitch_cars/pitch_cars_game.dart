@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import '../../sdk/contract/game.dart';
 import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
@@ -23,26 +21,13 @@ class PitchCarsGame implements MultiscreenGame {
       );
 
   @override
-  BoardPlan planBoard(LobbyInfo lobby) {
-    final loopEligible = lobby.phoneCount == 4;
-    final wantsLoop = loopEligible && math.Random().nextBool();
-    if (wantsLoop) {
-      return Layouts.circle(
+  BoardPlan planBoard(LobbyInfo lobby) => Layouts.path(
         lobby.phones,
         sort: PhoneSort.joinOrder,
-        instruction: 'Arrange your phones in a ring with a gap in the '
-            'middle — the track runs around the outside. One lap wins.',
+        instruction: 'Lay the phones out in a path, each against the last — '
+            'match the coloured edges. The track winds along it, start to '
+            'finish.',
       );
-    }
-    return Layouts.row(
-      lobby.phones,
-      sort: PhoneSort.joinOrder,
-      align: CrossAlign.start,
-      gap: Gaps.casingsTouching,
-      instruction: 'Lay the phones in a row — the track winds across them '
-          'from left to right. First to the finish wins.',
-    );
-  }
 
   @override
   GameSim createSim(BoardContext context) => PitchCarsSim(context);
