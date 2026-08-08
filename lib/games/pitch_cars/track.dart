@@ -255,10 +255,10 @@ class TrackGenerator {
     throw StateError('no join marker between $aId and $bId');
   }
 
-  /// A point on [viewport]'s own boundary, on the opposite side from
-  /// [towardSeam] — reflecting the seam through the phone's center and
-  /// clamping to its rectangle. Used for the track's very start and end,
-  /// which have no seam on one side.
+  /// A point near the far side of [viewport], inset from every edge by half
+  /// the track width, on the opposite side from [towardSeam] — reflecting the
+  /// seam through the phone's center and clamping to its rectangle. Used for
+  /// the track's very start and end, which have no seam on one side.
   ///
   /// `Layouts.path` always joins two phones corner to corner, so the seam
   /// this reflects sits near a corner of the phone by construction — the

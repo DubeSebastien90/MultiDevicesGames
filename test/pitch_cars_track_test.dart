@@ -6,6 +6,7 @@ import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 
 void main() {
   group('PitchTrack — an open two-point track', () {
@@ -338,7 +339,7 @@ void main() {
         const margin = PitchCarsConfig.trackWidthWorld / 2;
         const slack = 1e-6;
 
-        void expectMargin(Waypoint w, dynamic viewport) {
+        void expectMargin(Waypoint w, WorldRect viewport) {
           expect(w.x, greaterThanOrEqualTo(viewport.left + margin - slack));
           expect(w.x, lessThanOrEqualTo(viewport.right - margin + slack));
           expect(w.y, greaterThanOrEqualTo(viewport.top + margin - slack));
@@ -347,28 +348,6 @@ void main() {
 
         expectMargin(track.waypoints.first, firstViewport);
         expectMargin(track.waypoints.last, lastViewport);
-      }
-    });
-
-    test(
-        'starting-grid car positions stay on the board, not just the '
-        'centerline', () {
-      for (final board in [straightRow(2), straightRow(3), zigzag()]) {
-        final track = TrackGenerator.generate(
-          slices: board.slices,
-          random: math.Random(8),
-        );
-        final tangent = track.tangentAt(0);
-        final normal = Waypoint(-tangent.y, tangent.x);
-        final start = track.pointAtArclength(0);
-        for (final lane in [-1, 1]) {
-          final offset = lane * PitchCarsConfig.startLaneOffsetWorld;
-          final pos = Waypoint(
-            start.x + normal.x * offset,
-            start.y + normal.y * offset,
-          );
-          expect(onBoard(board, pos), isTrue);
-        }
       }
     });
 

@@ -664,6 +664,25 @@ void main() {
           }
         }
       });
+
+      test('$count cars all spawn fully visible on some phone\'s screen', () {
+        final started = start(count);
+        final sim = started.sim;
+        final coverage = started.board.coverage;
+        for (final car in sim.entities.where((e) => e.kind == 'car')) {
+          // Sample the car's rim, not just its center — a car half off the
+          // edge of its phone is still a bug even if its center is covered.
+          const samples = 8;
+          for (var i = 0; i < samples; i++) {
+            final angle = 2 * math.pi * i / samples;
+            final x = car.x + PitchCarsConfig.carVisualRadius * math.cos(angle);
+            final y = car.y + PitchCarsConfig.carVisualRadius * math.sin(angle);
+            expect(coverage.isCovered(x, y), isTrue,
+                reason: '${car.id} spawns with part of its disc off every '
+                    'phone\'s screen at ($x, $y)');
+          }
+        }
+      });
     }
   });
 
