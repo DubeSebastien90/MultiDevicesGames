@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/track.dart';
-import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
+import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
+import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
+import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
+import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 
 void main() {
   group('PitchTrack — an open two-point track', () {
@@ -80,74 +83,93 @@ void main() {
     });
   });
 
-  group('TrackGenerator — line', () {
-    final board = const WorldRect(0, 0, 40, 10);
+  group('TrackGenerator', () {
+    PhoneSpec phone(String id) => PhoneSpec(
+          phoneId: id,
+          label: 'phone $id',
+          widthMm: 68.58,
+          heightMm: 152.4,
+          bezelMm: 3,
+          dpi: 400,
+          devicePixelRatio: 3,
+          activePxWidth: 1080,
+          activePxHeight: 2400,
+        );
 
-    test('spans from near the left edge to near the right edge', () {
+    /// Three phones placed by hand into an L: p1—p2 side by side, p2—p3
+    /// stacked below p2 — deterministic, so the turn is guaranteed rather
+    /// than hunted for with a random seed.
+    BoardLayout lShape() {
+      final phones = [phone('p1'), phone('p2'), phone('p3')];
+      final plan = BoardPlan(const [
+        PhonePlacement('p1', xMm: 0, yMm: 0),
+        PhonePlacement('p2', xMm: 68.58, yMm: 0),
+        PhonePlacement('p3', xMm: 68.58, yMm: 152.4),
+      ]);
+      return const BoardCompiler().compile(plan, LobbyInfo(phones));
+    }
+
+    BoardLayout straightRow([int count = 3]) {
+      final phones = [for (var i = 0; i < count; i++) phone('p${i + 1}')];
+      return const BoardCompiler()
+          .compile(Layouts.row(phones), LobbyInfo(phones));
+    }
+
+    test('closed is always false', () {
+      final board = straightRow();
       final track = TrackGenerator.generate(
-        topology: PitchTrackTopology.line,
-        board: board,
+        slices: board.slices,
         random: math.Random(1),
       );
       expect(track.closed, isFalse);
-      expect(track.waypoints.first.x, lessThan(board.left + 5));
-      expect(track.waypoints.last.x, greaterThan(board.right - 5));
     });
 
-    test('is never a straight horizontal line', () {
+    test('follows the chain order, not the order slices were passed in', () {
+      final board = lShape();
+      // Fed in an order that does not match the physical chain — recovery
+      // must not depend on input order.
+      final shuffled = [
+        board.slices.firstWhere((s) => s.phoneId == 'p3'),
+        board.slices.firstWhere((s) => s.phoneId == 'p1'),
+        board.slices.firstWhere((s) => s.phoneId == 'p2'),
+      ];
       final track = TrackGenerator.generate(
-        topology: PitchTrackTopology.line,
-        board: board,
+        slices: shuffled,
+        random: math.Random(1),
+      );
+
+      final p1 = board.slices.firstWhere((s) => s.phoneId == 'p1').viewport;
+      final p3 = board.slices.firstWhere((s) => s.phoneId == 'p3').viewport;
+      final endpoints = [track.waypoints.first, track.waypoints.last];
+      // The chain has two valid directions (p1->p3 or p3->p1) — either is
+      // correct, so check both ends are the outer phones, not which is
+      // first.
+      expect(endpoints.any((w) => p1.contains(w.x, w.y)), isTrue);
+      expect(endpoints.any((w) => p3.contains(w.x, w.y)), isTrue);
+    });
+
+    test('a straight row stays within the board coverage', () {
+      final board = straightRow();
+      final track = TrackGenerator.generate(
+        slices: board.slices,
         random: math.Random(2),
       );
-      final ys = track.waypoints.map((w) => w.y).toSet();
-      expect(ys.length, greaterThan(1),
-          reason: 'a track whose waypoints share one y is a straight line');
-    });
-
-    test('stays within the board vertically', () {
-      final track = TrackGenerator.generate(
-        topology: PitchTrackTopology.line,
-        board: board,
-        random: math.Random(3),
-      );
       for (final w in track.waypoints) {
-        expect(w.y, inInclusiveRange(board.top, board.bottom));
+        expect(board.coverage.isCovered(w.x, w.y), isTrue);
       }
     });
 
-    test('handles narrow boards without throwing', () {
-      final narrowBoard = const WorldRect(0, 0, 40, 2);
-      expect(
-        () => TrackGenerator.generate(
-          topology: PitchTrackTopology.line,
-          board: narrowBoard,
-          random: math.Random(4),
-        ),
-        returnsNormally,
-      );
-    });
-  });
-
-  group('TrackGenerator — loop', () {
-    final board = const WorldRect(0, 0, 30, 30);
-
-    test('is closed', () {
+    test(
+        'an L-shaped chain turns the corner instead of cutting across the '
+        'missing square', () {
+      final board = lShape();
       final track = TrackGenerator.generate(
-        topology: PitchTrackTopology.loop,
-        board: board,
-        random: math.Random(1),
+        slices: board.slices,
+        random: math.Random(3),
       );
-      expect(track.closed, isTrue);
-    });
-
-    test('rings the board center with a hollow middle', () {
-      final track = TrackGenerator.generate(
-        topology: PitchTrackTopology.loop,
-        board: board,
-        random: math.Random(1),
-      );
-      expect(track.isOnTrack(board.centerX, board.centerY), isFalse);
+      for (final w in track.waypoints) {
+        expect(board.coverage.isCovered(w.x, w.y), isTrue);
+      }
     });
   });
 }

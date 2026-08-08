@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../sdk/contract/sim.dart' show PhoneSlice;
+import '../../sdk/layout/board_links.dart';
 import '../../sdk/model/world_rect.dart';
 import 'pitch_cars_config.dart';
 
@@ -140,75 +142,107 @@ class PitchTrack {
   }
 }
 
-/// Builds a random [PitchTrack] for a compiled board.
+/// Builds a random [PitchTrack] that follows the phones' physical chain.
 class TrackGenerator {
   const TrackGenerator._();
 
   static PitchTrack generate({
-    required PitchTrackTopology topology,
-    required WorldRect board,
+    required List<PhoneSlice> slices,
     required math.Random random,
     double widthWorld = PitchCarsConfig.trackWidthWorld,
-  }) =>
-      topology == PitchTrackTopology.line
-          ? _line(board, random, widthWorld)
-          : _loop(board, random, widthWorld);
+  }) {
+    assert(slices.length >= 2, 'a track needs at least two phones');
+    final chain = _recoverChainOrder(slices);
+    final markers = BoardLinks.of(chain);
+    final seams = [
+      for (var i = 0; i < chain.length - 1; i++)
+        _seamPoint(markers, chain[i].phoneId, chain[i + 1].phoneId),
+    ];
 
-  /// A winding path from near the left edge to near the right edge. A forced
-  /// sine sweep plus jitter guarantees it is never straight.
-  static PitchTrack _line(WorldRect board, math.Random random, double width) {
-    final margin = width;
-    final usableHalfHeight =
-        math.max((board.height - width) / 2, width / 2);
-    final amplitude =
-        math.min(usableHalfHeight, PitchCarsConfig.lineAmplitudeWorld);
-    const segments = 6;
+    final start = _outerPoint(chain.first.viewport, seams.first);
+    final end = _outerPoint(chain.last.viewport, seams.last);
+    final waypoints = [start, ...seams, end];
 
-    final waypoints = <Waypoint>[];
-    for (var i = 0; i <= segments; i++) {
-      final t = i / segments;
-      final x = board.left + margin + t * (board.width - margin * 2);
-      final sweep = math.sin(t * math.pi * 2) * amplitude;
-      final jitter = (random.nextDouble() * 2 - 1) * amplitude * 0.25;
-      final lo = board.top + width / 2;
-      final hi = board.bottom - width / 2;
-      final minClamp = math.min(lo, hi);
-      final maxClamp = math.max(lo, hi);
-      final y = (board.centerY + sweep + jitter).clamp(minClamp, maxClamp);
-      waypoints.add(Waypoint(x, y));
-    }
-    return PitchTrack(waypoints: waypoints, widthWorld: width, closed: false);
+    return PitchTrack(waypoints: waypoints, widthWorld: widthWorld, closed: false);
   }
 
-  /// A ring inscribed in the board, with a hollow middle — the "donut".
+  /// Recovers the phones in physical connection order from the compiled,
+  /// reading-order slice list, using [BoardLinks] — the same adjacency the
+  /// connector stripes are drawn from — rather than re-deriving it by hand.
+  static List<PhoneSlice> _recoverChainOrder(List<PhoneSlice> slices) {
+    if (slices.length <= 1) return slices;
+    final byId = {for (final s in slices) s.phoneId: s};
+    final neighbors = <String, List<String>>{
+      for (final s in slices) s.phoneId: <String>[],
+    };
+    for (final v in BoardLinks.explain(slices)) {
+      if (!v.joined) continue;
+      neighbors[v.aId]!.add(v.bId);
+      neighbors[v.bId]!.add(v.aId);
+    }
+
+    // One end of the chain has exactly one neighbour. Falls back to any
+    // node if none does, which keeps a malformed (non-`Layouts.path`) board
+    // from throwing here rather than producing a track.
+    final startId = neighbors.entries
+        .firstWhere((e) => e.value.length <= 1, orElse: () => neighbors.entries.first)
+        .key;
+
+    final ordered = <PhoneSlice>[];
+    final visited = <String>{};
+    var current = startId;
+    while (true) {
+      ordered.add(byId[current]!);
+      visited.add(current);
+      final next =
+          neighbors[current]!.firstWhere((id) => !visited.contains(id), orElse: () => '');
+      if (next.isEmpty) break;
+      current = next;
+    }
+
+    // Defensive: a disconnected board (should never happen for
+    // `Layouts.path`) still produces a track instead of throwing.
+    for (final s in slices) {
+      if (!visited.contains(s.phoneId)) ordered.add(s);
+    }
+    return ordered;
+  }
+
+  /// The midpoint of the shared edge between two joined phones — the same
+  /// geometry the connector stripes are drawn from, read back off
+  /// [BoardLinks.of]'s markers rather than recomputed independently.
+  static Waypoint _seamPoint(List<EdgeMarker> markers, String aId, String bId) {
+    // `BoardLinks.of` emits one marker per phone at that phone's own facing
+    // edge, not a single shared line — with a real bezel gap between phones
+    // (the common case), those two edges sit a few millimetres apart, and
+    // averaging both lands the seam in the dead space between screens,
+    // covered by neither. Using [aId]'s own edge instead keeps the seam on
+    // an actual screen; when the boards are flush (no gap) the two edges
+    // coincide anyway, so this is a no-op there.
+    for (final m in markers) {
+      if (m.phoneId == aId && m.partnerId == bId) {
+        return Waypoint((m.x1 + m.x2) / 2, (m.y1 + m.y2) / 2);
+      }
+    }
+    throw StateError('no join marker between $aId and $bId');
+  }
+
+  /// A point on [viewport]'s own boundary, on the opposite side from
+  /// [towardSeam] — reflecting the seam through the phone's center and
+  /// clamping to its rectangle. Used for the track's very start and end,
+  /// which have no seam on one side.
   ///
-  /// The radius wobbles on a smooth, low-frequency sine rather than per-vertex
-  /// noise, and its amplitude is tied to the track's own width rather than to
-  /// the radius. Independent ±8%-of-radius jitter at each vertex read as
-  /// random on paper but produced 45-60° kinks between neighbouring segments
-  /// on a board this size — turns far sharper than any straight flick can
-  /// follow inside a ribbon only [width] across, which left cars unable to
-  /// make progress at all (a full-power tangent shot went off the track from
-  /// the centerline, was reset, and repeated forever). A couple of gentle
-  /// lobes keeps the ring from reading as a perfect circle while staying
-  /// drivable.
-  static PitchTrack _loop(WorldRect board, math.Random random, double width) {
-    final maxRadius = math.min(board.width, board.height) / 2 - width;
-    final radius = math.max(maxRadius, width);
-    const segments = 24;
-    final lobes = 2 + random.nextInt(2);
-    final phase = random.nextDouble() * math.pi * 2;
-    final wobble = math.min(width * 0.3, radius * 0.15);
-
-    final waypoints = <Waypoint>[];
-    for (var i = 0; i < segments; i++) {
-      final angle = i / segments * math.pi * 2;
-      final r = radius + math.sin(angle * lobes + phase) * wobble;
-      waypoints.add(Waypoint(
-        board.centerX + math.cos(angle) * r,
-        board.centerY + math.sin(angle) * r,
-      ));
-    }
-    return PitchTrack(waypoints: waypoints, widthWorld: width, closed: true);
+  /// Inset by [_edgeEpsilon] on the far side: a seam that sits exactly on a
+  /// phone's near edge (the common flush-board case) reflects to exactly its
+  /// far edge, which `WorldRect.contains` excludes (`x < right`, not `<=`).
+  static Waypoint _outerPoint(WorldRect viewport, Waypoint towardSeam) {
+    const eps = _edgeEpsilon;
+    final x = (2 * viewport.centerX - towardSeam.x)
+        .clamp(viewport.left, viewport.right - eps);
+    final y = (2 * viewport.centerY - towardSeam.y)
+        .clamp(viewport.top, viewport.bottom - eps);
+    return Waypoint(x, y);
   }
+
+  static const double _edgeEpsilon = 1e-6;
 }
