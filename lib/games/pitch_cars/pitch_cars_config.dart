@@ -50,4 +50,13 @@ class PitchCarsConfig {
   static const int finishLineRows = 4;
   static const int finishLineColorA = 0xFF000000;
   static const int finishLineColorB = 0xFFFFFFFF;
+
+  /// Points the race winner nets in a full 8-player race, matching
+  /// `ReactionConfig.bestScore`.
+  static const int bestScore = 30;
+
+  /// Must match `PitchCarsGame.manifest.players.max` — the scoring ladder's
+  /// fixed size, so a small race occupies its top slots instead of
+  /// stretching to fill it.
+  static const int maxPlayers = 8;
 }

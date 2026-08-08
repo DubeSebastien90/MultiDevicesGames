@@ -21,7 +21,7 @@ extension _TrackBuilding on PitchCarsSim {
   void _placeCars() {
     for (var i = 0; i < _order.length; i++) {
       final pos = _startPositionFor(i);
-      addBody(
+      _fixtureOf[_order[i]] = addBody(
         _order[i],
         'car',
         BodyDef(

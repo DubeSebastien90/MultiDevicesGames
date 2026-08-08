@@ -12,7 +12,9 @@ class _CarContactListener extends ContactListener {
     if (a is String &&
         b is String &&
         sim._order.contains(a) &&
-        sim._order.contains(b)) {
+        sim._order.contains(b) &&
+        !sim._finished.contains(a) &&
+        !sim._finished.contains(b)) {
       sim._lastHitBy[a] = b;
       sim._lastHitBy[b] = a;
       sim._lastHitAt[a] = sim._sinceLaunch;

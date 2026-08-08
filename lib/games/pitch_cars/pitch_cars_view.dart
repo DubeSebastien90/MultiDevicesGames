@@ -15,6 +15,7 @@ class PitchCarsView extends ShapeView {
   final String phoneId;
 
   final _aim = Paint()..style = PaintingStyle.stroke;
+  final _finishedFill = Paint();
 
   /// Pool cue, not slingshot: the car itself never moves while aiming
   /// (`PitchCarsSim` holds it at its pre-turn position throughout the
@@ -24,6 +25,7 @@ class PitchCarsView extends ShapeView {
   /// how far back the pull has gone.
   @override
   void renderForeground(Canvas canvas, Frame frame) {
+    _drawFinished(canvas, frame);
     _drawTurnHighlight(canvas, frame);
 
     final currentTurn = frame.sharedState['currentTurn'] as String?;
@@ -65,6 +67,23 @@ class PitchCarsView extends ShapeView {
       final wingAngle = dirAngle + math.pi - sign * headAngle;
       final wing = tip + Offset(math.cos(wingAngle), math.sin(wingAngle)) * headLen;
       canvas.drawLine(tip, wing, _aim);
+    }
+  }
+
+  /// Grey out a car once it's crossed the finish line — a flat overlay
+  /// painted on top of its own colour, since a car's colour is baked into
+  /// its entity props at creation and never mutates per-frame.
+  void _drawFinished(Canvas canvas, Frame frame) {
+    for (final entry in frame.sharedState.entries) {
+      if (!entry.key.startsWith('finished_') || entry.value != true) continue;
+      final car = frame.byId(entry.key.substring('finished_'.length));
+      if (car == null) continue;
+      _finishedFill.color = const Color(0xB2707070);
+      canvas.drawCircle(
+        Offset(car.x, car.y),
+        car.propDouble(ShapeProps.radius),
+        _finishedFill,
+      );
     }
   }
 

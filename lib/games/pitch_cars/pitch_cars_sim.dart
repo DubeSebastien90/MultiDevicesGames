@@ -51,6 +51,7 @@ class PitchCarsSim extends Forge2DGameSim {
   late final List<String> _order;
   late final Map<String, PlayerColor> _colorOf;
   final _trackEntities = <Entity>[];
+  final _fixtureOf = <String, Fixture>{};
 
   late int _currentIndex = 0;
   String get currentTurn => _order[_currentIndex];
@@ -73,14 +74,20 @@ class PitchCarsSim extends Forge2DGameSim {
   Vector2? _stallAnchor;
   Duration _sinceStallAnchor = Duration.zero;
 
-  String? _winner;
+  /// Ids in the order they crossed the finish line. The last unfinished car
+  /// is appended automatically once it's the only one left — there's no
+  /// point making it prove what's already certain.
+  final _finished = <String>{};
+  final _finishOrder = <String>[];
+  bool get _roundOver => _finished.length >= _order.length;
   bool _awarded = false;
+  GameOutcome? _outcome;
 
   Body carOf(String id) => bodyOf(id)!;
 
   @override
   void onTouch(TouchEvent touch) {
-    if (_winner != null || _moving) return;
+    if (_roundOver || _moving) return;
     final car = carOf(currentTurn);
     final p = Vector2(touch.worldX, touch.worldY);
 
@@ -105,7 +112,13 @@ class PitchCarsSim extends Forge2DGameSim {
   @override
   void step(double dt) {
     super.step(dt);
-    if (_winner != null) return;
+    if (_roundOver) {
+      if (!_awarded) {
+        _awarded = true;
+        _awardPoints();
+      }
+      return;
+    }
 
     _resolveOffTrack();
     _updateProgress();
@@ -115,6 +128,7 @@ class PitchCarsSim extends Forge2DGameSim {
       _sinceLaunch += elapsed;
       var maxSpeed = 0.0;
       for (final id in _order) {
+        if (_finished.contains(id)) continue;
         final speed = carOf(id).linearVelocity.length;
         if (speed > maxSpeed) maxSpeed = speed;
       }
@@ -142,14 +156,51 @@ class PitchCarsSim extends Forge2DGameSim {
       }
     }
 
-    if (_winner != null && !_awarded) {
-      _awarded = true;
-      context.scores.award(_winner!, 1);
+  }
+
+  /// Ranks against a fixed 8-slot ladder (pitch_cars' max field size) rather
+  /// than the actual field size — a small race just occupies the ladder's
+  /// top slots instead of stretching to fill it. That keeps the cost of
+  /// each rank step constant (~bestScore/7) regardless of N, instead of the
+  /// full 30-to-1 spread collapsing into however few placements a small
+  /// race has. Means the winner doesn't always net the full [bestScore]
+  /// like reaction's winner does — beating fewer opponents is worth less.
+  ///
+  /// Also builds [_outcome] here, once, right when the points themselves are
+  /// decided — `outcome` is polled every tick, so it must not rebuild its
+  /// `lines` map each time it's read.
+  void _awardPoints() {
+    final maxLast = PitchCarsConfig.maxPlayers - 1;
+    final last = _order.length - 1;
+    final lines = <String, String>{};
+    for (var i = 0; i < _finishOrder.length; i++) {
+      final id = _finishOrder[i];
+      final points = math.max(
+        1,
+        (PitchCarsConfig.bestScore * (last - i) / maxLast).round(),
+      );
+      context.scores.award(id, points);
+      lines[id] = '${_placeLabel(i + 1)} — +$points pts';
     }
+    _outcome = GameOutcome.contest(
+      winners: {_finishOrder.first},
+      summary: '$_winnerLabel wins the race',
+      lines: lines,
+    );
+  }
+
+  static String _placeLabel(int place) {
+    if (place % 100 >= 11 && place % 100 <= 13) return '${place}th';
+    return switch (place % 10) {
+      1 => '${place}st',
+      2 => '${place}nd',
+      3 => '${place}rd',
+      _ => '${place}th',
+    };
   }
 
   String get _winnerLabel =>
-      context.slices.firstWhere((s) => s.phoneId == _winner).label;
+      context.slices.firstWhere((s) => s.phoneId == _finishOrder.first).label;
 
   @override
   Iterable<Entity> get entities sync* {
@@ -160,8 +211,9 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   Map<String, Object?> get sharedState => {
-    'currentTurn': _winner == null ? currentTurn : null,
-    'winner': _winner,
+    'currentTurn': _roundOver ? null : currentTurn,
+    'winner': _finishOrder.isEmpty ? null : _finishOrder.first,
+    for (final id in _order) 'finished_$id': _finished.contains(id),
     for (final id in _order)
       'progress_$id': track.length < 1e-9
           ? 0.0
@@ -178,9 +230,7 @@ class PitchCarsSim extends Forge2DGameSim {
   };
 
   @override
-  GameOutcome? get outcome => _winner == null
-      ? null
-      : GameOutcome.won(summary: '$_winnerLabel wins the race');
+  GameOutcome? get outcome => _outcome;
 
   @override
   void reset() {
@@ -188,8 +238,10 @@ class PitchCarsSim extends Forge2DGameSim {
     _draggingPhoneId = null;
     _pull = null;
     _moving = false;
-    _winner = null;
+    _finished.clear();
+    _finishOrder.clear();
     _awarded = false;
+    _outcome = null;
     _sinceLaunch = Duration.zero;
     _atRest = Duration.zero;
     _stallAnchor = null;
@@ -204,6 +256,7 @@ class PitchCarsSim extends Forge2DGameSim {
         ..linearVelocity = Vector2.zero()
         ..angularVelocity = 0
         ..setAwake(true);
+      _fixtureOf[_order[i]]?.setSensor(false);
       _lastOnTrack[_order[i]] = car.position.clone();
       _rawProgress[_order[i]] = track.progressAt(
         car.position.x,

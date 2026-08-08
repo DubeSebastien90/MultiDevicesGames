@@ -611,6 +611,7 @@ class HostSession extends ChangeNotifier {
       _phase = HostPhase.lobby;
       _game = null;
       _layout = null;
+      _broadcastLobby();
       notifyListeners();
       return;
     }

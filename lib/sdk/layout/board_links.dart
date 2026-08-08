@@ -303,34 +303,49 @@ class BoardLinks {
 
     // Side by side: the shared run is the vertical overlap.
     final vOverlap = math.min(ra.bottom, rb.bottom) - math.max(ra.top, rb.top);
+    LinkVerdict? sideBySideFailure;
     if (vOverlap > _epsilon) {
       final gap = separation(ra.left, ra.right, rb.left, rb.right);
-      if (gap >= -_epsilon && gap <= maxJoinGap) {
+      // A negative gap means the two phones overlap — as valid a sign of
+      // "these are touching" as a small positive gap, and just as likely to
+      // come from real-world imprecision (measured bezel/DPI drift, a hand
+      // placing the phone windows a hair off). Only rejected past the same
+      // tolerance a genuine gap gets, not at the first sub-micron of overlap.
+      if (gap >= -maxJoinGap && gap <= maxJoinGap) {
         return LinkVerdict(
           aId: a.phoneId, bId: b.phoneId, axis: 'sideBySide',
           overlap: vOverlap, gap: gap, joined: true, reason: 'joined',
         );
       }
-      return no('sideBySide', vOverlap, gap,
+      sideBySideFailure = no('sideBySide', vOverlap, gap,
           'gap ${gap.toStringAsFixed(2)} exceeds '
           '${maxJoinGap.toStringAsFixed(2)}');
     }
 
-    // Stacked: the shared run is the horizontal overlap.
+    // Stacked: the shared run is the horizontal overlap. Tried even when the
+    // pair also has a sliver of vertical overlap (e.g. from mm-to-world
+    // rounding drift) that failed the side-by-side gap test above — a pair
+    // can only ever be a false positive on one axis at a time, never both,
+    // so falling through here costs nothing and rescues genuinely stacked
+    // pairs that would otherwise be wrongly reported as unjoined.
     final hOverlap = math.min(ra.right, rb.right) - math.max(ra.left, rb.left);
     if (hOverlap > _epsilon) {
       final gap = separation(ra.top, ra.bottom, rb.top, rb.bottom);
-      if (gap >= -_epsilon && gap <= maxJoinGap) {
+      // See the side-by-side branch above: a small overlap is tolerated the
+      // same as a small gap.
+      if (gap >= -maxJoinGap && gap <= maxJoinGap) {
         return LinkVerdict(
           aId: a.phoneId, bId: b.phoneId, axis: 'stacked',
           overlap: hOverlap, gap: gap, joined: true, reason: 'joined',
         );
       }
+      if (sideBySideFailure != null) return sideBySideFailure;
       return no('stacked', hOverlap, gap,
           'gap ${gap.toStringAsFixed(2)} exceeds '
           '${maxJoinGap.toStringAsFixed(2)}');
     }
 
+    if (sideBySideFailure != null) return sideBySideFailure;
     return no('neither', 0, double.infinity, 'no shared edge on either axis');
   }
 

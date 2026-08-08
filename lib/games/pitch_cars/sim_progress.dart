@@ -15,6 +15,7 @@ extension _Progress on PitchCarsSim {
   /// resting at, so it's never off-track.
   void _resolveOffTrack() {
     for (final id in _order) {
+      if (_finished.contains(id)) continue;
       final car = carOf(id);
       final pos = car.position;
       final sinceHit = _sinceLaunch - (_lastHitAt[id] ?? Duration.zero);
@@ -36,7 +37,7 @@ extension _Progress on PitchCarsSim {
       final reference = selfFault
           ? _preTurnPosition
           : (_lastOnTrack[id] ?? _preTurnPosition);
-      final resetTo = reference.clone();
+      final resetTo = _clearOfOthers(id, reference.clone());
       car
         ..setTransform(resetTo, car.angle)
         ..linearVelocity = Vector2.zero()
@@ -44,6 +45,28 @@ extension _Progress on PitchCarsSim {
       _lastOnTrack[id] = resetTo.clone();
       _lastHitBy[id] = null;
     }
+  }
+
+  /// Pushes [target] clear of every other live car currently sitting within
+  /// touching distance — a hit's two participants are, by construction,
+  /// snapshotted mid-collision (that's what made them register as a hit),
+  /// so restoring both to their own pre-hit spot recreates that exact
+  /// overlap. Left alone, Forge2D "resolves" it with its own separation
+  /// impulse next tick — a second, uncontrolled shove that leaves the car
+  /// somewhere other than where this reset just placed it.
+  Vector2 _clearOfOthers(String id, Vector2 target) {
+    const minGap = PitchCarsConfig.carRadius * 2 + 1e-4;
+    for (final other in _order) {
+      if (other == id || _finished.contains(other)) continue;
+      final otherPos = carOf(other).position;
+      final delta = target - otherPos;
+      final dist = delta.length;
+      if (dist < minGap) {
+        final direction = dist < 1e-9 ? Vector2(1, 0) : delta / dist;
+        target = otherPos + direction * minGap;
+      }
+    }
+    return target;
   }
 
   /// Called from the contact listener the instant a hit is detected, while
@@ -62,6 +85,7 @@ extension _Progress on PitchCarsSim {
   /// distinguishable from "still at the start".
   void _updateProgress() {
     for (final id in _order) {
+      if (_finished.contains(id)) continue;
       final pos = carOf(id).position;
       final raw = track.progressAt(pos.x, pos.y);
       final prevRaw = _rawProgress[id] ?? 0.0;
@@ -82,12 +106,25 @@ extension _Progress on PitchCarsSim {
   void _checkFinish() {
     final threshold = track.length - _finishBandLen / 2 - 1e-6;
     for (final id in _order) {
-      if (_progress[id]! < threshold) continue;
+      if (_finished.contains(id) || _progress[id]! < threshold) continue;
       final pos = carOf(id).position;
-      if (_inFinishZone(track.progressAt(pos.x, pos.y))) {
-        _winner = id;
-        return;
-      }
+      if (_inFinishZone(track.progressAt(pos.x, pos.y))) _markFinished(id);
+    }
+  }
+
+  /// Marks a car finished: it stops taking turns, its fixture becomes a
+  /// sensor (still visible, no more collision response), and it's greyed
+  /// out for the rest of the round. If that leaves exactly one car left,
+  /// there's nothing left to determine — it's already last.
+  void _markFinished(String id) {
+    _finished.add(id);
+    _finishOrder.add(id);
+    _fixtureOf[id]?.setSensor(true);
+    if (_order.length - _finished.length == 1) {
+      final last = _order.firstWhere((o) => !_finished.contains(o));
+      _finished.add(last);
+      _finishOrder.add(last);
+      _fixtureOf[last]?.setSensor(true);
     }
   }
 
@@ -95,7 +132,10 @@ extension _Progress on PitchCarsSim {
     _moving = false;
     _checkFinish();
     _clearHitLedger();
-    _currentIndex = (_currentIndex + 1) % _order.length;
+    if (_roundOver) return;
+    do {
+      _currentIndex = (_currentIndex + 1) % _order.length;
+    } while (_finished.contains(currentTurn));
     _preTurnPosition = carOf(currentTurn).position.clone();
   }
 }
