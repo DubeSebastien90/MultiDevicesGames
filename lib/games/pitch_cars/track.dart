@@ -159,9 +159,9 @@ class TrackGenerator {
     final control = <Waypoint>[];
     for (var i = 0; i < chain.length; i++) {
       final viewport = chain[i].viewport;
-      final entry = i == 0 ? _outerPoint(viewport, seams[0]) : seams[i - 1];
+      final entry = i == 0 ? _outerPoint(viewport, seams[0], widthWorld) : seams[i - 1];
       final exit =
-          i == chain.length - 1 ? _outerPoint(viewport, seams[i - 1]) : seams[i];
+          i == chain.length - 1 ? _outerPoint(viewport, seams[i - 1], widthWorld) : seams[i];
       // First and last phone are treated as straight-through for amplitude
       // purposes — there is no second seam on that phone to be "adjacent
       // to", so the corner classification below does not apply to them.
@@ -260,19 +260,29 @@ class TrackGenerator {
   /// clamping to its rectangle. Used for the track's very start and end,
   /// which have no seam on one side.
   ///
-  /// Inset by [_edgeEpsilon] on the far side: a seam that sits exactly on a
-  /// phone's near edge (the common flush-board case) reflects to exactly its
-  /// far edge, which `WorldRect.contains` excludes (`x < right`, not `<=`).
-  static Waypoint _outerPoint(WorldRect viewport, Waypoint towardSeam) {
-    const eps = _edgeEpsilon;
-    final x = (2 * viewport.centerX - towardSeam.x)
-        .clamp(viewport.left, viewport.right - eps);
-    final y = (2 * viewport.centerY - towardSeam.y)
-        .clamp(viewport.top, viewport.bottom - eps);
+  /// `Layouts.path` always joins two phones corner to corner, so the seam
+  /// this reflects sits near a corner of the phone by construction — the
+  /// reflected point lands near the *opposite* corner. Clamped inward by
+  /// half the track's own width on every axis (not just kept inside the
+  /// rectangle), so the whole track surface at this end — and anything
+  /// riding near it, like the starting grid's lane offset — stays on this
+  /// phone's screen instead of landing on or past its edge. Collapses
+  /// toward the phone's own center on an axis too narrow for the margin,
+  /// rather than producing an invalid (min > max) clamp range.
+  static Waypoint _outerPoint(
+    WorldRect viewport,
+    Waypoint towardSeam,
+    double widthWorld,
+  ) {
+    final margin = widthWorld / 2;
+    final left = math.min(viewport.left + margin, viewport.centerX);
+    final right = math.max(viewport.right - margin, viewport.centerX);
+    final top = math.min(viewport.top + margin, viewport.centerY);
+    final bottom = math.max(viewport.bottom - margin, viewport.centerY);
+    final x = (2 * viewport.centerX - towardSeam.x).clamp(left, right);
+    final y = (2 * viewport.centerY - towardSeam.y).clamp(top, bottom);
     return Waypoint(x, y);
   }
-
-  static const double _edgeEpsilon = 1e-6;
 
   static _Edge _nearestEdge(Waypoint p, WorldRect v) {
     final dl = (p.x - v.left).abs();

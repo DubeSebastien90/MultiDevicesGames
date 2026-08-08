@@ -315,6 +315,63 @@ void main() {
       expect(longTrack.length, greaterThan(shortTrack.length));
     });
 
+    test(
+        'the start and finish anchor points sit at least half the track '
+        'width from every edge of their own phone', () {
+      for (final board in [straightRow(3), lShape(), zigzag()]) {
+        final track = TrackGenerator.generate(
+          slices: board.slices,
+          random: math.Random(7),
+        );
+        final firstPhoneId = board.slices
+            .firstWhere((s) =>
+                (s.viewport.contains(track.waypoints.first.x, track.waypoints.first.y)))
+            .phoneId;
+        final lastPhoneId = board.slices
+            .firstWhere((s) =>
+                (s.viewport.contains(track.waypoints.last.x, track.waypoints.last.y)))
+            .phoneId;
+        final firstViewport =
+            board.slices.firstWhere((s) => s.phoneId == firstPhoneId).viewport;
+        final lastViewport =
+            board.slices.firstWhere((s) => s.phoneId == lastPhoneId).viewport;
+        const margin = PitchCarsConfig.trackWidthWorld / 2;
+        const slack = 1e-6;
+
+        void expectMargin(Waypoint w, dynamic viewport) {
+          expect(w.x, greaterThanOrEqualTo(viewport.left + margin - slack));
+          expect(w.x, lessThanOrEqualTo(viewport.right - margin + slack));
+          expect(w.y, greaterThanOrEqualTo(viewport.top + margin - slack));
+          expect(w.y, lessThanOrEqualTo(viewport.bottom - margin + slack));
+        }
+
+        expectMargin(track.waypoints.first, firstViewport);
+        expectMargin(track.waypoints.last, lastViewport);
+      }
+    });
+
+    test(
+        'starting-grid car positions stay on the board, not just the '
+        'centerline', () {
+      for (final board in [straightRow(2), straightRow(3), zigzag()]) {
+        final track = TrackGenerator.generate(
+          slices: board.slices,
+          random: math.Random(8),
+        );
+        final tangent = track.tangentAt(0);
+        final normal = Waypoint(-tangent.y, tangent.x);
+        final start = track.pointAtArclength(0);
+        for (final lane in [-1, 1]) {
+          final offset = lane * PitchCarsConfig.startLaneOffsetWorld;
+          final pos = Waypoint(
+            start.x + normal.x * offset,
+            start.y + normal.y * offset,
+          );
+          expect(onBoard(board, pos), isTrue);
+        }
+      }
+    });
+
     test('a very narrow corner phone does not throw', () {
       final narrow = PhoneSpec(
         phoneId: 'p2',
