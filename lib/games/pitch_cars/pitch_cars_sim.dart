@@ -305,50 +305,53 @@ class PitchCarsSim extends Forge2DGameSim {
   @override
   void step(double dt) {
     super.step(dt);
+    // Already awarded below, the same tick `_endTurn` set it — nothing left.
     if (_winner != null) return;
 
     _resolveOffTrack();
     _updateProgress();
 
+    if (_moving) {
+      final elapsed = Duration(microseconds: (dt * 1e6).round());
+      _sinceLaunch += elapsed;
+      var maxSpeed = 0.0;
+      for (final id in _order) {
+        final speed = carOf(id).linearVelocity.length;
+        if (speed > maxSpeed) maxSpeed = speed;
+      }
+      _atRest = maxSpeed < PitchCarsConfig.restSpeed
+          ? _atRest + elapsed
+          : Duration.zero;
+
+      // A car spinning in place can keep re-injecting just enough linear
+      // velocity through contact friction to stay above restSpeed forever —
+      // angular damping (see PitchCarsConfig.carAngularDamping) is meant to
+      // stop that at the source, but this watchdog is the guarantee: track
+      // actual translation, independent of velocity, and force the turn to
+      // end if the car hasn't gone anywhere in a while regardless of why.
+      final currentPos = carOf(currentTurn).position;
+      if (_stallAnchor == null ||
+          currentPos.distanceTo(_stallAnchor!) >
+              PitchCarsConfig.stallDisplacement) {
+        _stallAnchor = currentPos.clone();
+        _sinceStallAnchor = Duration.zero;
+      } else {
+        _sinceStallAnchor += elapsed;
+      }
+
+      if (_atRest >= PitchCarsConfig.restDelay ||
+          _sinceLaunch >= PitchCarsConfig.maxFlightTime ||
+          _sinceStallAnchor >= PitchCarsConfig.stallTimeout) {
+        _endTurn();
+      }
+    }
+
+    // Checked in the same tick `_endTurn` (above) may set `_winner` — nothing
+    // guarantees another `step` call, since callers stop the moment
+    // `outcome` is non-null.
     if (_winner != null && !_awarded) {
       _awarded = true;
       context.scores.award(_winner!, 1);
-      return;
-    }
-
-    if (!_moving) return;
-
-    final elapsed = Duration(microseconds: (dt * 1e6).round());
-    _sinceLaunch += elapsed;
-    var maxSpeed = 0.0;
-    for (final id in _order) {
-      final speed = carOf(id).linearVelocity.length;
-      if (speed > maxSpeed) maxSpeed = speed;
-    }
-    _atRest = maxSpeed < PitchCarsConfig.restSpeed
-        ? _atRest + elapsed
-        : Duration.zero;
-
-    // A car spinning in place can keep re-injecting just enough linear
-    // velocity through contact friction to stay above restSpeed forever —
-    // angular damping (see PitchCarsConfig.carAngularDamping) is meant to
-    // stop that at the source, but this watchdog is the guarantee: track
-    // actual translation, independent of velocity, and force the turn to
-    // end if the car hasn't gone anywhere in a while regardless of why.
-    final currentPos = carOf(currentTurn).position;
-    if (_stallAnchor == null ||
-        currentPos.distanceTo(_stallAnchor!) >
-            PitchCarsConfig.stallDisplacement) {
-      _stallAnchor = currentPos.clone();
-      _sinceStallAnchor = Duration.zero;
-    } else {
-      _sinceStallAnchor += elapsed;
-    }
-
-    if (_atRest >= PitchCarsConfig.restDelay ||
-        _sinceLaunch >= PitchCarsConfig.maxFlightTime ||
-        _sinceStallAnchor >= PitchCarsConfig.stallTimeout) {
-      _endTurn();
     }
   }
 

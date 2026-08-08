@@ -42,9 +42,15 @@ PhoneSpec phone(String id) => PhoneSpec(
   return (sim: sim, board: board, scores: scores);
 }
 
+/// Deliberately under [PitchCarsConfig.maxPull]: full power reliably flies
+/// off a curved track, and a self-fault reset returns the car to the exact
+/// spot it started from — a deterministic bot at max power gets stuck
+/// replaying the same failing shot forever.
+const _flickPower = PitchCarsConfig.maxPull * 0.4;
+
 /// Aims the current turn's car toward the forward tangent of its own
-/// position on the track and releases a full pull, then runs the sim until
-/// the turn advances (or the step budget runs out).
+/// position on the track and releases a moderate pull (see [_flickPower]),
+/// then runs the sim until the turn advances (or the step budget runs out).
 void _flickForward(PitchCarsSim sim) {
   final phoneId = sim.currentTurn;
   final car = sim.entities.firstWhere((e) => e.id == phoneId);
@@ -59,14 +65,14 @@ void _flickForward(PitchCarsSim sim) {
   ));
   sim.onTouch(TouchEvent(
     phoneId: phoneId,
-    worldX: car.x - tangent.x * PitchCarsConfig.maxPull,
-    worldY: car.y - tangent.y * PitchCarsConfig.maxPull,
+    worldX: car.x - tangent.x * _flickPower,
+    worldY: car.y - tangent.y * _flickPower,
     phase: TouchPhase.move,
   ));
   sim.onTouch(TouchEvent(
     phoneId: phoneId,
-    worldX: car.x - tangent.x * PitchCarsConfig.maxPull,
-    worldY: car.y - tangent.y * PitchCarsConfig.maxPull,
+    worldX: car.x - tangent.x * _flickPower,
+    worldY: car.y - tangent.y * _flickPower,
     phase: TouchPhase.up,
   ));
 
@@ -134,10 +140,11 @@ _GraceWindowResult _runGraceWindowScenario({required int holdTicks}) {
   final tangent = sim.track.tangentAt(holdArc);
   final hold = Vector2(holdWp.x, holdWp.y);
   final normal = Vector2(-tangent.y, tangent.x);
-  // p2 sits beside p1 along the tangent for the hit, overlapping it (0.9
-  // world units apart, less than their combined radius of 1.0) so the hit
-  // step's physics registers a real Forge2D contact between them.
-  final p2Touching = Vector2(hold.x + tangent.x * 0.9, hold.y + tangent.y * 0.9);
+  // p2 sits beside p1 along the tangent for the hit, overlapping it (0.4
+  // world units apart, less than their combined physics radius of 0.5 —
+  // 2 * PitchCarsConfig.carRadius — so the hit step's physics registers a
+  // real Forge2D contact between them.
+  final p2Touching = Vector2(hold.x + tangent.x * 0.4, hold.y + tangent.y * 0.4);
   // Once the hit is recorded, p2 is moved well clear of p1 so it does not
   // keep pushing p1 around every subsequent step through overlap
   // resolution — everything from here on should be p1 sitting still.
@@ -245,10 +252,11 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
 
   // The idle-window hit: nothing has been launched, `_moving` is false, and
   // the since-launch clock is frozen at the previous turn's final value. Park
-  // the other car overlapping this one and step once so Forge2D reports a
-  // real contact.
+  // the other car overlapping this one (0.4 world units apart, less than
+  // their combined physics radius of 0.5 — 2 * PitchCarsConfig.carRadius)
+  // and step once so Forge2D reports a real contact.
   other
-    ..setTransform(Vector2(preTurn.x + 0.9, preTurn.y), 0)
+    ..setTransform(Vector2(preTurn.x + 0.4, preTurn.y), 0)
     ..linearVelocity = Vector2.zero()
     ..setAwake(true);
   sim.step(dt);
