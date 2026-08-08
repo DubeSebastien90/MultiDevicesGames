@@ -159,11 +159,32 @@ class TrackGenerator {
         _seamPoint(markers, chain[i].phoneId, chain[i + 1].phoneId),
     ];
 
-    final start = _outerPoint(chain.first.viewport, seams.first);
-    final end = _outerPoint(chain.last.viewport, seams.last);
-    final waypoints = [start, ...seams, end];
+    final control = <Waypoint>[];
+    for (var i = 0; i < chain.length; i++) {
+      final viewport = chain[i].viewport;
+      final entry = i == 0 ? _outerPoint(viewport, seams[0]) : seams[i - 1];
+      final exit =
+          i == chain.length - 1 ? _outerPoint(viewport, seams[i - 1]) : seams[i];
+      // First and last phone are treated as straight-through for amplitude
+      // purposes — there is no second seam on that phone to be "adjacent
+      // to", so the corner classification below does not apply to them.
+      final straightThrough = i == 0 || i == chain.length - 1
+          ? true
+          : _isOpposite(_nearestEdge(entry, viewport), _nearestEdge(exit, viewport));
 
-    return PitchTrack(waypoints: waypoints, widthWorld: widthWorld, closed: false);
+      if (i == 0) control.add(entry);
+      control.add(_offsetWaypoint(
+        entry: entry,
+        exit: exit,
+        viewport: viewport,
+        straightThrough: straightThrough,
+        widthWorld: widthWorld,
+        random: random,
+      ));
+      control.add(exit);
+    }
+
+    return PitchTrack(waypoints: control, widthWorld: widthWorld, closed: false);
   }
 
   /// Recovers the phones in physical connection order from the compiled,
@@ -245,4 +266,91 @@ class TrackGenerator {
   }
 
   static const double _edgeEpsilon = 1e-6;
+
+  static _Edge _nearestEdge(Waypoint p, WorldRect v) {
+    final dl = (p.x - v.left).abs();
+    final dr = (p.x - v.right).abs();
+    final dt = (p.y - v.top).abs();
+    final db = (p.y - v.bottom).abs();
+    final m = math.min(math.min(dl, dr), math.min(dt, db));
+    if (m == dl) return _Edge.left;
+    if (m == dr) return _Edge.right;
+    if (m == dt) return _Edge.top;
+    return _Edge.bottom;
+  }
+
+  static bool _isOpposite(_Edge a, _Edge b) =>
+      (a == _Edge.left && b == _Edge.right) ||
+      (a == _Edge.right && b == _Edge.left) ||
+      (a == _Edge.top && b == _Edge.bottom) ||
+      (a == _Edge.bottom && b == _Edge.top);
+
+  /// A point roughly at the center of the entry-exit chord, nudged
+  /// sideways by a random amount — the "worm" wiggle — clamped so the
+  /// offset, plus half the track's own width, never leaves [viewport].
+  static Waypoint _offsetWaypoint({
+    required Waypoint entry,
+    required Waypoint exit,
+    required WorldRect viewport,
+    required bool straightThrough,
+    required double widthWorld,
+    required math.Random random,
+  }) {
+    final midX = (entry.x + exit.x) / 2;
+    final midY = (entry.y + exit.y) / 2;
+    final dx = exit.x - entry.x;
+    final dy = exit.y - entry.y;
+    final len = math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return Waypoint(midX, midY);
+    final nx = -dy / len;
+    final ny = dx / len;
+
+    final baseAmplitude =
+        straightThrough ? PitchCarsConfig.lineAmplitudeWorld : PitchCarsConfig.cornerAmplitudeWorld;
+    final halfWidth = widthWorld / 2;
+
+    // Catmull-Rom (Task 3) can overshoot its control polygon near a turn,
+    // so the geometric room to wiggle in is halved before it becomes the
+    // cap — headroom for the curve, not just this one point.
+    const safetyFactor = 0.5;
+    final maxPos = _maxOffsetAlong(midX, midY, nx, ny, halfWidth, viewport) * safetyFactor;
+    final maxNeg = _maxOffsetAlong(midX, midY, -nx, -ny, halfWidth, viewport) * safetyFactor;
+    final clampedAmplitude = math.min(baseAmplitude, math.min(maxPos, maxNeg));
+
+    final sign = random.nextBool() ? 1.0 : -1.0;
+    final amount = clampedAmplitude * sign * (0.5 + random.nextDouble() * 0.5);
+    return Waypoint(midX + nx * amount, midY + ny * amount);
+  }
+
+  /// How far a point can move from (x, y) along direction (dx, dy) before
+  /// it, inflated by [margin] on every side, would leave [v].
+  static double _maxOffsetAlong(
+    double x,
+    double y,
+    double dx,
+    double dy,
+    double margin,
+    WorldRect v,
+  ) {
+    final left = v.left + margin;
+    final right = v.right - margin;
+    final top = v.top + margin;
+    final bottom = v.bottom - margin;
+    if (right <= left || bottom <= top) return 0.0;
+
+    var tMax = double.infinity;
+    if (dx > 1e-9) {
+      tMax = math.min(tMax, (right - x) / dx);
+    } else if (dx < -1e-9) {
+      tMax = math.min(tMax, (left - x) / dx);
+    }
+    if (dy > 1e-9) {
+      tMax = math.min(tMax, (bottom - y) / dy);
+    } else if (dy < -1e-9) {
+      tMax = math.min(tMax, (top - y) / dy);
+    }
+    return tMax.isFinite ? math.max(tMax, 0.0) : 0.0;
+  }
 }
+
+enum _Edge { left, right, top, bottom }

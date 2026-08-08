@@ -171,5 +171,70 @@ void main() {
         expect(board.coverage.isCovered(w.x, w.y), isTrue);
       }
     });
+
+    test('the centerline wiggles inside a straight-through phone', () {
+      final board = straightRow();
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: _MaxRandom(),
+      );
+      // Control points for a 3-phone chain: [start, offset0, seam0,
+      // offset1, seam1, offset2, end] — offset1 is the interior phone's.
+      final offset = track.waypoints[3];
+      final before = track.waypoints[2];
+      final after = track.waypoints[4];
+      final chordMidX = (before.x + after.x) / 2;
+      final chordMidY = (before.y + after.y) / 2;
+      final deviation = math.sqrt(
+        math.pow(offset.x - chordMidX, 2) + math.pow(offset.y - chordMidY, 2),
+      );
+      expect(deviation, greaterThan(0.1));
+    });
+
+    test('the wiggle amplitude through a turn is smaller than through a '
+        'straight run', () {
+      double deviation(PitchTrack t) {
+        final offset = t.waypoints[3];
+        final before = t.waypoints[2];
+        final after = t.waypoints[4];
+        final midX = (before.x + after.x) / 2;
+        final midY = (before.y + after.y) / 2;
+        return math.sqrt(math.pow(offset.x - midX, 2) + math.pow(offset.y - midY, 2));
+      }
+
+      final straightTrack = TrackGenerator.generate(
+        slices: straightRow().slices,
+        random: _MaxRandom(),
+      );
+      final turnTrack = TrackGenerator.generate(
+        slices: lShape().slices,
+        random: _MaxRandom(),
+      );
+
+      expect(deviation(turnTrack), lessThan(deviation(straightTrack)));
+    });
+
+    test('even at maximum wiggle, the centerline stays within coverage', () {
+      for (final board in [straightRow(), lShape()]) {
+        final track = TrackGenerator.generate(
+          slices: board.slices,
+          random: _MaxRandom(),
+        );
+        for (final w in track.waypoints) {
+          expect(board.coverage.isCovered(w.x, w.y), isTrue);
+        }
+      }
+    });
   });
+}
+
+/// Forces every random draw to its maximum — for testing the wiggle
+/// amplitude clamp at its boundary rather than hoping a seed reaches it.
+class _MaxRandom implements math.Random {
+  @override
+  bool nextBool() => true;
+  @override
+  double nextDouble() => 1.0;
+  @override
+  int nextInt(int max) => max - 1;
 }

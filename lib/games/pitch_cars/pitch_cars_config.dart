@@ -6,6 +6,11 @@ class PitchCarsConfig {
 
   static const double lineAmplitudeWorld = 3.0;
 
+  /// Smaller than [lineAmplitudeWorld]: a corner phone's turn already
+  /// supplies the visual interest, and the clearance for a diagonal chord
+  /// through a rectangle's corner is inherently tighter.
+  static const double cornerAmplitudeWorld = 1.0;
+
   static const double carRadius = 0.25;
 
   static const double carVisualRadius = 0.25;
