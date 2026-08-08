@@ -261,10 +261,13 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
     ..setAwake(true);
   sim.step(dt);
 
-  // Clear the other car well away, and undo any shove the overlap gave this
-  // one, so the turn starts from exactly where the sim thinks it does.
+  // Clear the other car well away — to a point still on the track, so the
+  // sim's own off-track correction doesn't pull it straight back — and undo
+  // any shove the overlap gave this one, so the turn starts from exactly
+  // where the sim thinks it does.
+  final farWp = sim.track.pointAtArclength(sim.track.length / 2);
   other
-    ..setTransform(Vector2(preTurn.x + 12, preTurn.y + 12), 0)
+    ..setTransform(Vector2(farWp.x, farWp.y), 0)
     ..linearVelocity = Vector2.zero();
   secondCar
     ..setTransform(preTurn.clone(), 0)
@@ -314,8 +317,8 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
   );
 }
 
-/// Where the sim now sends a car it resets: the centerline point at
-/// [reference]'s arclength, not [reference] itself.
+/// Where the sim sends a car it resets in the common case: the centerline
+/// point at [reference]'s arclength, not [reference] itself.
 Vector2 _centerlineAt(PitchCarsSim sim, Vector2 reference) {
   final wp = sim.track
       .pointAtArclength(sim.track.progressAt(reference.x, reference.y));
@@ -534,6 +537,49 @@ void main() {
       final settled = sim.entities.firstWhere((e) => e.id == firstTurn);
       expect(sim.track.isOnTrack(settled.x, settled.y), isTrue,
           reason: 'a car that left the track must be reset back onto it');
+    });
+
+    test(
+        'two cars going off track at the same arclength do not land on top '
+        'of each other', () {
+      final started = start(2, seed: 3);
+      final sim = started.sim;
+      final ids = sim.entities
+          .where((e) => e.kind == 'car')
+          .map((e) => e.id)
+          .toList();
+
+      // Drive both cars off the track at the exact same arclength, on
+      // opposite sides — mirroring two starting-grid lanes both bailing on
+      // their first throw.
+      const s = 0.0;
+      final center = sim.track.pointAtArclength(s);
+      final tangent = sim.track.tangentAt(s);
+      final normal = Vector2(-tangent.y, tangent.x);
+      final beyondEdge = sim.track.widthWorld;
+      for (final id in ids) {
+        sim.carOf(id)
+          ..setTransform(
+            Vector2(
+              center.x + normal.x * beyondEdge,
+              center.y + normal.y * beyondEdge,
+            ),
+            0,
+          )
+          ..linearVelocity = Vector2.zero()
+          ..setAwake(true);
+      }
+      sim.step(1 / PlatformConfig.simHz);
+
+      final settledA = sim.carOf(ids[0]).position;
+      final settledB = sim.carOf(ids[1]).position;
+      expect(sim.track.isOnTrack(settledA.x, settledA.y), isTrue);
+      expect(sim.track.isOnTrack(settledB.x, settledB.y), isTrue);
+      expect(
+        settledA.distanceTo(settledB),
+        greaterThan(PitchCarsConfig.carRadius * 2),
+        reason: 'both cars reset from the same arclength must not overlap',
+      );
     });
 
     test('repeated forward flicks eventually reach the finish and award a point', () {
