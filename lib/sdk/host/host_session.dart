@@ -16,6 +16,7 @@ import '../contract/game.dart';
 import '../contract/sim.dart';
 import '../layout/board_compiler.dart';
 import '../layout/board_plan.dart';
+import '../layout/name_drop_optimizer.dart';
 import '../layout/phone_spec.dart';
 import '../score/scoreboard.dart';
 
@@ -546,7 +547,8 @@ class HostSession extends ChangeNotifier {
     final BoardLayout solved;
     final BoardPlan plan;
     try {
-      plan = game.planBoard(lobby);
+      final rawPlan = game.planBoard(lobby);
+      plan = NameDropOptimizer.optimize(rawPlan, lobby);
       solved = const BoardCompiler().compile(plan, lobby);
     } on BoardPlanError catch (e) {
       // The game's plan is unusable. Nobody is asked to rearrange a table for

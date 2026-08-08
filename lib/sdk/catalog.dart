@@ -1,10 +1,13 @@
 import '../games/arena/arena_game.dart';
 import '../games/ball_bin/ball_bin_game.dart';
+import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
 import '../games/flood_closing/flood_closing_game.dart';
 import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
+import '../games/random_path/random_path_game.dart';
+import '../games/reaction/reaction_game.dart';
 import '../games/slingshot/slingshot_game.dart';
 import 'contract/game.dart';
 
@@ -27,8 +30,11 @@ class GameCatalog {
     FloodGame(),
     FloodClosingGame(),
     ArenaGame(),
+    DodgeballGame(),
     GuacamoleGame(),
     PitchCarsGame(),
+    ReactionGame(),
+    RandomPathGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

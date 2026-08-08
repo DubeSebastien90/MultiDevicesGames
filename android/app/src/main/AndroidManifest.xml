@@ -15,6 +15,12 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
 
+    <!-- Buzzing the phone when a player gets it wrong. Without this the call
+         succeeds and simply does nothing, which is indistinguishable from a
+         game that forgot to ask. Note it is still subject to the system's own
+         "touch vibration" switch: if that is off, nothing here can turn it on. -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
     <application
         android:label="MultiDevicesGame"
         android:name="${applicationName}"

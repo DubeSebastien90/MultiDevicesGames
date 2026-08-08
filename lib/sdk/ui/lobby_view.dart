@@ -6,7 +6,6 @@ import '../client/client_session.dart';
 import '../host/host_session.dart';
 import '../model/player_color.dart';
 import 'game_picker.dart';
-import 'metrics_card.dart';
 import 'standings_card.dart';
 
 /// The connection screen, and only that: the code, the QR, the address, and who
@@ -84,14 +83,6 @@ class LobbyView extends StatelessWidget {
                     scores: host?.scores.view ?? client.scores,
                     meId: client.phoneId,
                     onReset: host?.resetScores,
-                  ),
-                  const SizedBox(height: 14),
-                  // A phone's physical size belongs here, not on a per-game
-                  // screen: it is a property of the phone, and you want it
-                  // right before anything starts.
-                  MetricsCard(
-                    metrics: client.metrics,
-                    onChanged: client.updateMetrics,
                   ),
                   if (host != null) ...[
                     if (host.planError != null) ...[
