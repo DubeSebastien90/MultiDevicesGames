@@ -24,6 +24,8 @@ class PitchCarsView extends ShapeView {
   /// how far back the pull has gone.
   @override
   void renderForeground(Canvas canvas, Frame frame) {
+    _drawTurnHighlight(canvas, frame);
+
     final currentTurn = frame.sharedState['currentTurn'] as String?;
     final pullX = frame.sharedState['pullX'] as double?;
     final pullY = frame.sharedState['pullY'] as double?;
@@ -66,6 +68,33 @@ class PitchCarsView extends ShapeView {
     }
   }
 
+  /// Marks whichever car currently has the turn instead of a "YOUR TURN"
+  /// HUD label — a hovering ring, in that car's own colour. Drawn on every
+  /// phone (not gated to the current-turn player's own device): the board
+  /// spans several screens, so the active car may physically sit under a
+  /// different phone than the one its owner joined from, and a check
+  /// against this device's `phoneId` would leave nobody able to see it.
+  /// Hidden the instant a grab starts, reusing the same `pullX`/`pullY`
+  /// signal the aim arrow uses, and hidden again once the car is actually
+  /// in flight — a ring drawn around a car mid-bump reads as part of its
+  /// collision footprint, not as a turn marker, even though it never
+  /// touches the physics itself.
+  void _drawTurnHighlight(Canvas canvas, Frame frame) {
+    final currentTurn = frame.sharedState['currentTurn'] as String?;
+    if (currentTurn == null) return;
+    if (frame.sharedState['pullX'] != null) return;
+    if (frame.sharedState['moving'] == true) return;
+
+    final car = frame.byId(currentTurn);
+    if (car == null) return;
+
+    final r = car.propDouble(ShapeProps.radius) * 1.8;
+    _aim
+      ..color = Color(car.propInt(ShapeProps.color, 0xFFFFFFFF))
+      ..strokeWidth = 2.0 * frame.onePixel;
+    canvas.drawCircle(Offset(car.x, car.y), r, _aim);
+  }
+
   @override
   Widget? buildHud(BuildContext context, HudFrame frame) {
     final winner = frame.sharedState['winner'];
@@ -73,18 +102,7 @@ class PitchCarsView extends ShapeView {
       final mine = winner == phoneId;
       return _pill(mine ? 'You win!' : 'Race over', highlight: mine);
     }
-
-    final currentTurn = frame.sharedState['currentTurn'];
-    if (currentTurn is! String) return null;
-    final mine = currentTurn == phoneId;
-
-    final progress = frame.sharedState['progress_$phoneId'];
-    final pct = progress is num ? (progress * 100).round() : 0;
-
-    return _pill(
-      mine ? 'YOUR TURN — $pct%' : "waiting — $pct%",
-      highlight: mine,
-    );
+    return null;
   }
 
   Widget _pill(String label, {required bool highlight}) => Container(

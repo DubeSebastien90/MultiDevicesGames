@@ -45,6 +45,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Kotlin/Gradle build cache
+.kotlin/
+android/.kotlin/
+
 # Per-machine Claude Code permissions. Tracking this caused a merge conflict
 # once already: it holds absolute paths from whichever machine wrote it.
 .claude/settings.local.json
@@ -55,6 +59,7 @@ app.*.map.json
 /debug/
 
 .claude/
+CLAUDE.md
 superpowers/
 .superpowers/
 

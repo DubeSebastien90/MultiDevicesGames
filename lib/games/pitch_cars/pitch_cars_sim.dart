@@ -20,14 +20,14 @@ import 'track.dart';
 /// makes ownership by chip, not by device, work.
 class PitchCarsSim extends Forge2DGameSim {
   PitchCarsSim(super.context, {math.Random? random})
-      : _random = random ?? math.Random() {
+    : _random = random ?? math.Random() {
     track = TrackGenerator.generate(
       topology: _detectTopology(context),
       board: context.board,
       random: _random,
     );
     _buildTrackEntities();
-    _buildTrackWalls();
+    _buildFinishLineEntities();
     _order = context.phoneIds;
     _placeCars();
     _preTurnPosition = carOf(currentTurn).position.clone();
@@ -77,7 +77,9 @@ class PitchCarsSim extends Forge2DGameSim {
   /// new field on `BoardContext`.
   PitchTrackTopology _detectTopology(BoardContext context) {
     final rotations = context.slices.map((s) => s.screen.turnRadians).toSet();
-    return rotations.length > 1 ? PitchTrackTopology.loop : PitchTrackTopology.line;
+    return rotations.length > 1
+        ? PitchTrackTopology.loop
+        : PitchTrackTopology.line;
   }
 
   /// Where car [index] of [_order] sits on the starting grid. Shared by
@@ -91,8 +93,9 @@ class PitchCarsSim extends Forge2DGameSim {
   /// room to deviate before going off. Two lanes, several rows deep, keeps
   /// every car a comfortable distance from both its neighbours and the edge.
   Vector2 _startPositionFor(int index) {
-    final lane = index.isEven ? -1 : 1;
-    final row = index ~/ 2;
+    final reversedIndex = _order.length - 1 - index;
+    final lane = reversedIndex.isEven ? -1 : 1;
+    final row = reversedIndex ~/ 2;
     final arc = row * PitchCarsConfig.startRowSpacingWorld;
     final start = track.pointAtArclength(arc);
     final tangent = track.tangentAt(arc);
@@ -116,8 +119,9 @@ class PitchCarsSim extends Forge2DGameSim {
         ),
         props: {
           ShapeProps.shape: ShapeKind.circle,
-          ShapeProps.radius: PitchCarsConfig.carRadius,
-          ShapeProps.color: PitchCarsConfig.carColors[i % PitchCarsConfig.carColors.length],
+          ShapeProps.radius: PitchCarsConfig.carVisualRadius,
+          ShapeProps.color:
+              PitchCarsConfig.carColors[i % PitchCarsConfig.carColors.length],
           ShapeProps.spin: true,
         },
       ).createFixture(
@@ -142,64 +146,89 @@ class PitchCarsSim extends Forge2DGameSim {
       final dy = b.y - a.y;
       final segLen = math.sqrt(dx * dx + dy * dy);
       if (segLen < 1e-6) continue;
-      _trackEntities.add(Entity(
-        descriptor: EntityDescriptor(
-          id: 'trackSeg$i',
-          kind: 'trackSegment',
-          props: {
-            ShapeProps.shape: ShapeKind.box,
-            ShapeProps.width: segLen,
-            ShapeProps.height: track.widthWorld,
-            ShapeProps.color: PitchCarsConfig.colorTrack,
-          },
+      _trackEntities.add(
+        Entity(
+          descriptor: EntityDescriptor(
+            id: 'trackSeg$i',
+            kind: 'trackSegment',
+            props: {
+              ShapeProps.shape: ShapeKind.box,
+              ShapeProps.width: segLen,
+              ShapeProps.height: track.widthWorld,
+              ShapeProps.color: PitchCarsConfig.colorTrack,
+            },
+          ),
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          angle: math.atan2(dy, dx),
         ),
-        x: (a.x + b.x) / 2,
-        y: (a.y + b.y) / 2,
-        angle: math.atan2(dy, dx),
-      ));
+      );
     }
   }
 
-  /// Static bumpers along both edges of the ribbon, mirroring the segment
-  /// walk in [_buildTrackEntities] but as invisible physics-only bodies
-  /// (`world.createBody` directly, not [addBody] — same pattern as
-  /// `Forge2DGameSim.addBoundaryWalls`) rather than drawn ones.
+  /// A black-and-white checkerboard marking the finish. Built from small box
+  /// entities in [_trackEntities] rather than drawn by the view, so it
+  /// inherits the same "cars paint on top" ordering as the track itself for
+  /// free — see the comment on [entities].
   ///
-  /// Without these, top speed was capped by geometry: a fast car travels in
-  /// a near-straight line right after launch, and a bad enough chord
-  /// deviates past the ribbon's edge before curvature (or the old,
-  /// much-lower speed) had a chance to bend it back — the game's off-track
-  /// rule then treated a *fast, well-aimed* shot the same as a *reckless*
-  /// one. With a real edge to bounce off, speed is limited by chaos and
-  /// pacing, not by track geometry.
-  void _buildTrackWalls() {
-    final pts = track.closed
-        ? [...track.waypoints, track.waypoints.first]
-        : track.waypoints;
-    final offset = track.widthWorld / 2 + PitchCarsConfig.wallThickness / 2;
-    for (var i = 0; i < pts.length - 1; i++) {
-      final a = pts[i];
-      final b = pts[i + 1];
-      final dx = b.x - a.x;
-      final dy = b.y - a.y;
-      final segLen = math.sqrt(dx * dx + dy * dy);
-      if (segLen < 1e-6) continue;
-      final angle = math.atan2(dy, dx);
-      final nx = -dy / segLen;
-      final ny = dx / segLen;
-      final midX = (a.x + b.x) / 2;
-      final midY = (a.y + b.y) / 2;
-      for (final side in [-1, 1]) {
-        world
-            .createBody(BodyDef(
-              position: Vector2(midX + nx * offset * side, midY + ny * offset * side),
-              angle: angle,
-            ))
-            .createFixture(FixtureDef(
-              PolygonShape()..setAsBoxXY(segLen / 2, PitchCarsConfig.wallThickness / 2),
-              friction: PitchCarsConfig.wallFriction,
-              restitution: PitchCarsConfig.wallRestitution,
-            ));
+  /// Placed at arclength [track.length] on a line (the actual end of the
+  /// road) or arclength 0 on a loop (the start/finish point a lap is
+  /// measured from, where the starting grid's row 0 already sits).
+  ///
+  /// Laid out flat, in the single tangent/normal frame sampled at the
+  /// center — not resampled per tile — so the whole grid shares one
+  /// orientation instead of fanning across the band with the track's
+  /// curvature (see [PitchCarsConfig.finishLineRows]).
+  double get _finishCenter => track.closed ? 0.0 : track.length;
+
+  double get _finishBandLen =>
+      PitchCarsConfig.finishLineCols * (track.widthWorld / PitchCarsConfig.finishLineRows);
+
+  /// Whether arclength [s] falls inside the finish-zone band drawn by
+  /// [_buildFinishLineEntities] — wraps around for a closed track, since the
+  /// band there straddles arclength 0.
+  bool _inFinishZone(double s) {
+    var delta = (s - _finishCenter).abs();
+    if (track.closed) delta = math.min(delta, track.length - delta);
+    return delta <= _finishBandLen / 2;
+  }
+
+  void _buildFinishLineEntities() {
+    final center = _finishCenter;
+    final rows = PitchCarsConfig.finishLineRows;
+    final cols = PitchCarsConfig.finishLineCols;
+    final tileSize = track.widthWorld / rows;
+    final bandLen = _finishBandLen;
+
+    final base = track.pointAtArclength(center);
+    final tangent = track.tangentAt(center);
+    final normal = Waypoint(-tangent.y, tangent.x);
+    final angle = math.atan2(tangent.y, tangent.x);
+
+    for (var col = 0; col < cols; col++) {
+      final along = (col + 0.5) * tileSize - bandLen / 2;
+      for (var row = 0; row < rows; row++) {
+        final lateral = (row + 0.5) * tileSize - track.widthWorld / 2;
+        final color = (row + col) % 2 == 0
+            ? PitchCarsConfig.finishLineColorA
+            : PitchCarsConfig.finishLineColorB;
+        _trackEntities.add(
+          Entity(
+            descriptor: EntityDescriptor(
+              id: 'finishTile${row}_$col',
+              kind: 'finishLine',
+              props: {
+                ShapeProps.shape: ShapeKind.box,
+                ShapeProps.width: tileSize,
+                ShapeProps.height: tileSize,
+                ShapeProps.color: color,
+              },
+            ),
+            x: base.x + tangent.x * along + normal.x * lateral,
+            y: base.y + tangent.y * along + normal.y * lateral,
+            angle: angle,
+          ),
+        );
       }
     }
   }
@@ -223,9 +252,9 @@ class PitchCarsSim extends Forge2DGameSim {
       case TouchPhase.move:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
         _pull = _clampPull(p);
-        // The car itself never moves during the pull — pool cue, not
-        // slingshot. `_pull` alone drives the aim indicator in
-        // `sharedState` and the eventual launch impulse.
+      // The car itself never moves during the pull — pool cue, not
+      // slingshot. `_pull` alone drives the aim indicator in
+      // `sharedState` and the eventual launch impulse.
 
       case TouchPhase.up:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
@@ -308,7 +337,9 @@ class PitchCarsSim extends Forge2DGameSim {
       final speed = carOf(id).linearVelocity.length;
       if (speed > maxSpeed) maxSpeed = speed;
     }
-    _atRest = maxSpeed < PitchCarsConfig.restSpeed ? _atRest + elapsed : Duration.zero;
+    _atRest = maxSpeed < PitchCarsConfig.restSpeed
+        ? _atRest + elapsed
+        : Duration.zero;
 
     // A car spinning in place can keep re-injecting just enough linear
     // velocity through contact friction to stay above restSpeed forever —
@@ -317,7 +348,9 @@ class PitchCarsSim extends Forge2DGameSim {
     // actual translation, independent of velocity, and force the turn to
     // end if the car hasn't gone anywhere in a while regardless of why.
     final currentPos = carOf(currentTurn).position;
-    if (_stallAnchor == null || currentPos.distanceTo(_stallAnchor!) > PitchCarsConfig.stallDisplacement) {
+    if (_stallAnchor == null ||
+        currentPos.distanceTo(_stallAnchor!) >
+            PitchCarsConfig.stallDisplacement) {
       _stallAnchor = currentPos.clone();
       _sinceStallAnchor = Duration.zero;
     } else {
@@ -355,11 +388,14 @@ class PitchCarsSim extends Forge2DGameSim {
         continue;
       }
       final sinceHit = _sinceLaunch - (_lastHitAt[id] ?? Duration.zero);
-      final hitRecently = _lastHitBy[id] != null &&
+      final hitRecently =
+          _lastHitBy[id] != null &&
           sinceHit >= Duration.zero &&
           sinceHit <= PitchCarsConfig.hitGraceWindow;
       final selfFault = id == currentTurn && !hitRecently;
-      final reference = selfFault ? _preTurnPosition : (_lastOnTrack[id] ?? _preTurnPosition);
+      final reference = selfFault
+          ? _preTurnPosition
+          : (_lastOnTrack[id] ?? _preTurnPosition);
       final resetTo = _onCenterline(reference);
       car
         ..setTransform(resetTo, car.angle)
@@ -372,7 +408,9 @@ class PitchCarsSim extends Forge2DGameSim {
 
   /// The centerline point at [reference]'s arclength along the track.
   Vector2 _onCenterline(Vector2 reference) {
-    final wp = track.pointAtArclength(track.progressAt(reference.x, reference.y));
+    final wp = track.pointAtArclength(
+      track.progressAt(reference.x, reference.y),
+    );
     return Vector2(wp.x, wp.y);
   }
 
@@ -391,9 +429,26 @@ class PitchCarsSim extends Forge2DGameSim {
       }
       _progress[id] = (_progress[id] ?? 0.0) + delta;
       _rawProgress[id] = raw;
+    }
+  }
 
-      if (_winner == null && _progress[id]! >= track.length - 1e-6) {
+  /// Winning requires a car to have both reached the finish band and come to
+  /// rest inside it — not just crossed it mid-flight. The progress threshold
+  /// is the band's near edge, not `track.length` itself: `track.length` is
+  /// the band's *center*, so a car resting in the near half of the
+  /// checkerboard never reaches it. Called once turn-end has confirmed every
+  /// car's velocity is near zero (see the `_atRest` watchdog in [step]), so
+  /// no separate rest-detection is needed here. A car that overshoots and
+  /// leaves the track is already reset by [_resolveOffTrack] before it would
+  /// ever reach this check.
+  void _checkFinish() {
+    final threshold = track.length - _finishBandLen / 2 - 1e-6;
+    for (final id in _order) {
+      if (_progress[id]! < threshold) continue;
+      final pos = carOf(id).position;
+      if (_inFinishZone(track.progressAt(pos.x, pos.y))) {
         _winner = id;
+        return;
       }
     }
   }
@@ -403,6 +458,7 @@ class PitchCarsSim extends Forge2DGameSim {
 
   void _endTurn() {
     _moving = false;
+    _checkFinish();
     _clearHitLedger();
     _currentIndex = (_currentIndex + 1) % _order.length;
     _preTurnPosition = carOf(currentTurn).position.clone();
@@ -421,23 +477,29 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   Map<String, Object?> get sharedState => {
-        'currentTurn': _winner == null ? currentTurn : null,
-        'winner': _winner,
-        for (final id in _order)
-          'progress_$id': track.length < 1e-9
-              ? 0.0
-              : double.parse(((_progress[id] ?? 0) / track.length).clamp(0.0, 1.0).toStringAsFixed(3)),
-        // The pull point, world coords, while aiming — null once released or
-        // idle. The view draws the launch-direction arrow from this and the
-        // (stationary) current car's own entity position; it never needs to
-        // know who is dragging, only where the finger currently is.
-        'pullX': _pull == null ? null : double.parse(_pull!.x.toStringAsFixed(3)),
-        'pullY': _pull == null ? null : double.parse(_pull!.y.toStringAsFixed(3)),
-      };
+    'currentTurn': _winner == null ? currentTurn : null,
+    'winner': _winner,
+    for (final id in _order)
+      'progress_$id': track.length < 1e-9
+          ? 0.0
+          : double.parse(
+              ((_progress[id] ?? 0) / track.length)
+                  .clamp(0.0, 1.0)
+                  .toStringAsFixed(3),
+            ),
+    // The pull point, world coords, while aiming — null once released or
+    // idle. The view draws the launch-direction arrow from this and the
+    // (stationary) current car's own entity position; it never needs to
+    // know who is dragging, only where the finger currently is.
+    'pullX': _pull == null ? null : double.parse(_pull!.x.toStringAsFixed(3)),
+    'pullY': _pull == null ? null : double.parse(_pull!.y.toStringAsFixed(3)),
+    'moving': _moving,
+  };
 
   @override
-  GameOutcome? get outcome =>
-      _winner == null ? null : GameOutcome.won(summary: '$_winnerLabel wins the race');
+  GameOutcome? get outcome => _winner == null
+      ? null
+      : GameOutcome.won(summary: '$_winnerLabel wins the race');
 
   @override
   void reset() {
@@ -462,7 +524,10 @@ class PitchCarsSim extends Forge2DGameSim {
         ..angularVelocity = 0
         ..setAwake(true);
       _lastOnTrack[_order[i]] = car.position.clone();
-      _rawProgress[_order[i]] = track.progressAt(car.position.x, car.position.y);
+      _rawProgress[_order[i]] = track.progressAt(
+        car.position.x,
+        car.position.y,
+      );
       _progress[_order[i]] = 0;
     }
     _preTurnPosition = carOf(currentTurn).position.clone();
@@ -479,7 +544,10 @@ class _CarContactListener extends ContactListener {
   void beginContact(Contact contact) {
     final a = contact.fixtureA.body.userData;
     final b = contact.fixtureB.body.userData;
-    if (a is String && b is String && sim._order.contains(a) && sim._order.contains(b)) {
+    if (a is String &&
+        b is String &&
+        sim._order.contains(a) &&
+        sim._order.contains(b)) {
       sim._lastHitBy[a] = b;
       sim._lastHitBy[b] = a;
       sim._lastHitAt[a] = sim._sinceLaunch;
