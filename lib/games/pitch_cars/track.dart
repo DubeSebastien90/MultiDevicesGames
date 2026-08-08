@@ -200,31 +200,38 @@ class TrackGenerator {
       neighbors[v.bId]!.add(v.aId);
     }
 
-    // One end of the chain has exactly one neighbour. Falls back to any
-    // node if none does, which keeps a malformed (non-`Layouts.path`) board
-    // from throwing here rather than producing a track.
-    final startId = neighbors.entries
-        .firstWhere((e) => e.value.length <= 1, orElse: () => neighbors.entries.first)
-        .key;
-
-    final ordered = <PhoneSlice>[];
-    final visited = <String>{};
-    var current = startId;
-    while (true) {
-      ordered.add(byId[current]!);
-      visited.add(current);
-      final next =
-          neighbors[current]!.firstWhere((id) => !visited.contains(id), orElse: () => '');
-      if (next.isEmpty) break;
-      current = next;
+    List<String> walkFrom(String startId) {
+      final ordered = <String>[];
+      final visited = <String>{};
+      var current = startId;
+      while (true) {
+        ordered.add(current);
+        visited.add(current);
+        final next =
+            neighbors[current]!.firstWhere((id) => !visited.contains(id), orElse: () => '');
+        if (next.isEmpty) break;
+        current = next;
+      }
+      return ordered;
     }
 
-    // Defensive: a disconnected board (should never happen for
-    // `Layouts.path`) still produces a track instead of throwing.
-    for (final s in slices) {
-      if (!visited.contains(s.phoneId)) ordered.add(s);
+    // A simple path's two ends have degree <= 1; try a walk from each and
+    // keep the longest. Falls back to every node if none qualifies (a
+    // branched, non-`Layouts.path` board). Phones the longest walk doesn't
+    // reach are dropped rather than spliced in non-adjacently — a spliced
+    // phone would have no join marker to its "neighbour" and crash the seam
+    // lookup in `generate` right after this returns.
+    final degreeOneStarts =
+        neighbors.entries.where((e) => e.value.length <= 1).map((e) => e.key);
+    final starts = degreeOneStarts.isNotEmpty ? degreeOneStarts : neighbors.keys;
+
+    var best = <String>[];
+    for (final start in starts) {
+      final walk = walkFrom(start);
+      if (walk.length > best.length) best = walk;
     }
-    return ordered;
+
+    return [for (final id in best) byId[id]!];
   }
 
   /// The midpoint of the shared edge between two joined phones — the same
@@ -238,6 +245,8 @@ class TrackGenerator {
     // covered by neither. Using [aId]'s own edge instead keeps the seam on
     // an actual screen; when the boards are flush (no gap) the two edges
     // coincide anyway, so this is a no-op there.
+    // Asymmetric: walking the chain from the other end lands seams on the
+    // other phones' edges, so reversed direction yields a different (still valid) track.
     for (final m in markers) {
       if (m.phoneId == aId && m.partnerId == bId) {
         return Waypoint((m.x1 + m.x2) / 2, (m.y1 + m.y2) / 2);

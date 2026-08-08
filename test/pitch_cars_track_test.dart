@@ -116,6 +116,30 @@ void main() {
           .compile(Layouts.row(phones), LobbyInfo(phones));
     }
 
+    /// A 4-phone zigzag: p1—p2 side by side, p2—p3 stacked below p2, p3—p4
+    /// side by side to the right of p3 (right, down, right).
+    BoardLayout zigzag() {
+      final phones = [phone('p1'), phone('p2'), phone('p3'), phone('p4')];
+      final plan = BoardPlan(const [
+        PhonePlacement('p1', xMm: 0, yMm: 0),
+        PhonePlacement('p2', xMm: 68.58, yMm: 0),
+        PhonePlacement('p3', xMm: 68.58, yMm: 152.4),
+        PhonePlacement('p4', xMm: 137.16, yMm: 152.4),
+      ]);
+      return const BoardCompiler().compile(plan, LobbyInfo(phones));
+    }
+
+    /// True when (w.x, w.y) is either on a screen or inside one of the
+    /// board's seam gaps — the property a continuous centerline can actually
+    /// guarantee on a real (gapped) board, unlike full `CoverageMap` coverage.
+    bool onBoard(BoardLayout board, Waypoint w) {
+      if (board.coverage.isCovered(w.x, w.y)) return true;
+      for (final seam in board.coverage.seamRects()) {
+        if (seam.inflate(0.05).contains(w.x, w.y)) return true;
+      }
+      return false;
+    }
+
     test('closed is always false', () {
       final board = straightRow();
       final track = TrackGenerator.generate(
@@ -156,7 +180,7 @@ void main() {
         random: math.Random(2),
       );
       for (final w in track.waypoints) {
-        expect(board.coverage.isCovered(w.x, w.y), isTrue);
+        expect(onBoard(board, w), isTrue);
       }
     });
 
@@ -169,7 +193,7 @@ void main() {
         random: math.Random(3),
       );
       for (final w in track.waypoints) {
-        expect(board.coverage.isCovered(w.x, w.y), isTrue);
+        expect(onBoard(board, w), isTrue);
       }
     });
 
@@ -220,18 +244,6 @@ void main() {
       expect(deviation(turnTrack), lessThan(deviation(straightTrack)));
     });
 
-    test('even at maximum wiggle, the centerline stays within coverage', () {
-      for (final board in [straightRow(), lShape()]) {
-        final track = TrackGenerator.generate(
-          slices: board.slices,
-          random: _MaxRandom(),
-        );
-        for (final w in track.waypoints) {
-          expect(board.coverage.isCovered(w.x, w.y), isTrue);
-        }
-      }
-    });
-
     test('the spline is sampled densely between each control point', () {
       final board = straightRow(3);
       final track = TrackGenerator.generate(
@@ -264,8 +276,30 @@ void main() {
           random: _MaxRandom(),
         );
         for (final w in track.waypoints) {
-          expect(board.coverage.isCovered(w.x, w.y), isTrue);
+          expect(onBoard(board, w), isTrue);
         }
+      }
+    });
+
+    test('a zigzag chain does not throw and stays on board', () {
+      final board = zigzag();
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: math.Random(4),
+      );
+      for (final w in track.waypoints) {
+        expect(onBoard(board, w), isTrue);
+      }
+    });
+
+    test('a longer (6-phone) straight row stays on board structurally', () {
+      final board = straightRow(6);
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: math.Random(5),
+      );
+      for (final w in track.waypoints) {
+        expect(onBoard(board, w), isTrue);
       }
     });
 
@@ -298,6 +332,25 @@ void main() {
         PhonePlacement('p1', xMm: 0, yMm: 0),
         PhonePlacement('p2', xMm: 68.58, yMm: 0),
         PhonePlacement('p3', xMm: 68.58, yMm: 152.4),
+      ]);
+      final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
+      expect(
+        () => TrackGenerator.generate(slices: board.slices, random: _MaxRandom()),
+        returnsNormally,
+      );
+    });
+
+    test('a branched (non-chain) board degrades instead of crashing', () {
+      // A "T": p1 left of p2, p3 right of p2, p4 below p2 — p2 has three
+      // neighbours, so no simple walk reaches every phone. `Layouts.path`
+      // never produces this today, but the algorithm must not need to
+      // change if a future iteration widens `PlayerCount.range`.
+      final phones = [phone('p1'), phone('p2'), phone('p3'), phone('p4')];
+      final plan = BoardPlan(const [
+        PhonePlacement('p1', xMm: 0, yMm: 0),
+        PhonePlacement('p2', xMm: 68.58, yMm: 0),
+        PhonePlacement('p3', xMm: 137.16, yMm: 0),
+        PhonePlacement('p4', xMm: 68.58, yMm: 152.4),
       ]);
       final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
       expect(
