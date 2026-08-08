@@ -11,6 +11,10 @@ class PitchCarsConfig {
   /// through a rectangle's corner is inherently tighter.
   static const double cornerAmplitudeWorld = 1.0;
 
+  /// How many points the Catmull-Rom spline is sampled at between each
+  /// pair of control points — `PitchTrack.waypoints`'s density.
+  static const int splineSamplesPerSegment = 8;
+
   static const double carRadius = 0.25;
 
   static const double carVisualRadius = 0.25;

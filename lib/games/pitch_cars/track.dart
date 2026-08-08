@@ -184,7 +184,8 @@ class TrackGenerator {
       control.add(exit);
     }
 
-    return PitchTrack(waypoints: control, widthWorld: widthWorld, closed: false);
+    final waypoints = _sampleCatmullRom(control, PitchCarsConfig.splineSamplesPerSegment);
+    return PitchTrack(waypoints: waypoints, widthWorld: widthWorld, closed: false);
   }
 
   /// Recovers the phones in physical connection order from the compiled,
@@ -350,6 +351,52 @@ class TrackGenerator {
       tMax = math.min(tMax, (top - y) / dy);
     }
     return tMax.isFinite ? math.max(tMax, 0.0) : 0.0;
+  }
+
+  /// Samples a Catmull-Rom spline through [control], duplicating the first
+  /// and last points as phantom neighbours so the curve starts and ends
+  /// exactly at them. Segment boundaries are shared, not duplicated, so
+  /// consecutive segments' sample lists join with no repeated point.
+  static List<Waypoint> _sampleCatmullRom(List<Waypoint> control, int samplesPerSegment) {
+    if (control.length < 2) return control;
+    final pts = [control.first, ...control, control.last];
+    final result = <Waypoint>[];
+    for (var i = 1; i < pts.length - 2; i++) {
+      final p0 = pts[i - 1];
+      final p1 = pts[i];
+      final p2 = pts[i + 1];
+      final p3 = pts[i + 2];
+      final startJ = i == 1 ? 0 : 1;
+      for (var j = startJ; j <= samplesPerSegment; j++) {
+        // At the segment's own endpoints, use the control point directly
+        // rather than the blend formula: algebraically blend(t=0) == p1 and
+        // blend(t=1) == p2, but floating-point rounding in the polynomial
+        // can miss by ~1e-14 — enough to put a seam point that sits exactly
+        // on a phone's edge just outside that phone's coverage.
+        if (j == 0) {
+          result.add(p1);
+          continue;
+        }
+        if (j == samplesPerSegment) {
+          result.add(p2);
+          continue;
+        }
+        final t = j / samplesPerSegment;
+        result.add(_catmullRomPoint(p0, p1, p2, p3, t));
+      }
+    }
+    return result;
+  }
+
+  static Waypoint _catmullRomPoint(Waypoint p0, Waypoint p1, Waypoint p2, Waypoint p3, double t) {
+    final t2 = t * t;
+    final t3 = t2 * t;
+    double blend(double v0, double v1, double v2, double v3) => 0.5 *
+        ((2 * v1) +
+            (-v0 + v2) * t +
+            (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
+            (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+    return Waypoint(blend(p0.x, p1.x, p2.x, p3.x), blend(p0.y, p1.y, p2.y, p3.y));
   }
 }
 

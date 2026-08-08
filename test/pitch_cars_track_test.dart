@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_config.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/track.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
@@ -180,9 +181,12 @@ void main() {
       );
       // Control points for a 3-phone chain: [start, offset0, seam0,
       // offset1, seam1, offset2, end] — offset1 is the interior phone's.
-      final offset = track.waypoints[3];
-      final before = track.waypoints[2];
-      final after = track.waypoints[4];
+      // The spline interpolates every control point exactly, at flattened
+      // index `k * splineSamplesPerSegment` for control index `k`.
+      const s = PitchCarsConfig.splineSamplesPerSegment;
+      final offset = track.waypoints[3 * s];
+      final before = track.waypoints[2 * s];
+      final after = track.waypoints[4 * s];
       final chordMidX = (before.x + after.x) / 2;
       final chordMidY = (before.y + after.y) / 2;
       final deviation = math.sqrt(
@@ -194,9 +198,11 @@ void main() {
     test('the wiggle amplitude through a turn is smaller than through a '
         'straight run', () {
       double deviation(PitchTrack t) {
-        final offset = t.waypoints[3];
-        final before = t.waypoints[2];
-        final after = t.waypoints[4];
+        // See the comment in the previous test for the index mapping.
+        const s = PitchCarsConfig.splineSamplesPerSegment;
+        final offset = t.waypoints[3 * s];
+        final before = t.waypoints[2 * s];
+        final after = t.waypoints[4 * s];
         final midX = (before.x + after.x) / 2;
         final midY = (before.y + after.y) / 2;
         return math.sqrt(math.pow(offset.x - midX, 2) + math.pow(offset.y - midY, 2));
@@ -224,6 +230,80 @@ void main() {
           expect(board.coverage.isCovered(w.x, w.y), isTrue);
         }
       }
+    });
+
+    test('the spline is sampled densely between each control point', () {
+      final board = straightRow(3);
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: math.Random(1),
+      );
+      // 3 phones -> 7 control points (start, offset, seam, offset, seam,
+      // offset, end) -> 6 segments between them.
+      final expected = 6 * PitchCarsConfig.splineSamplesPerSegment + 1;
+      expect(track.waypoints.length, expected);
+    });
+
+    test('the minimum 2-phone chain samples cleanly', () {
+      final board = straightRow(2);
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: math.Random(1),
+      );
+      // 2 phones -> 5 control points -> 4 segments.
+      expect(track.waypoints.length, 4 * PitchCarsConfig.splineSamplesPerSegment + 1);
+      expect(track.closed, isFalse);
+    });
+
+    test(
+        'the sampled centerline stays within coverage after spline '
+        'smoothing, even at maximum wiggle', () {
+      for (final board in [straightRow(), lShape()]) {
+        final track = TrackGenerator.generate(
+          slices: board.slices,
+          random: _MaxRandom(),
+        );
+        for (final w in track.waypoints) {
+          expect(board.coverage.isCovered(w.x, w.y), isTrue);
+        }
+      }
+    });
+
+    test('a longer chain produces a longer track', () {
+      final shortTrack = TrackGenerator.generate(
+        slices: straightRow(2).slices,
+        random: math.Random(1),
+      );
+      final longTrack = TrackGenerator.generate(
+        slices: straightRow(6).slices,
+        random: math.Random(1),
+      );
+      expect(longTrack.length, greaterThan(shortTrack.length));
+    });
+
+    test('a very narrow corner phone does not throw', () {
+      final narrow = PhoneSpec(
+        phoneId: 'p2',
+        label: 'narrow',
+        widthMm: 20,
+        heightMm: 152.4,
+        bezelMm: 3,
+        dpi: 400,
+        devicePixelRatio: 3,
+        activePxWidth: 1080,
+        activePxHeight: 2400,
+      );
+      final phones = [phone('p1'), narrow, phone('p3')];
+      final plan = BoardPlan(const [
+        PhonePlacement('p1', xMm: 0, yMm: 0),
+        PhonePlacement('p2', xMm: 68.58, yMm: 0),
+        PhonePlacement('p3', xMm: 68.58, yMm: 152.4),
+      ]);
+      final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
+      expect(
+        () => TrackGenerator.generate(slices: board.slices, random: _MaxRandom()),
+        returnsNormally,
+      );
     });
   });
 }
