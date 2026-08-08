@@ -4,6 +4,7 @@ import 'package:forge2d/forge2d.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
+import '../../sdk/model/player_color.dart';
 import '../../sdk/physics/forge2d_game_sim.dart';
 import '../../sdk/render/shape_view.dart';
 import 'pitch_cars_config.dart';
@@ -30,6 +31,10 @@ class PitchCarsSim extends Forge2DGameSim {
     _buildTrackEntities();
     _buildFinishLineEntities();
     _order = context.phoneIds;
+    _colorOf = {
+      for (final s in context.slices)
+        if (s.color != null) s.phoneId: s.color!,
+    };
     _placeCars();
     _preTurnPosition = carOf(currentTurn).position.clone();
     for (final id in _order) {
@@ -44,6 +49,7 @@ class PitchCarsSim extends Forge2DGameSim {
   final math.Random _random;
   late final PitchTrack track;
   late final List<String> _order;
+  late final Map<String, PlayerColor> _colorOf;
   final _trackEntities = <Entity>[];
 
   late int _currentIndex = 0;

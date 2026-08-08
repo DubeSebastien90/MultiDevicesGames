@@ -17,6 +17,8 @@ class _CarContactListener extends ContactListener {
       sim._lastHitBy[b] = a;
       sim._lastHitAt[a] = sim._sinceLaunch;
       sim._lastHitAt[b] = sim._sinceLaunch;
+      sim._snapshotBeforeHit(a);
+      sim._snapshotBeforeHit(b);
     }
   }
 

@@ -2,38 +2,41 @@ part of 'pitch_cars_sim.dart';
 
 /// Off-track recovery, lap progress and finish/turn resolution.
 extension _Progress on PitchCarsSim {
-  /// A car off the track resets to how far it had got before this turn's
-  /// flick if it left under its own power, or to the last on-track point it
-  /// passed through if another car's collision sent it there — punishing a
+  /// A car off the track resets to where it was before this turn's flick if
+  /// it left under its own power, or to the last on-track point it passed
+  /// through if another car's collision sent it there — punishing a
   /// reckless flick harder than being a sabotage victim.
   ///
-  /// Both destinations snap onto the track's centerline at the reference
-  /// point's arclength rather than being used literally: a literal reset can
-  /// land right on the track edge, where the same shot goes off again next
-  /// turn — a fixpoint that freezes a car at zero progress forever.
-  ///
-  /// Two cars can share an arclength (e.g. side-by-side on the starting
-  /// grid), so that centerline point can already be occupied — in that
-  /// case, slide along the centerline (not sideways off it) until clear, so
-  /// the reset point stays exactly as safe as the plain centerline case.
+  /// Reset literally to that reference point, not to the track's centerline
+  /// at its arclength: two cars can share an arclength (e.g. side-by-side
+  /// on the starting grid) while sitting at different lateral offsets, and
+  /// collapsing both onto the centerline would stack them on top of each
+  /// other. The reference is always a point the car itself was already
+  /// resting at, so it's never off-track.
   void _resolveOffTrack() {
     for (final id in _order) {
       final car = carOf(id);
       final pos = car.position;
-      if (track.isOnTrack(pos.x, pos.y)) {
-        _lastOnTrack[id] = pos.clone();
-        continue;
-      }
       final sinceHit = _sinceLaunch - (_lastHitAt[id] ?? Duration.zero);
       final hitRecently =
           _lastHitBy[id] != null &&
           sinceHit >= Duration.zero &&
           sinceHit <= PitchCarsConfig.hitGraceWindow;
+      if (track.isOnTrack(pos.x, pos.y)) {
+        // While a hit is recent, [_snapshotBeforeHit] already holds the
+        // authoritative reference (the position from *before* that hit's
+        // contact was resolved). Skip the routine update here, or a car
+        // still being shoved across the track — on-track for several more
+        // frames on its way to the edge — would have that reference dragged
+        // along with it instead of staying anchored to where it was hit.
+        if (!hitRecently) _lastOnTrack[id] = pos.clone();
+        continue;
+      }
       final selfFault = id == currentTurn && !hitRecently;
       final reference = selfFault
           ? _preTurnPosition
           : (_lastOnTrack[id] ?? _preTurnPosition);
-      final resetTo = _clearCenterlinePoint(id, reference);
+      final resetTo = reference.clone();
       car
         ..setTransform(resetTo, car.angle)
         ..linearVelocity = Vector2.zero()
@@ -43,24 +46,15 @@ extension _Progress on PitchCarsSim {
     }
   }
 
-  /// The centerline point at [reference]'s arclength, nudged forward along
-  /// the track — one [PitchCarsConfig.carRadius]-and-a-bit step at a time —
-  /// until it's clear of every other car.
-  Vector2 _clearCenterlinePoint(String id, Vector2 reference) {
-    final step = PitchCarsConfig.carRadius * 2 + 0.05;
-    var s = track.progressAt(reference.x, reference.y);
-    for (var attempt = 0; attempt < _order.length; attempt++) {
-      final wp = track.pointAtArclength(s);
-      final candidate = Vector2(wp.x, wp.y);
-      final clear = _order.every(
-        (other) =>
-            other == id || carOf(other).position.distanceTo(candidate) >= step,
-      );
-      if (clear) return candidate;
-      s += step;
+  /// Called from the contact listener the instant a hit is detected, while
+  /// the body still sits at the position it had *before* this physics step
+  /// resolves the contact — the true "before the hit" point, uncontaminated
+  /// by however far the collision response then carries it this same tick.
+  void _snapshotBeforeHit(String id) {
+    final pos = carOf(id).position;
+    if (track.isOnTrack(pos.x, pos.y)) {
+      _lastOnTrack[id] = pos.clone();
     }
-    final wp = track.pointAtArclength(s);
-    return Vector2(wp.x, wp.y);
   }
 
   /// Unwraps each car's raw (positional, wrap-ambiguous) track progress into

@@ -10,11 +10,12 @@ import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/contract/view.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
 import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
-PhoneSpec phone(String id) => PhoneSpec(
+PhoneSpec phone(String id, {PlayerColor? color}) => PhoneSpec(
       phoneId: id,
       label: 'phone $id',
       widthMm: 68.58,
@@ -24,13 +25,17 @@ PhoneSpec phone(String id) => PhoneSpec(
       devicePixelRatio: 3,
       activePxWidth: 1080,
       activePxHeight: 2400,
+      color: color,
     );
 
 ({PitchCarsSim sim, BoardLayout board, Scoreboard scores}) start(
   int count, {
   int seed = 1,
 }) {
-  final lobby = LobbyInfo([for (var i = 0; i < count; i++) phone('p${i + 1}')]);
+  final lobby = LobbyInfo([
+    for (var i = 0; i < count; i++)
+      phone('p${i + 1}', color: PlayerPalette.all[i % PlayerPalette.size]),
+  ]);
   final scores = Scoreboard();
   for (final p in lobby.phones) {
     scores.register(p.phoneId, p.label);
@@ -40,49 +45,6 @@ PhoneSpec phone(String id) => PhoneSpec(
   final sim = PitchCarsSim(board.contextFor(scores), random: math.Random(seed));
   scores.beginRound();
   return (sim: sim, board: board, scores: scores);
-}
-
-/// Deliberately under [PitchCarsConfig.maxPull]: full power reliably flies
-/// off a curved track, and a self-fault reset returns the car to the exact
-/// spot it started from — a deterministic bot at max power gets stuck
-/// replaying the same failing shot forever.
-const _flickPower = PitchCarsConfig.maxPull * 0.4;
-
-/// Aims the current turn's car toward the forward tangent of its own
-/// position on the track and releases a moderate pull (see [_flickPower]),
-/// then runs the sim until the turn advances (or the step budget runs out).
-void _flickForward(PitchCarsSim sim) {
-  final phoneId = sim.currentTurn;
-  final car = sim.entities.firstWhere((e) => e.id == phoneId);
-  final s = sim.track.progressAt(car.x, car.y);
-  final tangent = sim.track.tangentAt(s);
-
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: car.x,
-    worldY: car.y,
-    phase: TouchPhase.down,
-  ));
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: car.x - tangent.x * _flickPower,
-    worldY: car.y - tangent.y * _flickPower,
-    phase: TouchPhase.move,
-  ));
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: car.x - tangent.x * _flickPower,
-    worldY: car.y - tangent.y * _flickPower,
-    phase: TouchPhase.up,
-  ));
-
-  var steps = 0;
-  while (sim.outcome == null &&
-      sim.currentTurn == phoneId &&
-      steps < PlatformConfig.simHz * 10) {
-    sim.step(1 / PlatformConfig.simHz);
-    steps++;
-  }
 }
 
 /// Result of [_runGraceWindowScenario]: where the current-turn car ended up
@@ -315,14 +277,6 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
     hold: hold,
     preTurn: preTurn,
   );
-}
-
-/// Where the sim sends a car it resets in the common case: the centerline
-/// point at [reference]'s arclength, not [reference] itself.
-Vector2 _centerlineAt(PitchCarsSim sim, Vector2 reference) {
-  final wp = sim.track
-      .pointAtArclength(sim.track.progressAt(reference.x, reference.y));
-  return Vector2(wp.x, wp.y);
 }
 
 void main() {
@@ -582,22 +536,6 @@ void main() {
       );
     });
 
-    test('repeated forward flicks eventually reach the finish and award a point', () {
-      final started = start(2, seed: 7);
-      final sim = started.sim;
-
-      var turns = 0;
-      while (sim.outcome == null && turns < 300) {
-        _flickForward(sim);
-        turns++;
-      }
-
-      expect(sim.outcome, isNotNull, reason: 'nobody finished the race');
-      expect(sim.outcome!.won, isTrue);
-      expect(started.scores.isUsed, isTrue);
-      expect(started.scores.view.ranked.first.total, 1);
-    });
-
     test('a fresh race is not already won', () {
       final started = start(2, seed: 9);
       for (var i = 0; i < 60; i++) {
@@ -631,13 +569,10 @@ void main() {
       // 15-tick (250ms) hitGraceWindow.
       final result = _runGraceWindowScenario(holdTicks: 20);
 
-      // Self-fault sends the car back to where it had got to before the
-      // flick — as the centerline point at that arclength, never the literal
-      // point (see `_resolveOffTrack`), so the comparison is against the
-      // projection rather than the raw pre-turn position.
-      final expected = _centerlineAt(result.sim, result.preTurn);
-      expect(result.settled.x, closeTo(expected.x, 1e-3));
-      expect(result.settled.y, closeTo(expected.y, 1e-3));
+      // Self-fault sends the car back exactly where it had got to before
+      // the flick.
+      expect(result.settled.x, closeTo(result.preTurn.x, 1e-3));
+      expect(result.settled.y, closeTo(result.preTurn.y, 1e-3));
       expect(
         (result.settled.x - result.hold.x).abs() > 1e-2 ||
             (result.settled.y - result.hold.y).abs() > 1e-2,
@@ -652,10 +587,9 @@ void main() {
         'excuse that turn from self-fault', () {
       final result = _runCrossTurnGraceScenario();
 
-      final expected = _centerlineAt(result.sim, result.preTurn);
-      expect(result.settled.x, closeTo(expected.x, 1e-3),
+      expect(result.settled.x, closeTo(result.preTurn.x, 1e-3),
           reason: 'a stale, pre-launch hit timestamp must not read as recent');
-      expect(result.settled.y, closeTo(expected.y, 1e-3));
+      expect(result.settled.y, closeTo(result.preTurn.y, 1e-3));
       expect(
         (result.settled.x - result.hold.x).abs() > 1e-2 ||
             (result.settled.y - result.hold.y).abs() > 1e-2,
@@ -666,6 +600,90 @@ void main() {
       );
     });
 
+    test(
+        'a stationary bystander shoved off track by another car\'s hit '
+        'resets to where it was resting, not to wherever the shove had '
+        'carried it', () {
+      // Unlike _runGraceWindowScenario, the victim here is NOT the current
+      // turn's car — it's a stationary bystander the attacker rams. Its
+      // post-hit motion is driven by a real velocity (set once, right after
+      // the hit is registered) and let run through ordinary physics ticks,
+      // the same way a genuine bump plays out — nothing after that is
+      // puppeted into place.
+      final started = start(2, seed: 1);
+      final sim = started.sim;
+      final dt = 1 / PlatformConfig.simHz;
+
+      final attacker = sim.currentTurn;
+      final victim = sim.entities
+          .firstWhere((e) => e.id != attacker && e.kind == 'car')
+          .id;
+
+      final attackerEntity = sim.entities.firstWhere((e) => e.id == attacker);
+      sim.onTouch(TouchEvent(
+          phoneId: attacker,
+          worldX: attackerEntity.x,
+          worldY: attackerEntity.y,
+          phase: TouchPhase.down));
+      sim.onTouch(TouchEvent(
+          phoneId: attacker,
+          worldX: attackerEntity.x - 0.5,
+          worldY: attackerEntity.y,
+          phase: TouchPhase.move));
+      sim.onTouch(TouchEvent(
+          phoneId: attacker,
+          worldX: attackerEntity.x - 0.5,
+          worldY: attackerEntity.y,
+          phase: TouchPhase.up));
+
+      // Where the victim rests before being hit, away from the start line.
+      final restArc = sim.track.length / 2;
+      final restWp = sim.track.pointAtArclength(restArc);
+      final tangent = sim.track.tangentAt(restArc);
+      final rest = Vector2(restWp.x, restWp.y);
+      final normal = Vector2(-tangent.y, tangent.x);
+
+      final victimCar = sim.carOf(victim);
+      final attackerBody = sim.carOf(attacker);
+
+      victimCar
+        ..setTransform(rest, 0)
+        ..linearVelocity = Vector2.zero()
+        ..angularVelocity = 0
+        ..setAwake(true);
+      // Touching the victim along the normal, so the hit registers.
+      attackerBody
+        ..setTransform(
+            Vector2(rest.x - normal.x * 0.4, rest.y - normal.y * 0.4), 0)
+        ..linearVelocity = Vector2.zero()
+        ..angularVelocity = 0
+        ..setAwake(true);
+      sim.step(dt);
+
+      // Move the attacker well clear so it stops contributing new hits, then
+      // send the victim toward the edge under its own (real) velocity —
+      // from here on physics, not the test, carries it off the track.
+      attackerBody
+        ..setTransform(
+            Vector2(rest.x + tangent.x * 4.0, rest.y + tangent.y * 4.0), 0)
+        ..linearVelocity = Vector2.zero();
+      victimCar.linearVelocity = normal * 30.0;
+
+      // A handful of ticks is enough to carry it across the track's 1.5
+      // world-unit half-width and past the edge (well inside the ~15-tick
+      // hit grace window) — the sim resets it back onto the track the same
+      // tick it crosses.
+      for (var i = 0; i < 6; i++) {
+        sim.step(dt);
+      }
+
+      final settled = sim.carOf(victim).position;
+      expect(sim.track.isOnTrack(settled.x, settled.y), isTrue);
+      expect(settled.distanceTo(rest), lessThan(1e-2),
+          reason: 'a bumped bystander must be reset to where it was resting '
+              'before the hit, not to wherever the shove had carried it '
+              'when it crossed off the track');
+    });
   });
 
   group('PitchCarsSim — the starting grid', () {

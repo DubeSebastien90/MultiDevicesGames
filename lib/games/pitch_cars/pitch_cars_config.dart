@@ -44,12 +44,6 @@ class PitchCarsConfig {
   static const Duration maxFlightTime = Duration(seconds: 6);
   static const Duration hitGraceWindow = Duration(milliseconds: 250);
 
-  static const List<int> carColors = [
-    0xFFFF6B4A,
-    0xFF4ECDC4,
-    0xFFFFD166,
-    0xFFB388FF,
-  ];
   static const int colorTrack = 0xFF2E4057;
 
   static const int finishLineCols = 6;

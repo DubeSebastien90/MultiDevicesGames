@@ -34,8 +34,7 @@ extension _TrackBuilding on PitchCarsSim {
         props: {
           ShapeProps.shape: ShapeKind.circle,
           ShapeProps.radius: PitchCarsConfig.carVisualRadius,
-          ShapeProps.color:
-              PitchCarsConfig.carColors[i % PitchCarsConfig.carColors.length],
+          ShapeProps.color: _colorOf[_order[i]]!.value.toARGB32(),
           ShapeProps.spin: true,
         },
       ).createFixture(

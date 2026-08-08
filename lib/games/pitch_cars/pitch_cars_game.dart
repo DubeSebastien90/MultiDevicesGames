@@ -13,25 +13,27 @@ class PitchCarsGame implements MultiscreenGame {
 
   @override
   GameManifest get manifest => const GameManifest(
-        id: 'pitch_cars',
-        title: 'Pitch Cars',
-        tagline: 'Flick your car around a randomized track.',
-        goal: 'First past the finish line.',
-        players: PlayerCount.range(min: 2, max: 4),
-      );
+    id: 'pitch_cars',
+    title: 'Pitch Cars',
+    tagline: 'Flick your car around a randomized track.',
+    goal: 'First past the finish line.',
+    players: PlayerCount.range(min: 2, max: 8),
+  );
 
   @override
   BoardPlan planBoard(LobbyInfo lobby) => Layouts.path(
-        lobby.phones,
-        sort: PhoneSort.joinOrder,
-        instruction: 'Lay the phones out in a path, each against the last — '
-            'match the coloured edges. The track winds along it, start to '
-            'finish.',
-      );
+    lobby.phones,
+    sort: PhoneSort.joinOrder,
+    instruction:
+        'Lay the phones out in a path, each against the last — '
+        'match the coloured edges. The track winds along it, start to '
+        'finish.',
+  );
 
   @override
   GameSim createSim(BoardContext context) => PitchCarsSim(context);
 
   @override
-  GameView createView(ViewContext context) => PitchCarsView(phoneId: context.phoneId);
+  GameView createView(ViewContext context) =>
+      PitchCarsView(phoneId: context.phoneId);
 }
