@@ -5,6 +5,7 @@ import '../games/flood/flood_game.dart';
 import '../games/flood_closing/flood_closing_game.dart';
 import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
+import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/random_path/random_path_game.dart';
 import '../games/reaction/reaction_game.dart';
 import '../games/slingshot/slingshot_game.dart';
@@ -33,6 +34,7 @@ class GameCatalog {
     GuacamoleGame(),
     ReactionGame(),
     RandomPathGame(),
+    HungryHipposGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

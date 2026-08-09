@@ -59,6 +59,7 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
 | **Reaction Time** | `Layouts.circle`, or a row for two | a ring | the fastest average over thirty seconds |
 | **Random Path** | `Layouts.path` — a different shape every round | a winding path | nothing: five seconds and everybody wins |
+| **Hungry Hippos** | a row for two, `Layouts.grid` for four and six | a block around a dish | swallowing marbles — every player for themselves |
 
 Adding another is a folder under `games/` and one line in `sdk/catalog.dart`.
 Transport, layout, snapshots and interpolation never learn its name.
