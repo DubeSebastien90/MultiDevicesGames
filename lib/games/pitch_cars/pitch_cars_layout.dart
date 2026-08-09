@@ -170,6 +170,18 @@ List<_MotifPhone> placeLForTest(
 /// The 3-phone zigzag motif: a straight phone, then two quarter turns in
 /// *alternating* directions — two turns the same way would spiral a long
 /// chain of staircases back over itself; alternating keeps it a staircase.
+///
+/// The alternating turns return the chain to its original heading axis (a
+/// genuine "step" rather than a loop), but for tall, narrow phones that
+/// step can be short enough that phone 3 drifts back within `BoardLinks`'
+/// join distance of phone 1 — an unintended touch outside the
+/// meant-to-be chain (phone1-phone2, phone2-phone3), exactly the 3-phone
+/// touch-triangle this whole catalog exists to avoid. Phone 3 always
+/// shares phone 1's orientation and heading axis by construction, so
+/// pushing it further along that same axis (a free slide along its own
+/// touching edge with phone 2 — this never disturbs that join) clears it,
+/// generalized to any phone size via each phone's own half-extent along
+/// that axis rather than a formula assuming uniform dimensions.
 List<_MotifPhone> _placeStaircase(
   _MotifPhone anchor,
   List<PhoneSpec> specs, {
@@ -177,7 +189,28 @@ List<_MotifPhone> _placeStaircase(
 }) {
   final p1 = _placeStraight(anchor, specs[0]);
   final p2 = _placeTurn(p1, specs[1], turnRight: mirror);
-  final p3 = _placeTurn(p2, specs[2], turnRight: !mirror);
+  final provisional = _placeTurn(p2, specs[2], turnRight: !mirror);
+
+  final vertical = _isVertical(p1.arrivedBy);
+  final rawGap = vertical ? provisional.cy - p1.cy : provisional.cx - p1.cx;
+  final halfExtentP1 = vertical ? p1.halfH : p1.halfW;
+  final halfExtentP3 = vertical ? provisional.halfH : provisional.halfW;
+  const clearanceMarginMm = 5.0;
+  final extra = math.max(
+    0.0,
+    halfExtentP1 + halfExtentP3 + clearanceMarginMm - rawGap.abs(),
+  );
+
+  if (extra == 0.0) return [p1, p2, provisional];
+
+  final push = rawGap.sign * extra;
+  final p3 = _MotifPhone.of(
+    specs[2],
+    provisional.cx + (vertical ? 0.0 : push),
+    provisional.cy + (vertical ? push : 0.0),
+    provisional.sideways,
+    arrivedBy: provisional.arrivedBy,
+  );
   return [p1, p2, p3];
 }
 
