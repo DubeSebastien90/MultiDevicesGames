@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_game.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_layout.dart';
-import 'package:multiscreen_slingshot/sdk/contract/game.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_links.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
@@ -10,24 +9,38 @@ import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 
 void main() {
   group('_partSizes', () {
-    test('every part is 2 or 3, and they sum to n, for every supported count',
-        () {
-      for (var n = 2; n <= 8; n++) {
-        for (var seed = 0; seed < 20; seed++) {
-          final parts = partSizesForTest(n, math.Random(seed));
-          expect(parts.every((p) => p == 2 || p == 3), isTrue,
-              reason: 'n=$n parts=$parts');
-          expect(parts.reduce((a, b) => a + b), n, reason: 'n=$n parts=$parts');
+    test(
+      'every part is 2 or 3, and they sum to n, for every supported count',
+      () {
+        for (var n = 2; n <= 8; n++) {
+          for (var seed = 0; seed < 20; seed++) {
+            final parts = partSizesForTest(n, math.Random(seed));
+            expect(
+              parts.every((p) => p == 2 || p == 3),
+              isTrue,
+              reason: 'n=$n parts=$parts',
+            );
+            expect(
+              parts.reduce((a, b) => a + b),
+              n,
+              reason: 'n=$n parts=$parts',
+            );
+          }
         }
-      }
-    });
+      },
+    );
 
-    test('n=4 always resolves to two parts of 2 — the only valid composition',
-        () {
-      for (var seed = 0; seed < 10; seed++) {
-        expect(partSizesForTest(4, math.Random(seed)), unorderedEquals([2, 2]));
-      }
-    });
+    test(
+      'n=4 always resolves to two parts of 2 — the only valid composition',
+      () {
+        for (var seed = 0; seed < 10; seed++) {
+          expect(
+            partSizesForTest(4, math.Random(seed)),
+            unorderedEquals([2, 2]),
+          );
+        }
+      },
+    );
 
     test('n=6 explores both valid compositions over enough trials', () {
       final seen = <List<int>>{};
@@ -35,10 +48,13 @@ void main() {
         final parts = List.of(partSizesForTest(6, math.Random(seed)))..sort();
         seen.add(parts);
       }
-      expect(seen, containsAll([
-        [2, 2, 2],
-        [3, 3],
-      ]));
+      expect(
+        seen,
+        containsAll([
+          [2, 2, 2],
+          [3, 3],
+        ]),
+      );
     });
 
     test('n=8 explores both valid compositions over enough trials', () {
@@ -47,25 +63,28 @@ void main() {
         final parts = List.of(partSizesForTest(8, math.Random(seed)))..sort();
         seen.add(parts);
       }
-      expect(seen, containsAll([
-        [2, 2, 2, 2],
-        [2, 3, 3],
-      ]));
+      expect(
+        seen,
+        containsAll([
+          [2, 2, 2, 2],
+          [2, 3, 3],
+        ]),
+      );
     });
   });
 
   group('motif placement primitives', () {
     PhoneSpec phone(String id) => PhoneSpec(
-          phoneId: id,
-          label: 'phone $id',
-          widthMm: 68.58,
-          heightMm: 152.4,
-          bezelMm: 3,
-          dpi: 400,
-          devicePixelRatio: 3,
-          activePxWidth: 1080,
-          activePxHeight: 2400,
-        );
+      phoneId: id,
+      label: 'phone $id',
+      widthMm: 68.58,
+      heightMm: 152.4,
+      bezelMm: 3,
+      dpi: 400,
+      devicePixelRatio: 3,
+      activePxWidth: 1080,
+      activePxHeight: 2400,
+    );
 
     test('L motif places 2 phones that do not overlap each other', () {
       final specs = [phone('p1'), phone('p2')];
@@ -118,9 +137,13 @@ void main() {
       // If both turns went the same direction (spiral bug), p3 would keep
       // moving further along p2's axis, ending up *beyond* p2 in that
       // direction. With alternating turns, p3 comes back: p3.cy < p2.cy.
-      expect(placed[2].arrivedBy, equals(placed[0].arrivedBy),
-          reason: 'alternating turns return to the original heading; '
-              'a spiral (same-direction turns) would not');
+      expect(
+        placed[2].arrivedBy,
+        equals(placed[0].arrivedBy),
+        reason:
+            'alternating turns return to the original heading; '
+            'a spiral (same-direction turns) would not',
+      );
       expect((placed[2].cx - placed[1].cx).abs(), greaterThan(0));
     });
 
@@ -176,34 +199,13 @@ void main() {
       );
     });
 
-    test('bridge motif declines a middle phone too narrow to bridge safely',
-        () {
-      final narrow = PhoneSpec(
-        phoneId: 'p2',
-        label: 'narrow',
-        widthMm: 30, // half-width 15mm, well under the ~30mm floor needed
-        heightMm: 152.4,
-        bezelMm: 3,
-        dpi: 400,
-        devicePixelRatio: 3,
-        activePxWidth: 1080,
-        activePxHeight: 2400,
-      );
-      final specs = [phone('p1'), narrow, phone('p3')];
-      final placed = placeBridgeForTest(
-        seedPhoneForTest(sideways: false),
-        specs,
-        mirror: true,
-      );
-      expect(placed, isNull);
-    });
-  });
-
-  group('PitchCarsLayout.motifChain', () {
-    PhoneSpec phone(String id) => PhoneSpec(
-          phoneId: id,
-          label: 'phone $id',
-          widthMm: 68.58,
+    test(
+      'bridge motif declines a middle phone too narrow to bridge safely',
+      () {
+        final narrow = PhoneSpec(
+          phoneId: 'p2',
+          label: 'narrow',
+          widthMm: 30, // half-width 15mm, well under the ~30mm floor needed
           heightMm: 152.4,
           bezelMm: 3,
           dpi: 400,
@@ -211,6 +213,50 @@ void main() {
           activePxWidth: 1080,
           activePxHeight: 2400,
         );
+        final specs = [phone('p1'), narrow, phone('p3')];
+        final placed = placeBridgeForTest(
+          seedPhoneForTest(sideways: false),
+          specs,
+          mirror: true,
+        );
+        expect(placed, isNull);
+      },
+    );
+
+    test('_fits rejects a candidate that would create an unintended '
+        'BoardLinks join, not just an overlap', () {
+      final anchor = seedPhoneForTest(sideways: false);
+      final placedSoFar = placeLForTest(anchor, [
+        phone('p1'),
+        phone('p2'),
+      ], mirror: true);
+      // Positioned 6mm past placedSoFar[0]'s right edge, with full y-axis
+      // overlap — well inside BoardLinks.maxJoinGap (40mm), so this
+      // registers as joined even though it never overlaps.
+      final near = motifPhoneForTest(
+        cx: placedSoFar[0].right + 6 + 34.29,
+        cy: placedSoFar[0].cy,
+        sideways: false,
+        halfW: 34.29,
+        halfH: 76.2,
+      );
+      expect(placedSoFar[0].overlapsForTest(near), isFalse);
+      expect(fitsForTest([near], placedSoFar, anchor), isFalse);
+    });
+  });
+
+  group('PitchCarsLayout.motifChain', () {
+    PhoneSpec phone(String id) => PhoneSpec(
+      phoneId: id,
+      label: 'phone $id',
+      widthMm: 68.58,
+      heightMm: 152.4,
+      bezelMm: 3,
+      dpi: 400,
+      devicePixelRatio: 3,
+      activePxWidth: 1080,
+      activePxHeight: 2400,
+    );
 
     test('places every phone count from 2 to 8 without throwing, and every '
         'phone appears exactly once', () {
@@ -228,8 +274,10 @@ void main() {
     test('the compiled board never overlaps and is fully connected', () {
       for (var n = 2; n <= 8; n++) {
         final phones = [for (var i = 0; i < n; i++) phone('p${i + 1}')];
-        final plan =
-            PitchCarsLayout.motifChain(phones, random: math.Random(n * 7));
+        final plan = PitchCarsLayout.motifChain(
+          phones,
+          random: math.Random(n * 7),
+        );
         // Throws BoardPlanError on overlap or disconnection — reaching the
         // assertion below is the pass condition.
         final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
@@ -243,7 +291,10 @@ void main() {
       // somewhere in the chain (n=5,6,7,8 all admit a 3-slot).
       for (var seed = 0; seed < 40; seed++) {
         final phones = [for (var i = 0; i < 7; i++) phone('p${i + 1}')];
-        final plan = PitchCarsLayout.motifChain(phones, random: math.Random(seed));
+        final plan = PitchCarsLayout.motifChain(
+          phones,
+          random: math.Random(seed),
+        );
         final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
         for (final v in BoardLinks.explain(board.slices)) {
           if (v.joined) continue;
@@ -274,15 +325,34 @@ void main() {
       // the other too and _placeSlot could never recover. A 3-slot has
       // real variety (2 variants x 2 mirrors), so it can.
       //
-      // Seed 0's first unobstructed attempt is the bridge motif with
-      // mirror:true — block its middle phone (index 1) to force that
-      // attempt to collide, then confirm _placeSlot still finds a working
-      // alternative (here, the same bridge with the other mirror) without
-      // touching the blocker.
+      // A blocker built from any real candidate's own phone 1/phone 2
+      // position doesn't work now that _fits also rejects unintended
+      // BoardLinks joins, not just overlaps: every motif's own phone 1 is
+      // identical across every mirror/variant _placeSlot tries, and every
+      // motif's phone 2 is *meant* to be within join range of phone 1 (a
+      // bridge's middle phone must reach both outer legs; a staircase's
+      // turn phone is the very next link) — so a blocker sitting at any
+      // such position rejects every retry uniformly, not just the one
+      // orientation it meant to rule out.
+      //
+      // Instead, this uses a synthetic blocker (via motifPhoneForTest)
+      // covering only the far half of bridge-mirror-true's middle-phone
+      // footprint — far enough from phone 1 (a 115.71mm gap, well past
+      // BoardLinks' 40mm reach) to never join it, but positioned to force
+      // out both bridge-mirror-true (a real overlap) and
+      // staircase-mirror-true (an unintended join with its own turn
+      // phone), while leaving bridge-mirror-false and
+      // staircase-mirror-false genuinely clear — verified by direct
+      // instrumentation before writing this test.
       final anchor = seedPhoneForTest(sideways: false);
       final specs = [phone('p1'), phone('p2'), phone('p3')];
-      final unobstructed = placeSlotForTest(anchor, specs, [], math.Random(0))!;
-      final blocker = unobstructed[1];
+      final blocker = motifPhoneForTest(
+        cx: 169.5,
+        cy: 180.4,
+        sideways: true,
+        halfW: 19.5,
+        halfH: 34.29,
+      );
       final placed = placeSlotForTest(anchor, specs, [blocker], math.Random(0));
       expect(placed, isNotNull);
       expect(placed!.any((p) => p.overlapsForTest(blocker)), isFalse);
@@ -297,8 +367,10 @@ void main() {
       for (var n = 3; n <= 8; n++) {
         for (var seed = 0; seed < 30; seed++) {
           final phones = [for (var i = 0; i < n; i++) phone('p${i + 1}')];
-          final plan =
-              PitchCarsLayout.motifChain(phones, random: math.Random(seed * 13 + n));
+          final plan = PitchCarsLayout.motifChain(
+            phones,
+            random: math.Random(seed * 13 + n),
+          );
           final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
           final degree = <String, int>{for (final p in phones) p.phoneId: 0};
           for (final v in BoardLinks.explain(board.slices)) {
@@ -342,8 +414,7 @@ void main() {
       // layout is simply that it succeeds at all for a count Layouts.path
       // would have handled identically — recompiling and checking
       // connectivity is the meaningful assertion.
-      final board = const BoardCompiler()
-          .compile(plan, LobbyInfo(phones));
+      final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
       expect(board.slices.length, 5);
     });
   });

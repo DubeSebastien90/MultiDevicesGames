@@ -332,10 +332,52 @@ List<_MotifPhone>? placeBridgeForTest(
 }) =>
     _placeBridge(anchor, specs, mirror: mirror);
 
-bool _fits(List<_MotifPhone> candidates, List<_MotifPhone> placedSoFar) {
-  for (final candidate in candidates) {
+/// The millimetre-space equivalent of `BoardLinks`' join predicate: real
+/// overlap on one axis and a gap within `BoardLinks.maxJoinGap` on the
+/// other. Duplicated here — against `_MotifPhone`'s already axis-aligned
+/// rects, since every placement in this file is a quarter turn — rather
+/// than routing through the full board compiler mid-placement, the same
+/// way `_placeBridge`'s `reachMm` already borrows this exact threshold.
+bool _wouldJoin(_MotifPhone a, _MotifPhone b) {
+  final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
+  final vOverlap = math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
+  if (vOverlap > 0) {
+    final gap = math.max(b.left - a.right, a.left - b.right);
+    if (gap <= reachMm) return true;
+  }
+  final hOverlap = math.min(a.right, b.right) - math.max(a.left, b.left);
+  if (hOverlap > 0) {
+    final gap = math.max(b.top - a.bottom, a.top - b.bottom);
+    if (gap <= reachMm) return true;
+  }
+  return false;
+}
+
+/// Whether [candidates] can be added to the board: no bounding-box overlap
+/// with anything already placed, and no *unintended* `BoardLinks`-style
+/// join either. Only the deliberate chain link — the candidate's first
+/// phone joining [anchor] (the cursor this motif is attaching to), and
+/// each candidate's own consecutive internal phones (e.g. a staircase's
+/// phone1-phone2 and phone2-phone3) — is allowed to register as joined.
+/// Anything else joining is exactly the 3-phone touch-triangle this whole
+/// motif catalog exists to avoid by construction — a chain of motifs can
+/// curl back near itself several motifs later, so this is checked against
+/// everything placed so far, not just the immediate neighbor.
+bool _fits(
+  List<_MotifPhone> candidates,
+  List<_MotifPhone> placedSoFar,
+  _MotifPhone anchor,
+) {
+  for (var i = 0; i < candidates.length; i++) {
+    final candidate = candidates[i];
     for (final existing in placedSoFar) {
       if (candidate.overlaps(existing)) return false;
+      final isIntendedLink = i == 0 && identical(existing, anchor);
+      if (!isIntendedLink && _wouldJoin(candidate, existing)) return false;
+    }
+    for (var j = i + 1; j < candidates.length; j++) {
+      final isAdjacent = j == i + 1;
+      if (!isAdjacent && _wouldJoin(candidate, candidates[j])) return false;
     }
   }
   return true;
@@ -357,7 +399,7 @@ List<_MotifPhone>? _placeSlot(
   if (specs.length == 2) {
     for (final mirror in mirrors) {
       final candidate = _placeL(anchor, specs, mirror: mirror);
-      if (_fits(candidate, placedSoFar)) return candidate;
+      if (_fits(candidate, placedSoFar, anchor)) return candidate;
     }
     return null;
   }
@@ -375,7 +417,9 @@ List<_MotifPhone>? _placeSlot(
   for (final variant in variants) {
     for (final mirror in mirrors) {
       final candidate = variant(anchor, specs, mirror: mirror);
-      if (candidate != null && _fits(candidate, placedSoFar)) return candidate;
+      if (candidate != null && _fits(candidate, placedSoFar, anchor)) {
+        return candidate;
+      }
     }
   }
   return null;
@@ -389,6 +433,24 @@ List<_MotifPhone>? placeSlotForTest(
   math.Random rng,
 ) =>
     _placeSlot(anchor, specs, placedSoFar, rng);
+
+@visibleForTesting
+bool fitsForTest(
+  List<_MotifPhone> candidates,
+  List<_MotifPhone> placedSoFar,
+  _MotifPhone anchor,
+) =>
+    _fits(candidates, placedSoFar, anchor);
+
+@visibleForTesting
+_MotifPhone motifPhoneForTest({
+  required double cx,
+  required double cy,
+  required bool sideways,
+  required double halfW,
+  required double halfH,
+}) =>
+    _MotifPhone(null, cx, cy, sideways, halfW, halfH);
 
 /// One full attempt at a chain: a random partition, then every motif placed
 /// in turn against a moving cursor. Returns null if any slot exhausted its
