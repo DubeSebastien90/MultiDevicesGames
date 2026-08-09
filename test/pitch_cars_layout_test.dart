@@ -118,8 +118,9 @@ void main() {
       // If both turns went the same direction (spiral bug), p3 would keep
       // moving further along p2's axis, ending up *beyond* p2 in that
       // direction. With alternating turns, p3 comes back: p3.cy < p2.cy.
-      expect(placed[2].cy, lessThan(placed[1].cy),
-          reason: 'staircase must alternate turns, not spiral');
+      expect(placed[2].arrivedBy, equals(placed[0].arrivedBy),
+          reason: 'alternating turns return to the original heading; '
+              'a spiral (same-direction turns) would not');
       expect((placed[2].cx - placed[1].cx).abs(), greaterThan(0));
     });
 
@@ -285,6 +286,35 @@ void main() {
       final placed = placeSlotForTest(anchor, specs, [blocker], math.Random(0));
       expect(placed, isNotNull);
       expect(placed!.any((p) => p.overlapsForTest(blocker)), isFalse);
+    });
+
+    test('no board the generator can produce ever forms a 3-phone touch '
+        'cycle (the avoided T-junction pattern)', () {
+      // TrackGenerator._recoverChainOrder assumes a simple path — a phone
+      // adjacency graph with a cycle would break it silently rather than
+      // throwing, so this is worth asserting directly rather than trusting
+      // it never happens.
+      for (var n = 3; n <= 8; n++) {
+        for (var seed = 0; seed < 30; seed++) {
+          final phones = [for (var i = 0; i < n; i++) phone('p${i + 1}')];
+          final plan =
+              PitchCarsLayout.motifChain(phones, random: math.Random(seed * 13 + n));
+          final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
+          final degree = <String, int>{for (final p in phones) p.phoneId: 0};
+          for (final v in BoardLinks.explain(board.slices)) {
+            if (!v.joined) continue;
+            degree[v.aId] = degree[v.aId]! + 1;
+            degree[v.bId] = degree[v.bId]! + 1;
+          }
+          // A simple path (no cycle) has exactly two nodes of degree 1 (or,
+          // degenerately, one node of degree 0 when n=1 — not reachable
+          // here since n >= 3) and every other node degree 2.
+          final degreeOne = degree.values.where((d) => d == 1).length;
+          final degreeTwo = degree.values.where((d) => d == 2).length;
+          expect(degreeOne, 2, reason: 'seed=$seed n=$n degrees=$degree');
+          expect(degreeTwo, n - 2, reason: 'seed=$seed n=$n degrees=$degree');
+        }
+      }
     });
   });
 
