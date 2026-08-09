@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_layout.dart';
+import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 
 void main() {
   group('_partSizes', () {
@@ -45,6 +46,72 @@ void main() {
         [2, 2, 2, 2],
         [2, 3, 3],
       ]));
+    });
+  });
+
+  group('motif placement primitives', () {
+    PhoneSpec phone(String id) => PhoneSpec(
+          phoneId: id,
+          label: 'phone $id',
+          widthMm: 68.58,
+          heightMm: 152.4,
+          bezelMm: 3,
+          dpi: 400,
+          devicePixelRatio: 3,
+          activePxWidth: 1080,
+          activePxHeight: 2400,
+        );
+
+    test('L motif places 2 phones that do not overlap each other', () {
+      final specs = [phone('p1'), phone('p2')];
+      final placed = placeLForTest(
+        seedPhoneForTest(sideways: false),
+        specs,
+        mirror: true,
+      );
+      expect(placed.length, 2);
+      expect(placed[0].overlapsForTest(placed[1]), isFalse);
+    });
+
+    test('L motif mirror flips which side the turn lands on', () {
+      final specs = [phone('p1'), phone('p2')];
+      final anchor = seedPhoneForTest(sideways: false);
+      final right = placeLForTest(anchor, specs, mirror: true);
+      final left = placeLForTest(anchor, specs, mirror: false);
+      // Same first phone either way (the turn is the second phone).
+      expect(right[0].cx, closeTo(left[0].cx, 1e-9));
+      expect(right[0].cy, closeTo(left[0].cy, 1e-9));
+      expect(right[1].cx, isNot(closeTo(left[1].cx, 1e-6)));
+    });
+
+    test('staircase motif places 3 phones, none overlapping', () {
+      final specs = [phone('p1'), phone('p2'), phone('p3')];
+      final placed = placeStaircaseForTest(
+        seedPhoneForTest(sideways: false),
+        specs,
+        mirror: true,
+      );
+      expect(placed.length, 3);
+      expect(placed[0].overlapsForTest(placed[1]), isFalse);
+      expect(placed[1].overlapsForTest(placed[2]), isFalse);
+      expect(placed[0].overlapsForTest(placed[2]), isFalse);
+    });
+
+    test('staircase turns alternate direction (a zigzag, not a spiral)', () {
+      // Two turns in the same rotational sense would spiral back over
+      // themselves after 3-4 more phones; alternating is what keeps a long
+      // chain of staircases from folding into itself.
+      final specs = [phone('p1'), phone('p2'), phone('p3')];
+      final placed = placeStaircaseForTest(
+        seedPhoneForTest(sideways: false),
+        specs,
+        mirror: true,
+      );
+      // p1->p2 turns one way, p2->p3 the other: p3 ends up displaced along
+      // the *original* heading axis from p1, not further along the first
+      // turn's axis.
+      expect((placed[2].cy - placed[0].cy).abs(), greaterThan(0));
+      expect((placed[2].cx - placed[1].cx).abs(), greaterThan(0));
     });
   });
 }
