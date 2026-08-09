@@ -2,9 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
+import '../platform/native_dpi_channel.dart';
 import 'join_sheet.dart';
 import 'metrics_card.dart';
 
@@ -20,40 +22,150 @@ class RoleScreen extends StatefulWidget {
 
 class _RoleScreenState extends State<RoleScreen> {
   DeviceMetrics? _metrics;
-
-  /// Whether the surface we are drawing on is wider than it is tall, despite
-  /// the portrait lock.
   bool _surfaceIsLandscape = false;
+  bool _nativeDone = false;
+
+  static const _kNameKey = 'player_name';
+  static const _kWidthMmKey = 'screen_width_mm';
+  static const _kHeightMmKey = 'screen_height_mm';
+  static const _kBezelMmKey = 'screen_bezel_mm';
+
+  final _nameController = TextEditingController();
+  bool _hasSavedScreenSize = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedPrefs();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSavedPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final name = prefs.getString(_kNameKey);
+    final widthMm = prefs.getDouble(_kWidthMmKey);
+    final heightMm = prefs.getDouble(_kHeightMmKey);
+    final bezelMm = prefs.getDouble(_kBezelMmKey);
+    setState(() {
+      if (name != null && name.isNotEmpty) {
+        _nameController.text = name;
+      }
+      if (widthMm != null && heightMm != null) {
+        _hasSavedScreenSize = true;
+        _metrics = _metrics?.copyWith(
+          widthMm: widthMm,
+          heightMm: heightMm,
+          bezelMm: bezelMm,
+          label: name != null && name.isNotEmpty ? name : null,
+        );
+      } else if (name != null && name.isNotEmpty) {
+        _metrics = _metrics?.copyWith(label: name);
+      }
+    });
+  }
+
+  void _onNameChanged(String name) {
+    SharedPreferences.getInstance().then((p) => p.setString(_kNameKey, name));
+    final label = name.trim().isEmpty ? 'phone' : name.trim();
+    setState(() => _metrics = _metrics?.copyWith(label: label));
+  }
+
+  void _onMetricsChanged(DeviceMetrics m) {
+    setState(() {
+      _metrics = m;
+      _hasSavedScreenSize = true;
+    });
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setDouble(_kWidthMmKey, m.widthMm);
+      prefs.setDouble(_kHeightMmKey, m.heightMm);
+      prefs.setDouble(_kBezelMmKey, m.bezelMm);
+    });
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Re-measured every time the view changes, not just once. A device that
-    // settles into the locked orientation a beat after launch then corrects
-    // itself instead of carrying a first guess for the rest of the session.
-    _metrics = _detect();
-  }
-
-  DeviceMetrics _detect() {
     final view = View.of(context);
     final px = view.physicalSize;
 
     // The app is locked portrait, so the short edge is the width. Taking the
     // min and max rather than the raw values survives being measured a frame
     // before that lock lands.
-    //
-    // This describes the *panel*, never the placement. A phone lying on its
-    // side in a game's board is still measured portrait here; the turning is
-    // the game's business, and travels as `quarterTurns` on its placement.
     _surfaceIsLandscape = px.width > px.height;
 
-    return DeviceMetrics.estimate(
+    // Immediate Flutter density-bucket estimate so the screen is never blank.
+    _metrics ??= DeviceMetrics.estimate(
       physicalPx: Size(
         math.min(px.width, px.height),
         math.max(px.width, px.height),
       ),
       devicePixelRatio: view.devicePixelRatio,
       platform: defaultTargetPlatform,
+    );
+
+    // Then attempt a one-shot native refinement (Android xdpi/ydpi or iOS
+    // model-lookup). Falls back to the Flutter estimate silently on failure.
+    if (!_nativeDone) {
+      _nativeDone = true;
+      _refineWithNative(view.physicalSize, view.devicePixelRatio);
+    }
+  }
+
+  Future<void> _refineWithNative(Size px, double dpr) async {
+    final refined = await NativeDpiChannel.detect(
+      physicalPx: px,
+      devicePixelRatio: dpr,
+      platform: defaultTargetPlatform,
+    );
+    if (!mounted) return;
+    setState(() {
+      // If the user has already calibrated this screen, keep their mm values
+      // and only take the pixel dimensions and DPR from native detection.
+      _metrics = _hasSavedScreenSize
+          ? refined.copyWith(
+              widthMm: _metrics?.widthMm,
+              heightMm: _metrics?.heightMm,
+              bezelMm: _metrics?.bezelMm,
+              label: _metrics?.label ?? _currentLabel(),
+            )
+          : refined.copyWith(
+              bezelMm: _metrics?.bezelMm,
+              label: _metrics?.label ?? _currentLabel(),
+            );
+    });
+  }
+
+  String _currentLabel() {
+    final name = _nameController.text.trim();
+    return name.isEmpty ? 'phone' : name;
+  }
+
+  void _editScreenSize() {
+    final metrics = _metrics;
+    if (metrics == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Screen size'),
+        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+        content: MetricsCard(
+          metrics: metrics,
+          onChanged: _onMetricsChanged,
+          initiallyExpanded: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -106,14 +218,27 @@ class _RoleScreenState extends State<RoleScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 18),
+                  TextField(
+                    controller: _nameController,
+                    onChanged: _onNameChanged,
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 30,
+                    decoration: const InputDecoration(
+                      labelText: 'Your name',
+                      prefixIcon: Icon(Icons.person_outline),
+                      border: OutlineInputBorder(),
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   if (_surfaceIsLandscape) ...[
                     _LandscapeWarning(),
                     const SizedBox(height: 14),
                   ],
                   if (metrics != null)
-                    MetricsCard(
+                    _ScreenSizeRow(
                       metrics: metrics,
-                      onChanged: (m) => setState(() => _metrics = m),
+                      onEdit: _editScreenSize,
                     ),
                   const SizedBox(height: 18),
                   if (error != null) ...[
@@ -168,6 +293,39 @@ class _RoleScreenState extends State<RoleScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ScreenSizeRow extends StatelessWidget {
+  const _ScreenSizeRow({required this.metrics, required this.onEdit});
+
+  final DeviceMetrics metrics;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(
+          Icons.straighten,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${metrics.widthMm.toStringAsFixed(0)} × '
+            '${metrics.heightMm.toStringAsFixed(0)} mm  ·  '
+            '${metrics.dpi.toStringAsFixed(0)} dpi',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        TextButton(onPressed: onEdit, child: const Text('Edit screen')),
+      ],
     );
   }
 }

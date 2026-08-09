@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/device_metrics.dart';
+import '../platform/native_dpi_channel.dart';
+import 'card_calibrate_screen.dart';
 
 /// Lets the player correct what the platform guessed about this screen.
 ///
@@ -15,10 +18,12 @@ class MetricsCard extends StatefulWidget {
     super.key,
     required this.metrics,
     required this.onChanged,
+    this.initiallyExpanded = false,
   });
 
   final DeviceMetrics metrics;
   final ValueChanged<DeviceMetrics> onChanged;
+  final bool initiallyExpanded;
 
   @override
   State<MetricsCard> createState() => _MetricsCardState();
@@ -28,17 +33,17 @@ class _MetricsCardState extends State<MetricsCard> {
   late final TextEditingController _width;
   late final TextEditingController _height;
   late final TextEditingController _bezel;
-  late final TextEditingController _label;
-  bool _expanded = false;
+  late bool _expanded;
+  bool _detecting = false;
 
   @override
   void initState() {
     super.initState();
+    _expanded = widget.initiallyExpanded;
     final m = widget.metrics;
     _width = TextEditingController(text: m.widthMm.toStringAsFixed(1));
     _height = TextEditingController(text: m.heightMm.toStringAsFixed(1));
     _bezel = TextEditingController(text: m.bezelMm.toStringAsFixed(1));
-    _label = TextEditingController(text: m.label);
   }
 
   @override
@@ -46,7 +51,6 @@ class _MetricsCardState extends State<MetricsCard> {
     _width.dispose();
     _height.dispose();
     _bezel.dispose();
-    _label.dispose();
     super.dispose();
   }
 
@@ -56,8 +60,38 @@ class _MetricsCardState extends State<MetricsCard> {
       widthMm: double.tryParse(_width.text) ?? m.widthMm,
       heightMm: double.tryParse(_height.text) ?? m.heightMm,
       bezelMm: double.tryParse(_bezel.text) ?? m.bezelMm,
-      label: _label.text.trim().isEmpty ? m.label : _label.text.trim(),
     ));
+  }
+
+  Future<void> _redetect() async {
+    setState(() => _detecting = true);
+    try {
+      final m = widget.metrics;
+      final result = await NativeDpiChannel.detect(
+        physicalPx: Size(m.activePxWidth, m.activePxHeight),
+        devicePixelRatio: m.devicePixelRatio,
+        platform: defaultTargetPlatform,
+      );
+      if (!mounted) return;
+      _width.text = result.widthMm.toStringAsFixed(1);
+      _height.text = result.heightMm.toStringAsFixed(1);
+      widget.onChanged(result.copyWith(bezelMm: m.bezelMm, label: m.label));
+    } finally {
+      if (mounted) setState(() => _detecting = false);
+    }
+  }
+
+  Future<void> _calibrate() async {
+    final result = await Navigator.of(context).push<DeviceMetrics>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => CardCalibrateScreen(metrics: widget.metrics),
+      ),
+    );
+    if (result == null) return;
+    _width.text = result.widthMm.toStringAsFixed(1);
+    _height.text = result.heightMm.toStringAsFixed(1);
+    widget.onChanged(result);
   }
 
   @override
@@ -106,6 +140,18 @@ class _MetricsCardState extends State<MetricsCard> {
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _detecting ? null : _redetect,
+                icon: _detecting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.autorenew, size: 18),
+                label: const Text('Re-detect automatically'),
+              ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(child: _field(_width, 'Screen width (mm)')),
@@ -114,23 +160,13 @@ class _MetricsCardState extends State<MetricsCard> {
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _field(_bezel, 'Bezel per edge (mm)')),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _label,
-                      onChanged: (_) => _push(),
-                      decoration: const InputDecoration(
-                        labelText: 'Name this phone',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
+              OutlinedButton.icon(
+                onPressed: _calibrate,
+                icon: const Icon(Icons.credit_card, size: 18),
+                label: const Text('Auto-calibrate with ID card'),
               ),
+              const SizedBox(height: 10),
+              _field(_bezel, 'Bezel per edge (mm)'),
             ],
           ],
         ),
