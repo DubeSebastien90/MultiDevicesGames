@@ -12,11 +12,6 @@ class PitchCarsConfig {
   /// conservative.
   static const double cornerAmplitudeWorld = 1.8;
 
-  /// How far a "bridge" phone's loop pushes in from its shared edge (see
-  /// `TrackGenerator._bridgeOffsets`) — a phone whose entry and exit sit on
-  /// the *same* edge, needing an arch rather than a sideways nudge.
-  static const double bridgeAmplitudeWorld = 2.5;
-
   /// How many points the Catmull-Rom spline is sampled at between each
   /// pair of control points — `PitchTrack.waypoints`'s density.
   static const int splineSamplesPerSegment = 8;

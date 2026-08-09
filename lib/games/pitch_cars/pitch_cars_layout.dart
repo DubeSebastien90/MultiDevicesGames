@@ -22,6 +22,7 @@ class _MotifPhone {
     this.halfW,
     this.halfH, {
     this.arrivedBy = -1,
+    this.flushRight,
   });
 
   factory _MotifPhone.of(
@@ -30,6 +31,7 @@ class _MotifPhone {
     double cy,
     bool sideways, {
     int arrivedBy = -1,
+    bool? flushRight,
   }) => _MotifPhone(
     spec,
     cx,
@@ -38,6 +40,7 @@ class _MotifPhone {
     (sideways ? spec.heightMm : spec.widthMm) / 2,
     (sideways ? spec.widthMm : spec.heightMm) / 2,
     arrivedBy: arrivedBy,
+    flushRight: flushRight,
   );
 
   factory _MotifPhone.seed(bool sideways) =>
@@ -51,6 +54,12 @@ class _MotifPhone {
   final double halfH;
 
   final int arrivedBy;
+
+  /// Which flank of its own anchor this phone flushed against, if it was
+  /// placed by a turn (null for the seed and for straight-placed phones
+  /// that never made that choice themselves). The next turn off of this
+  /// phone reads it to flush the *opposite* way — see [_placeTurn].
+  final bool? flushRight;
 
   double get left => cx - halfW;
   double get right => cx + halfW;
@@ -102,6 +111,7 @@ _MotifPhone _placeStraight(_MotifPhone anchor, PhoneSpec spec) {
     anchor.cy + a.y * along,
     sideways,
     arrivedBy: ahead,
+    flushRight: anchor.flushRight,
   );
 }
 
@@ -121,7 +131,16 @@ _MotifPhone _placeTurn(
   final halfAlongNew = _isVertical(ahead) ? candidate.halfH : candidate.halfW;
   final halfAcrossNew = _isVertical(ahead) ? candidate.halfW : candidate.halfH;
   final along = halfAlongAnchor + _gapMm(anchor, spec) + halfAlongNew;
-  final across = turnRight
+  // The anchor's own flush side, opposed — not `turnRight` — so that a
+  // second turn (or a turn after a straight hand-off from an earlier one)
+  // lands on the *opposite* flank instead of the same one, spreading a
+  // chain's seams across each phone's full diagonal instead of clustering
+  // them into one corner. `turnRight` still decides the heading alone, so
+  // the anti-spiral alternation between motifs is untouched. Only the very
+  // first turn off the seed has no prior side to oppose, and falls back to
+  // `turnRight` as before.
+  final flush = anchor.flushRight == null ? turnRight : !anchor.flushRight!;
+  final across = flush
       ? (halfAcrossNew - acrossAnchor)
       : (acrossAnchor - halfAcrossNew);
   return _MotifPhone.of(
@@ -130,6 +149,7 @@ _MotifPhone _placeTurn(
     anchor.cy + a.y * along + c.y * across,
     sideways,
     arrivedBy: newHeading,
+    flushRight: flush,
   );
 }
 
@@ -207,68 +227,6 @@ List<int> _partSizes(int n, math.Random rng) {
 @visibleForTesting
 List<int> partSizesForTest(int n, math.Random rng) => _partSizes(n, rng);
 
-List<_MotifPhone>? _placeBridge(
-  _MotifPhone anchor,
-  List<PhoneSpec> specs, {
-  required bool mirror,
-}) {
-  final ahead = _headingOf(anchor);
-  final vertical = _isVertical(ahead);
-  final sideways = anchor.sideways;
-  final a = _unitOf(ahead);
-  final c = _unitOf((ahead + 3) % 4);
-
-  final specA = specs[0];
-  final specB = specs[1];
-  final specC = specs[2];
-  final legA = _MotifPhone.of(specA, 0, 0, sideways);
-  final legC = _MotifPhone.of(specC, 0, 0, sideways);
-  final bridge = _MotifPhone.of(specB, 0, 0, !sideways);
-
-  final halfAlongAnchor = vertical ? anchor.halfH : anchor.halfW;
-  final halfAlongA = vertical ? legA.halfH : legA.halfW;
-  final halfAcrossA = vertical ? legA.halfW : legA.halfH;
-  final halfAlongC = vertical ? legC.halfH : legC.halfW;
-  final halfAcrossC = vertical ? legC.halfW : legC.halfH;
-  final halfAlongB = vertical ? bridge.halfH : bridge.halfW;
-  final halfAcrossB = vertical ? bridge.halfW : bridge.halfH;
-
-  const overlapMm = 5.0;
-  final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
-  final gapAC = reachMm + 2 * overlapMm;
-  if (halfAlongB < gapAC / 2 + overlapMm) return null;
-
-  final alongA = halfAlongAnchor + _gapMm(anchor, specA) + halfAlongA;
-  final alongB = alongA + halfAlongA + gapAC / 2;
-  final alongC = alongA + halfAlongA + gapAC + halfAlongC;
-
-  final acrossExtent = math.max(halfAcrossA, halfAcrossC);
-  final side = mirror ? 1.0 : -1.0;
-  final acrossB = side * (acrossExtent + _gapMm(anchor, specB) + halfAcrossB);
-
-  _MotifPhone at(double along, double across, PhoneSpec spec, bool sw) =>
-      _MotifPhone.of(
-        spec,
-        anchor.cx + a.x * along + c.x * across,
-        anchor.cy + a.y * along + c.y * across,
-        sw,
-        arrivedBy: ahead,
-      );
-
-  return [
-    at(alongA, 0, specA, sideways),
-    at(alongB, acrossB, specB, !sideways),
-    at(alongC, 0, specC, sideways),
-  ];
-}
-
-@visibleForTesting
-List<_MotifPhone>? placeBridgeForTest(
-  _MotifPhone anchor,
-  List<PhoneSpec> specs, {
-  required bool mirror,
-}) => _placeBridge(anchor, specs, mirror: mirror);
-
 bool _wouldJoin(_MotifPhone a, _MotifPhone b) {
   final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
   final vOverlap = math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
@@ -324,6 +282,7 @@ List<_MotifPhone>? _pushedClear(
         p.cy + unit.y * budget,
         p.sideways,
         arrivedBy: p.arrivedBy,
+        flushRight: p.flushRight,
       ),
   ];
   return _fits(shifted, placedSoFar, anchor) ? shifted : null;
@@ -347,29 +306,11 @@ List<_MotifPhone>? _placeSlot(
     return null;
   }
 
-  final variants =
-      <
-          List<_MotifPhone>? Function(
-            _MotifPhone,
-            List<PhoneSpec>, {
-            required bool mirror,
-          })
-        >[
-          _placeBridge,
-          _placeBridge,
-          (a, s, {required bool mirror}) =>
-              _placeStaircase(a, s, mirror: mirror),
-        ]
-        ..shuffle(rng);
-
-  for (final variant in variants) {
-    for (final mirror in mirrors) {
-      final candidate = variant(anchor, specs, mirror: mirror);
-      if (candidate == null) continue;
-      if (_fits(candidate, placedSoFar, anchor)) return candidate;
-      final pushed = _pushedClear(anchor, candidate, placedSoFar);
-      if (pushed != null) return pushed;
-    }
+  for (final mirror in mirrors) {
+    final candidate = _placeStaircase(anchor, specs, mirror: mirror);
+    if (_fits(candidate, placedSoFar, anchor)) return candidate;
+    final pushed = _pushedClear(anchor, candidate, placedSoFar);
+    if (pushed != null) return pushed;
   }
   return null;
 }

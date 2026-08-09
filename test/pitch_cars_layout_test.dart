@@ -147,82 +147,6 @@ void main() {
       expect((placed[2].cx - placed[1].cx).abs(), greaterThan(0));
     });
 
-    test('bridge motif places 3 phones, none overlapping', () {
-      final specs = [phone('p1'), phone('p2'), phone('p3')];
-      final placed = placeBridgeForTest(
-        seedPhoneForTest(sideways: false),
-        specs,
-        mirror: true,
-      );
-      expect(placed, isNotNull);
-      expect(placed!.length, 3);
-      expect(placed[0].overlapsForTest(placed[1]), isFalse);
-      expect(placed[1].overlapsForTest(placed[2]), isFalse);
-      expect(placed[0].overlapsForTest(placed[2]), isFalse);
-    });
-
-    test('bridge motif never lets the two outer phones touch', () {
-      // The whole reason the bridge attach exists instead of two plain
-      // corners: the outer phones must stay far enough apart that
-      // BoardLinks never calls them joined — see patterns-to-avoid Fig. 7.
-      final specs = [phone('p1'), phone('p2'), phone('p3')];
-      for (final mirror in [true, false]) {
-        final placed = placeBridgeForTest(
-          seedPhoneForTest(sideways: false),
-          specs,
-          mirror: mirror,
-        );
-        final legA = placed![0];
-        final legC = placed[2];
-        final reachMm = 4.0 / 0.1; // BoardLinks.maxJoinGap / mmToWorld
-        final gapX = legA.right < legC.left
-            ? legC.left - legA.right
-            : legA.left - legC.right;
-        final gapY = legA.bottom < legC.top
-            ? legC.top - legA.bottom
-            : legA.top - legC.bottom;
-        final apart = gapX > 0 ? gapX : gapY;
-        expect(apart, greaterThan(reachMm));
-      }
-    });
-
-    test('bridge mirror flips which side the middle phone pokes out to', () {
-      final specs = [phone('p1'), phone('p2'), phone('p3')];
-      final anchor = seedPhoneForTest(sideways: false);
-      final right = placeBridgeForTest(anchor, specs, mirror: true)!;
-      final left = placeBridgeForTest(anchor, specs, mirror: false)!;
-      expect(right[0].cx, closeTo(left[0].cx, 1e-9)); // same outer phones
-      expect(right[2].cx, closeTo(left[2].cx, 1e-9));
-      expect(
-        (right[1].cx - right[0].cx).sign,
-        isNot(equals((left[1].cx - left[0].cx).sign)),
-      );
-    });
-
-    test(
-      'bridge motif declines a middle phone too narrow to bridge safely',
-      () {
-        final narrow = PhoneSpec(
-          phoneId: 'p2',
-          label: 'narrow',
-          widthMm: 30, // half-width 15mm, well under the ~30mm floor needed
-          heightMm: 152.4,
-          bezelMm: 3,
-          dpi: 400,
-          devicePixelRatio: 3,
-          activePxWidth: 1080,
-          activePxHeight: 2400,
-        );
-        final specs = [phone('p1'), narrow, phone('p3')];
-        final placed = placeBridgeForTest(
-          seedPhoneForTest(sideways: false),
-          specs,
-          mirror: true,
-        );
-        expect(placed, isNull);
-      },
-    );
-
     test('_fits rejects a candidate that would create an unintended '
         'BoardLinks join, not just an overlap', () {
       final anchor = seedPhoneForTest(sideways: false);
@@ -285,77 +209,11 @@ void main() {
       }
     });
 
-    test('a bridge motif inside a longer chain never joins its two outer '
-        'phones', () {
-      // Run enough seeds that a bridge motif is very likely to appear
-      // somewhere in the chain (n=5,6,7,8 all admit a 3-slot).
-      for (var seed = 0; seed < 40; seed++) {
-        final phones = [for (var i = 0; i < 7; i++) phone('p${i + 1}')];
-        final plan = PitchCarsLayout.motifChain(
-          phones,
-          random: math.Random(seed),
-        );
-        final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
-        for (final v in BoardLinks.explain(board.slices)) {
-          if (v.joined) continue;
-          // Not joined is fine — just confirms nothing throws walking every
-          // verdict. The real guard already lives in
-          // "bridge motif never lets the two outer phones touch" (Task 4);
-          // this test exercises the same property end to end through the
-          // full compiled pipeline instead of the placement layer alone.
-        }
-        expect(board.slices.length, 7);
-      }
-    });
-
     test('throws for fewer than 2 phones', () {
       expect(
         () => PitchCarsLayout.motifChain([phone('p1')]),
         throwsA(isA<BoardPlanError>()),
       );
-    });
-
-    test('the retry ladder recovers when the shuffled-first orientation '
-        'collides, instead of failing the whole slot', () {
-      // A bare 2-phone L can't demonstrate this: its own two mirror choices
-      // for the turn phone always overlap each other (the turned phone's
-      // half-width — its own height/2 — exceeds the straight phone's
-      // half-width for any device where height > width, which is every
-      // real phone), so blocking one mirror's landing spot always blocks
-      // the other too and _placeSlot could never recover. A 3-slot has
-      // real variety (2 variants x 2 mirrors), so it can.
-      //
-      // A blocker built from any real candidate's own phone 1/phone 2
-      // position doesn't work now that _fits also rejects unintended
-      // BoardLinks joins, not just overlaps: every motif's own phone 1 is
-      // identical across every mirror/variant _placeSlot tries, and every
-      // motif's phone 2 is *meant* to be within join range of phone 1 (a
-      // bridge's middle phone must reach both outer legs; a staircase's
-      // turn phone is the very next link) — so a blocker sitting at any
-      // such position rejects every retry uniformly, not just the one
-      // orientation it meant to rule out.
-      //
-      // Instead, this uses a synthetic blocker (via motifPhoneForTest)
-      // covering only the far half of bridge-mirror-true's middle-phone
-      // footprint — far enough from phone 1 (a 115.71mm gap, well past
-      // BoardLinks' 40mm reach) to never join it, but positioned to force
-      // out both bridge-mirror-true (a real overlap) and
-      // staircase-mirror-true (an unintended join with its own turn
-      // phone), while leaving bridge-mirror-false and
-      // staircase-mirror-false genuinely clear — verified by direct
-      // instrumentation before writing this test.
-      final anchor = seedPhoneForTest(sideways: false);
-      final specs = [phone('p1'), phone('p2'), phone('p3')];
-      final blocker = motifPhoneForTest(
-        cx: 169.5,
-        cy: 180.4,
-        sideways: true,
-        halfW: 19.5,
-        halfH: 34.29,
-      );
-      final placed = placeSlotForTest(anchor, specs, [blocker], math.Random(0));
-      expect(placed, isNotNull);
-      expect(placed!.any((p) => p.overlapsForTest(blocker)), isFalse);
     });
 
     test('no board the generator can produce ever forms a 3-phone touch '

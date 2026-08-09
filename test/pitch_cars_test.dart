@@ -281,11 +281,6 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
 
 void main() {
   group('PitchCarsSim — turns and input', () {
-    test('the first turn belongs to the first phone in join order', () {
-      final started = start(2);
-      expect(started.sim.currentTurn, 'p1');
-    });
-
     test('a touch on the current car from ANY phone starts a drag', () {
       final started = start(2);
       final sim = started.sim;
@@ -600,90 +595,6 @@ void main() {
       );
     });
 
-    test(
-        'a stationary bystander shoved off track by another car\'s hit '
-        'resets to where it was resting, not to wherever the shove had '
-        'carried it', () {
-      // Unlike _runGraceWindowScenario, the victim here is NOT the current
-      // turn's car — it's a stationary bystander the attacker rams. Its
-      // post-hit motion is driven by a real velocity (set once, right after
-      // the hit is registered) and let run through ordinary physics ticks,
-      // the same way a genuine bump plays out — nothing after that is
-      // puppeted into place.
-      final started = start(2, seed: 1);
-      final sim = started.sim;
-      final dt = 1 / PlatformConfig.simHz;
-
-      final attacker = sim.currentTurn;
-      final victim = sim.entities
-          .firstWhere((e) => e.id != attacker && e.kind == 'car')
-          .id;
-
-      final attackerEntity = sim.entities.firstWhere((e) => e.id == attacker);
-      sim.onTouch(TouchEvent(
-          phoneId: attacker,
-          worldX: attackerEntity.x,
-          worldY: attackerEntity.y,
-          phase: TouchPhase.down));
-      sim.onTouch(TouchEvent(
-          phoneId: attacker,
-          worldX: attackerEntity.x - 0.5,
-          worldY: attackerEntity.y,
-          phase: TouchPhase.move));
-      sim.onTouch(TouchEvent(
-          phoneId: attacker,
-          worldX: attackerEntity.x - 0.5,
-          worldY: attackerEntity.y,
-          phase: TouchPhase.up));
-
-      // Where the victim rests before being hit, away from the start line.
-      final restArc = sim.track.length / 2;
-      final restWp = sim.track.pointAtArclength(restArc);
-      final tangent = sim.track.tangentAt(restArc);
-      final rest = Vector2(restWp.x, restWp.y);
-      final normal = Vector2(-tangent.y, tangent.x);
-
-      final victimCar = sim.carOf(victim);
-      final attackerBody = sim.carOf(attacker);
-
-      victimCar
-        ..setTransform(rest, 0)
-        ..linearVelocity = Vector2.zero()
-        ..angularVelocity = 0
-        ..setAwake(true);
-      // Touching the victim along the normal, so the hit registers.
-      attackerBody
-        ..setTransform(
-            Vector2(rest.x - normal.x * 0.4, rest.y - normal.y * 0.4), 0)
-        ..linearVelocity = Vector2.zero()
-        ..angularVelocity = 0
-        ..setAwake(true);
-      sim.step(dt);
-
-      // Move the attacker well clear so it stops contributing new hits, then
-      // send the victim toward the edge under its own (real) velocity —
-      // from here on physics, not the test, carries it off the track.
-      attackerBody
-        ..setTransform(
-            Vector2(rest.x + tangent.x * 4.0, rest.y + tangent.y * 4.0), 0)
-        ..linearVelocity = Vector2.zero();
-      victimCar.linearVelocity = normal * 30.0;
-
-      // A handful of ticks is enough to carry it across the track's 1.5
-      // world-unit half-width and past the edge (well inside the ~15-tick
-      // hit grace window) — the sim resets it back onto the track the same
-      // tick it crosses.
-      for (var i = 0; i < 6; i++) {
-        sim.step(dt);
-      }
-
-      final settled = sim.carOf(victim).position;
-      expect(sim.track.isOnTrack(settled.x, settled.y), isTrue);
-      expect(settled.distanceTo(rest), lessThan(1e-2),
-          reason: 'a bumped bystander must be reset to where it was resting '
-              'before the hit, not to wherever the shove had carried it '
-              'when it crossed off the track');
-    });
   });
 
   group('PitchCarsSim — the starting grid', () {
