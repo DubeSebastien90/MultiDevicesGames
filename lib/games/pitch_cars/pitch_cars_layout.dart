@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:meta/meta.dart';
 
 import '../../sdk/layout/board_links.dart';
+import '../../sdk/layout/board_plan.dart';
 import '../../sdk/layout/phone_spec.dart';
 import '../../sdk/platform_config.dart';
 
@@ -297,3 +298,127 @@ List<_MotifPhone>? placeBridgeForTest(
   required bool mirror,
 }) =>
     _placeBridge(anchor, specs, mirror: mirror);
+
+bool _fits(List<_MotifPhone> candidates, List<_MotifPhone> placedSoFar) {
+  for (final candidate in candidates) {
+    for (final existing in placedSoFar) {
+      if (candidate.overlaps(existing)) return false;
+    }
+  }
+  return true;
+}
+
+/// Places one motif — 2 phones (always the L) or 3 (bridge, weighted 2:1
+/// over staircase, since the bridge motif covers both the "n-shape" and
+/// "T-shape" patterns from the design sketch) — retrying orientations and,
+/// for a 3-slot, the other variant, before giving up. Returns null only
+/// when every combination collided with something already placed.
+List<_MotifPhone>? _placeSlot(
+  _MotifPhone anchor,
+  List<PhoneSpec> specs,
+  List<_MotifPhone> placedSoFar,
+  math.Random rng,
+) {
+  final mirrors = [true, false]..shuffle(rng);
+
+  if (specs.length == 2) {
+    for (final mirror in mirrors) {
+      final candidate = _placeL(anchor, specs, mirror: mirror);
+      if (_fits(candidate, placedSoFar)) return candidate;
+    }
+    return null;
+  }
+
+  final variants = <List<_MotifPhone>? Function(
+    _MotifPhone,
+    List<PhoneSpec>, {
+    required bool mirror,
+  })>[
+    _placeBridge,
+    _placeBridge,
+    (a, s, {required bool mirror}) => _placeStaircase(a, s, mirror: mirror),
+  ]..shuffle(rng);
+
+  for (final variant in variants) {
+    for (final mirror in mirrors) {
+      final candidate = variant(anchor, specs, mirror: mirror);
+      if (candidate != null && _fits(candidate, placedSoFar)) return candidate;
+    }
+  }
+  return null;
+}
+
+@visibleForTesting
+List<_MotifPhone>? placeSlotForTest(
+  _MotifPhone anchor,
+  List<PhoneSpec> specs,
+  List<_MotifPhone> placedSoFar,
+  math.Random rng,
+) =>
+    _placeSlot(anchor, specs, placedSoFar, rng);
+
+/// One full attempt at a chain: a random partition, then every motif placed
+/// in turn against a moving cursor. Returns null if any slot exhausted its
+/// own retries — the caller rerolls the whole partition in that case.
+List<PhonePlacement>? _tryBuild(List<PhoneSpec> ordered, math.Random rng) {
+  final parts = _partSizes(ordered.length, rng);
+  final seedSideways = rng.nextBool();
+  var cursor = _MotifPhone.seed(seedSideways);
+  final placed = <_MotifPhone>[];
+  var index = 0;
+
+  for (final size in parts) {
+    final specs = ordered.sublist(index, index + size);
+    index += size;
+    final result = _placeSlot(cursor, specs, placed, rng);
+    if (result == null) return null;
+    placed.addAll(result);
+    cursor = result.last;
+  }
+
+  final minX = placed.map((p) => p.left).reduce(math.min);
+  final minY = placed.map((p) => p.top).reduce(math.min);
+  return [
+    for (final p in placed)
+      PhonePlacement(
+        p.spec!.phoneId,
+        xMm: p.cx - minX,
+        yMm: p.cy - minY,
+        turnDeg: p.sideways ? 90 : 0,
+      ),
+  ];
+}
+
+/// Pitch Cars' own board placement: a chain of curated tight-turn motifs
+/// (an "L", a staircase, or a bridge — see
+/// `docs/superpowers/specs/2026-08-08-pitch-cars-motif-track-generation-design.md`)
+/// rather than `Layouts.path`'s free-form 7-way placement.
+class PitchCarsLayout {
+  const PitchCarsLayout._();
+
+  static BoardPlan motifChain(
+    List<PhoneSpec> phones, {
+    math.Random? random,
+    String? instruction,
+  }) {
+    if (phones.length < 2) {
+      throw const BoardPlanError('a motif chain needs at least two phones');
+    }
+    final rng = random ?? math.Random();
+    const maxAttempts = 50;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final result = _tryBuild(phones, rng);
+      if (result != null) {
+        return BoardPlan(
+          result,
+          instruction: instruction ??
+              'Lay the phones out to match the coloured edges — the track '
+              'winds along it, start to finish.',
+        );
+      }
+    }
+    throw const BoardPlanError(
+      'could not place phones into a motif chain without overlap',
+    );
+  }
+}
