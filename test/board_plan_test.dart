@@ -4,6 +4,7 @@ import 'package:multiscreen_slingshot/sdk/contract/sim.dart' show PhoneSlice;
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_links.dart';
+import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
@@ -175,12 +176,13 @@ void main() {
       expect(gapMm, closeTo(6, 0.5), reason: 'both bezels, and nothing else');
     });
 
-    test('a narrow phone is pulled to the seam, not centred in its column', () {
-      // A block of four with one smaller phone in it. Centred in its column,
-      // that phone floats clear of the vertical seam with a gap either side —
-      // the board still validates, because the gap is inside the tolerance for
-      // two bezels, and then the round runs with a dead strip down the middle
-      // of it. Rows have always been pulled toward their seam; columns had not.
+    test('a narrow phone is packed against its neighbour, not left floating',
+        () {
+      // A block of four with one smaller phone in it. Laid into a column as
+      // wide as the biggest screen, that phone floated centred in it with a gap
+      // either side — the board still validated, because the gap was inside the
+      // tolerance for two bezels, and then the round ran with a dead strip down
+      // the middle of it.
       final phones = [
         phone('you'),
         phone('small', widthMm: 52, heightMm: 120),
@@ -200,6 +202,126 @@ void main() {
       expect(gapMm, closeTo(6, 0.5),
           reason: 'both bezels and nothing else — the small phone should be '
               'pushed left until it touches its neighbour');
+    });
+
+    test('no hole along a row, at any size or any count', () {
+      // The guarantee that replaced columns. A phone is placed against the one
+      // before it, so the only space anywhere along a row is the bezels between
+      // two casings — whatever sizes turn up, and however many are playing.
+      //
+      // Sizes chosen to be awkward on purpose: a tiny phone between two large
+      // ones is the case that used to leave a hole on both sides of itself, and
+      // no amount of aligning within a column could have closed it.
+      final sizes = <double>[52, 68.58, 80, 58, 75, 62, 84, 55];
+      for (final count in [4, 6, 8]) {
+        final phones = [
+          for (var i = 0; i < count; i++)
+            phone('p$i', widthMm: sizes[i], heightMm: 100 + sizes[i]),
+        ];
+        final board = compiler.compile(
+          Layouts.grid(phones, rows: 2),
+          lobbyOf(phones),
+        );
+        final columns = count ~/ 2;
+
+        for (var r = 0; r < 2; r++) {
+          for (var c = 0; c < columns - 1; c++) {
+            final left = board.slices
+                .firstWhere((s) => s.phoneId == 'p${r * columns + c}')
+                .viewport;
+            final right = board.slices
+                .firstWhere((s) => s.phoneId == 'p${r * columns + c + 1}')
+                .viewport;
+            expect((right.left - left.right) / 0.1, closeTo(6, 0.5),
+                reason: '$count phones, row $r: a hole between $c and ${c + 1}');
+          }
+        }
+      }
+    });
+
+    test('the seam between two columns runs straight down the board', () {
+      // Packing each row and then centring it staggered the grid: rows of
+      // different total width drifted apart, so columns stopped standing over
+      // each other. Rows are slid onto their shared seam instead.
+      final phones = [
+        phone('you', widthMm: 68.58, heightMm: 152.4),
+        phone('r0c1', widthMm: 64, heightMm: 140),
+        phone('r1c0', widthMm: 70, heightMm: 150),
+        phone('r1c1', widthMm: 60, heightMm: 135),
+      ];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+
+      final topLeft = board.slices.firstWhere((s) => s.phoneId == 'you').viewport;
+      final topRight =
+          board.slices.firstWhere((s) => s.phoneId == 'r0c1').viewport;
+      final bottomLeft =
+          board.slices.firstWhere((s) => s.phoneId == 'r1c0').viewport;
+      final bottomRight =
+          board.slices.firstWhere((s) => s.phoneId == 'r1c1').viewport;
+
+      expect(bottomLeft.right, closeTo(topLeft.right, 0.01),
+          reason: 'the left column does not stand over itself');
+      expect(bottomRight.left, closeTo(topRight.left, 0.01),
+          reason: 'the right column does not stand over itself');
+    });
+
+    test('a phone joins its neighbours, not the one diagonally opposite', () {
+      // The symptom of a staggered grid, and the one that shows on the
+      // placement diagram: a phone in the top-left corner reporting a connector
+      // to the phone in the bottom-right.
+      final phones = [
+        phone('you', widthMm: 80, heightMm: 170),
+        phone('r0c1', widthMm: 45, heightMm: 95),
+        phone('r1c0', widthMm: 52, heightMm: 110),
+        phone('r1c1', widthMm: 78, heightMm: 165),
+      ];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+
+      final diagonals = board.links.where((l) =>
+          (l.phoneId == 'you' && l.partnerId == 'r1c1') ||
+          (l.phoneId == 'r0c1' && l.partnerId == 'r1c0'));
+      expect(diagonals, isEmpty,
+          reason: 'corners are joined across the middle of the board');
+    });
+
+    test('every phone still meets one across the seam', () {
+      // What packing rows independently could have cost: rows no longer line up
+      // column by column, so this is the thing worth checking rather than
+      // assuming. Screens are joined by where they actually are, not by a grid
+      // index, which is why it holds.
+      final sizes = <double>[52, 68.58, 80, 58, 75, 62, 84, 55];
+      for (final count in [4, 6, 8]) {
+        final phones = [
+          for (var i = 0; i < count; i++)
+            phone('p$i', widthMm: sizes[i], heightMm: 100 + sizes[i]),
+        ];
+        final board = compiler.compile(
+          Layouts.grid(phones, rows: 2),
+          lobbyOf(phones),
+        );
+        final columns = count ~/ 2;
+
+        for (final slice in board.slices) {
+          final index = int.parse(slice.phoneId.substring(1));
+          final myRow = index ~/ columns;
+
+          final acrossTheSeam = board.links.where((l) {
+            if (l.phoneId != slice.phoneId || l.partnerId == null) return false;
+            final theirRow =
+                int.parse(l.partnerId!.substring(1)) ~/ columns;
+            return theirRow != myRow;
+          });
+
+          expect(acrossTheSeam, isNotEmpty,
+              reason: '$count phones: ${slice.phoneId} faces nobody');
+        }
+      }
     });
 
     test('every neighbour in a mixed block is genuinely joined', () {
@@ -280,6 +402,103 @@ void main() {
         lobbyOf(phones),
       );
       expect(board.board.width / 0.1, closeTo(60, 0.5));
+    });
+  });
+
+  group('a screen is one size, not two', () {
+    // The compiler reserves a slot of widthMm by heightMm, but hands back a
+    // screen sized from the pixel count and the density — and the density is
+    // worked out from the width alone. Let those drift and a phone is drawn to
+    // one size while given room for another: it reaches over its neighbour on
+    // the glass and on the diagram, while the plan validates cleanly, because
+    // overlap was only ever checked against the slot.
+    test('millimetres that contradict the pixels are refused', () {
+      final honest = phone('ok');
+      final lying = PhoneSpec(
+        phoneId: 'lying',
+        label: 'lying',
+        // A ruler-corrected width with the estimated height left behind: the
+        // exact thing the metrics card invites.
+        widthMm: 68.58,
+        heightMm: 120,
+        bezelMm: 3,
+        dpi: 400,
+        devicePixelRatio: 3,
+        activePxWidth: 1080,
+        activePxHeight: 2400,
+      );
+
+      expect(
+        () => compiler.compile(
+          Layouts.row([honest, lying]),
+          lobbyOf([honest, lying]),
+        ),
+        throwsA(isA<BoardPlanError>()),
+      );
+    });
+
+    test('the error names the phone and the size its pixels imply', () {
+      final lying = PhoneSpec(
+        phoneId: 'p9',
+        label: 'p9',
+        widthMm: 68.58,
+        heightMm: 120,
+        bezelMm: 3,
+        dpi: 400,
+        devicePixelRatio: 3,
+        activePxWidth: 1080,
+        activePxHeight: 2400,
+      );
+
+      expect(
+        () => compiler.compile(Layouts.row([lying]), lobbyOf([lying])),
+        throwsA(
+          isA<BoardPlanError>().having((e) => e.message, 'message',
+              allOf(contains('p9'), contains('152.4'))),
+        ),
+      );
+    });
+
+    test('correcting the width carries the height with it', () {
+      // Pixels are square, so one measured edge fixes the other. This is what
+      // stops the metrics card from being able to create the board above.
+      const metrics = DeviceMetrics(
+        activePxWidth: 1080,
+        activePxHeight: 2400,
+        widthMm: 60,
+        heightMm: 133.3,
+        bezelMm: 3,
+        devicePixelRatio: 3,
+      );
+
+      // Somebody measures the short edge properly and types it in.
+      final corrected = metrics.copyWith(widthMm: 68.58);
+      final spec = PhoneSpec.fromMetrics('p1', corrected);
+
+      expect(spec.widthMm, closeTo(68.58, 0.01));
+      expect(spec.heightMm, closeTo(68.58 * 2400 / 1080, 0.01),
+          reason: 'the long edge should have followed the short one');
+
+      // And the board it produces is sound.
+      expect(
+        () => compiler.compile(Layouts.row([spec]), lobbyOf([spec])),
+        returnsNormally,
+      );
+    });
+
+    test('what the compiler hands back is the size it reserved', () {
+      final phones = [for (var i = 1; i <= 3; i++) phone('p$i')];
+      final board = compiler.compile(
+        Layouts.row(phones),
+        lobbyOf(phones),
+      );
+
+      for (final slice in board.slices) {
+        final spec = phones.firstWhere((p) => p.phoneId == slice.phoneId);
+        // Laid sideways by `row`, so the screen's own long edge runs across.
+        expect(slice.screen.height / 0.1, closeTo(spec.heightMm, 0.05));
+        expect(slice.screen.width / 0.1, closeTo(spec.widthMm, 0.05));
+      }
     });
   });
 

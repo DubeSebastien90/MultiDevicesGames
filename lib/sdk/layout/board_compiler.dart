@@ -194,8 +194,42 @@ class BoardCompiler {
       }
     }
 
+    _requireHonestScale(lobby);
     _rejectOverlaps(plan, lobby);
     if (!plan.allowGaps) _requireConnected(plan, lobby);
+  }
+
+  /// A screen's size in millimetres has to agree with its size in pixels.
+  ///
+  /// The compiler reserves each phone a slot of `widthMm` by `heightMm`, but
+  /// what it hands back — the compiled screen, and the camera behind it — is
+  /// the pixel count scaled by the density. Let those two drift and a phone is
+  /// drawn to one size while given room for another: it reaches over its
+  /// neighbour on the glass and on the placement diagram, while the plan
+  /// validates cleanly, because overlap is checked against the slot and never
+  /// against the screen.
+  ///
+  /// Pixels are square, so this is a real constraint and not a convention.
+  /// Refusing here turns a whole class of quiet geometry corruption into one
+  /// sentence naming the phone.
+  void _requireHonestScale(LobbyInfo lobby) {
+    for (final spec in lobby.phones) {
+      if (spec.activePxWidth <= 0 || spec.widthMm <= 0) continue;
+      final byPixels = spec.activePxHeight / spec.activePxWidth;
+      final byMillimetres = spec.heightMm / spec.widthMm;
+      // One per cent covers rounding and a ruler; nothing covers a wrong axis.
+      if ((byPixels - byMillimetres).abs() <= byPixels * 0.01) continue;
+
+      final impliedMm = spec.widthMm * byPixels;
+      throw BoardPlanError(
+        '${spec.phoneId} says it is ${spec.widthMm.toStringAsFixed(1)} by '
+        '${spec.heightMm.toStringAsFixed(1)}mm, but its '
+        '${spec.activePxWidth.round()}x${spec.activePxHeight.round()} pixels '
+        'make that ${spec.widthMm.toStringAsFixed(1)} by '
+        '${impliedMm.toStringAsFixed(1)}mm. Pixels are square, so one measured '
+        'edge fixes the other — correct the width and let the height follow.',
+      );
+    }
   }
 
   /// Two screens claiming the same world coordinates is not a layout, it is a
