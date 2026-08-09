@@ -6,10 +6,16 @@ class PitchCarsConfig {
 
   static const double lineAmplitudeWorld = 3.0;
 
-  /// Smaller than [lineAmplitudeWorld]: a corner phone's turn already
-  /// supplies the visual interest, and the clearance for a diagonal chord
-  /// through a rectangle's corner is inherently tighter.
-  static const double cornerAmplitudeWorld = 1.0;
+  /// A deliberate, tuned hook rather than a subtle wiggle — the catalog of
+  /// motifs `PitchCarsLayout` produces is closed, so every corner's
+  /// geometry is known in advance and this can be generous rather than
+  /// conservative.
+  static const double cornerAmplitudeWorld = 1.8;
+
+  /// How far a "bridge" phone's loop pushes in from its shared edge (see
+  /// `TrackGenerator._bridgeOffsets`) — a phone whose entry and exit sit on
+  /// the *same* edge, needing an arch rather than a sideways nudge.
+  static const double bridgeAmplitudeWorld = 2.5;
 
   /// How many points the Catmull-Rom spline is sampled at between each
   /// pair of control points — `PitchTrack.waypoints`'s density.

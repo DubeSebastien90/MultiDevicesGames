@@ -394,6 +394,55 @@ void main() {
         returnsNormally,
       );
     });
+
+    /// Three phones forming a bridge: p1 and p3 side by side (sideways —
+    /// each 152.4mm wide, 68.58mm tall) with a 47.6mm gap between them
+    /// (safely past `BoardLinks.maxJoinGap`'s 40mm reach, so they never
+    /// join directly), p2 upright and centred over the gap, offset up by
+    /// just 5mm so it overlaps ~10.5mm of each leg's near edge in x while
+    /// staying clear of both in y. Hand-placed and worked out on paper
+    /// rather than generated, so the "same edge" classification is
+    /// guaranteed rather than hunted for with a random seed.
+    ///
+    /// p1: x[-76.2, 76.2], y[-34.29, 34.29].
+    /// p3: x[123.8, 276.2], y[-34.29, 34.29] (200mm centre, 47.6mm gap to p1).
+    /// p2: x[65.71, 134.29], y[-191.69, -39.29] (100mm centre, 5mm clear of
+    /// both legs' top edge at y=-34.29, ~10.5mm x-overlap with each).
+    BoardLayout bridgeShape() {
+      final phones = [phone('p1'), phone('p2'), phone('p3')];
+      final plan = const BoardPlan([
+        PhonePlacement('p1', xMm: 0, yMm: 0, turnDeg: 90),
+        PhonePlacement('p2', xMm: 100, yMm: -115.49),
+        PhonePlacement('p3', xMm: 200, yMm: 0, turnDeg: 90),
+      ]);
+      return const BoardCompiler().compile(plan, LobbyInfo(phones));
+    }
+
+    test('a bridge phone (entry and exit on the same edge) does not throw '
+        'and stays on board', () {
+      final board = bridgeShape();
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: _MaxRandom(),
+      );
+      for (final w in track.waypoints) {
+        expect(onBoard(board, w), isTrue);
+      }
+    });
+
+    test('a bridge phone produces a loop, not a single midpoint nudge', () {
+      final board = bridgeShape();
+      final track = TrackGenerator.generate(
+        slices: board.slices,
+        random: math.Random(9),
+      );
+      // 3 phones -> [start, offset, seam, offsetA, offsetB, seam, offset, end]
+      // -> 7 control points for a straight/corner phone chain, but the
+      // bridge phone contributes 2 offsets instead of 1, so there are 8
+      // control points -> 7 segments.
+      final expected = 7 * PitchCarsConfig.splineSamplesPerSegment + 1;
+      expect(track.waypoints.length, expected);
+    });
   });
 }
 

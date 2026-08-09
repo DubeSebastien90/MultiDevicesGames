@@ -165,19 +165,29 @@ class TrackGenerator {
       // First and last phone are treated as straight-through for amplitude
       // purposes — there is no second seam on that phone to be "adjacent
       // to", so the corner classification below does not apply to them.
-      final straightThrough = i == 0 || i == chain.length - 1
-          ? true
-          : _isOpposite(_nearestEdge(entry, viewport), _nearestEdge(exit, viewport));
+      final relation = i == 0 || i == chain.length - 1
+          ? _Relation.opposite
+          : _classify(_nearestEdge(entry, viewport), _nearestEdge(exit, viewport));
 
       if (i == 0) control.add(entry);
-      control.add(_offsetWaypoint(
-        entry: entry,
-        exit: exit,
-        viewport: viewport,
-        straightThrough: straightThrough,
-        widthWorld: widthWorld,
-        random: random,
-      ));
+      if (relation == _Relation.same) {
+        control.addAll(_bridgeOffsets(
+          entry: entry,
+          exit: exit,
+          viewport: viewport,
+          widthWorld: widthWorld,
+          random: random,
+        ));
+      } else {
+        control.add(_offsetWaypoint(
+          entry: entry,
+          exit: exit,
+          viewport: viewport,
+          straightThrough: relation == _Relation.opposite,
+          widthWorld: widthWorld,
+          random: random,
+        ));
+      }
       control.add(exit);
     }
 
@@ -302,6 +312,16 @@ class TrackGenerator {
       (a == _Edge.top && b == _Edge.bottom) ||
       (a == _Edge.bottom && b == _Edge.top);
 
+  /// Three ways an entry point and an exit point can relate to the phone
+  /// rectangle they sit on — `opposite` (a straight pass-through), `adjacent`
+  /// (an L-turn within this phone), or `same` (both on one edge — the phone
+  /// needs a loop, not a nudge).
+  static _Relation _classify(_Edge a, _Edge b) {
+    if (a == b) return _Relation.same;
+    if (_isOpposite(a, b)) return _Relation.opposite;
+    return _Relation.adjacent;
+  }
+
   /// A point roughly at the center of the entry-exit chord, nudged
   /// sideways by a random amount — the "worm" wiggle — clamped so the
   /// offset, plus half the track's own width, never leaves [viewport].
@@ -337,6 +357,39 @@ class TrackGenerator {
     final sign = random.nextBool() ? 1.0 : -1.0;
     final amount = clampedAmplitude * sign * (0.5 + random.nextDouble() * 0.5);
     return Waypoint(midX + nx * amount, midY + ny * amount);
+  }
+
+  /// Two offset points — one pushed in from [entry], one from [exit] — so
+  /// the spline arcs up and over between them instead of nudging a single
+  /// midpoint. Used when entry and exit sit on the *same* edge of
+  /// [viewport], which a single offset point can't turn into a real loop.
+  static List<Waypoint> _bridgeOffsets({
+    required Waypoint entry,
+    required Waypoint exit,
+    required WorldRect viewport,
+    required double widthWorld,
+    required math.Random random,
+  }) {
+    final halfWidth = widthWorld / 2;
+    final edge = _nearestEdge(entry, viewport);
+    final (nx, ny) = switch (edge) {
+      _Edge.left => (1.0, 0.0),
+      _Edge.right => (-1.0, 0.0),
+      _Edge.top => (0.0, 1.0),
+      _Edge.bottom => (0.0, -1.0),
+    };
+
+    Waypoint pushIn(Waypoint p) {
+      // Catmull-Rom can overshoot near a sharp turn — same halving used in
+      // `_offsetWaypoint` for the same reason.
+      const safetyFactor = 0.5;
+      final maxPush =
+          _maxOffsetAlong(p.x, p.y, nx, ny, halfWidth, viewport) * safetyFactor;
+      final amount = math.min(PitchCarsConfig.bridgeAmplitudeWorld, maxPush);
+      return Waypoint(p.x + nx * amount, p.y + ny * amount);
+    }
+
+    return [pushIn(entry), pushIn(exit)];
   }
 
   /// How far a point can move from (x, y) along direction (dx, dy) before
@@ -417,3 +470,5 @@ class TrackGenerator {
 }
 
 enum _Edge { left, right, top, bottom }
+
+enum _Relation { opposite, adjacent, same }
