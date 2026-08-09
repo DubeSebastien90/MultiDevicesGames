@@ -110,7 +110,11 @@ void main() {
       // p1->p2 turns one way, p2->p3 the other: p3 ends up displaced along
       // the *original* heading axis from p1, not further along the first
       // turn's axis.
-      expect((placed[2].cy - placed[0].cy).abs(), greaterThan(0));
+      // If both turns went the same direction (spiral bug), p3 would keep
+      // moving further along p2's axis, ending up *beyond* p2 in that
+      // direction. With alternating turns, p3 comes back: p3.cy < p2.cy.
+      expect(placed[2].cy, lessThan(placed[1].cy),
+          reason: 'staircase must alternate turns, not spiral');
       expect((placed[2].cx - placed[1].cx).abs(), greaterThan(0));
     });
   });
