@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
 
+import '../../sdk/layout/board_links.dart';
 import '../../sdk/layout/phone_spec.dart';
+import '../../sdk/platform_config.dart';
 
 /// One phone placed by the motif builder, in board millimetres.
 ///
@@ -213,3 +215,85 @@ List<int> _partSizes(int n, math.Random rng) {
 /// outside this file needs a partition on its own.
 @visibleForTesting
 List<int> partSizesForTest(int n, math.Random rng) => _partSizes(n, rng);
+
+/// The 3-phone bridge motif: a straight phone, a gap, another straight
+/// phone continuing the same line — with a third phone turned 90° and
+/// offset sideways, wide enough to touch both outer phones across the gap
+/// without them ever touching each other. This is the shared mechanic
+/// behind both the "n-shape" and "T-shape" patterns from the design sketch:
+/// which one it looks like falls out of the *incoming heading* alone (legs
+/// vertical with a horizontal bridge, or legs horizontal with a vertical
+/// one) — there is only one placement function.
+///
+/// Returns null if the middle phone isn't wide enough, in its short
+/// dimension, to keep the outer phones' gap safely past
+/// `BoardLinks.maxJoinGap` while still overlapping both of them — an
+/// unusually narrow real device, not expected in practice but not asserted
+/// away either.
+List<_MotifPhone>? _placeBridge(
+  _MotifPhone anchor,
+  List<PhoneSpec> specs, {
+  required bool mirror,
+}) {
+  final ahead = _headingOf(anchor);
+  final vertical = _isVertical(ahead);
+  final sideways = anchor.sideways;
+  final a = _unitOf(ahead);
+  final c = _unitOf((ahead + 3) % 4);
+
+  final specA = specs[0];
+  final specB = specs[1];
+  final specC = specs[2];
+  final legA = _MotifPhone.of(specA, 0, 0, sideways);
+  final legC = _MotifPhone.of(specC, 0, 0, sideways);
+  final bridge = _MotifPhone.of(specB, 0, 0, !sideways);
+
+  final halfAlongAnchor = vertical ? anchor.halfH : anchor.halfW;
+  final halfAlongA = vertical ? legA.halfH : legA.halfW;
+  final halfAcrossA = vertical ? legA.halfW : legA.halfH;
+  final halfAlongC = vertical ? legC.halfH : legC.halfW;
+  final halfAcrossC = vertical ? legC.halfW : legC.halfH;
+  final halfAlongB = vertical ? bridge.halfH : bridge.halfW;
+  final halfAcrossB = vertical ? bridge.halfW : bridge.halfH;
+
+  // The gap between the two outer phones must clear the join-distance
+  // threshold (so BoardLinks never calls them joined), and the middle
+  // phone's own width must comfortably span that gap with real overlap on
+  // each side (not just a touch), or a "stacked"/"sideBySide" join between
+  // it and either outer phone would never register at all.
+  const overlapMm = 5.0;
+  final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
+  final gapAC = reachMm + 2 * overlapMm;
+  if (halfAlongB < gapAC / 2 + overlapMm) return null;
+
+  final alongA = halfAlongAnchor + _gapMm(anchor, specA) + halfAlongA;
+  final alongB = alongA + halfAlongA + gapAC / 2;
+  final alongC = alongA + halfAlongA + gapAC + halfAlongC;
+
+  final acrossExtent = math.max(halfAcrossA, halfAcrossC);
+  final side = mirror ? 1.0 : -1.0;
+  final acrossB = side * (acrossExtent + _gapMm(anchor, specB) + halfAcrossB);
+
+  _MotifPhone at(double along, double across, PhoneSpec spec, bool sw) =>
+      _MotifPhone.of(
+        spec,
+        anchor.cx + a.x * along + c.x * across,
+        anchor.cy + a.y * along + c.y * across,
+        sw,
+        arrivedBy: ahead,
+      );
+
+  return [
+    at(alongA, 0, specA, sideways),
+    at(alongB, acrossB, specB, !sideways),
+    at(alongC, 0, specC, sideways),
+  ];
+}
+
+@visibleForTesting
+List<_MotifPhone>? placeBridgeForTest(
+  _MotifPhone anchor,
+  List<PhoneSpec> specs, {
+  required bool mirror,
+}) =>
+    _placeBridge(anchor, specs, mirror: mirror);

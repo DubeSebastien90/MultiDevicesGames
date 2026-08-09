@@ -117,5 +117,79 @@ void main() {
           reason: 'staircase must alternate turns, not spiral');
       expect((placed[2].cx - placed[1].cx).abs(), greaterThan(0));
     });
+
+    test('bridge motif places 3 phones, none overlapping', () {
+      final specs = [phone('p1'), phone('p2'), phone('p3')];
+      final placed = placeBridgeForTest(
+        seedPhoneForTest(sideways: false),
+        specs,
+        mirror: true,
+      );
+      expect(placed, isNotNull);
+      expect(placed!.length, 3);
+      expect(placed[0].overlapsForTest(placed[1]), isFalse);
+      expect(placed[1].overlapsForTest(placed[2]), isFalse);
+      expect(placed[0].overlapsForTest(placed[2]), isFalse);
+    });
+
+    test('bridge motif never lets the two outer phones touch', () {
+      // The whole reason the bridge attach exists instead of two plain
+      // corners: the outer phones must stay far enough apart that
+      // BoardLinks never calls them joined — see patterns-to-avoid Fig. 7.
+      final specs = [phone('p1'), phone('p2'), phone('p3')];
+      for (final mirror in [true, false]) {
+        final placed = placeBridgeForTest(
+          seedPhoneForTest(sideways: false),
+          specs,
+          mirror: mirror,
+        );
+        final legA = placed![0];
+        final legC = placed[2];
+        final reachMm = 4.0 / 0.1; // BoardLinks.maxJoinGap / mmToWorld
+        final gapX = legA.right < legC.left
+            ? legC.left - legA.right
+            : legA.left - legC.right;
+        final gapY = legA.bottom < legC.top
+            ? legC.top - legA.bottom
+            : legA.top - legC.bottom;
+        final apart = gapX > 0 ? gapX : gapY;
+        expect(apart, greaterThan(reachMm));
+      }
+    });
+
+    test('bridge mirror flips which side the middle phone pokes out to', () {
+      final specs = [phone('p1'), phone('p2'), phone('p3')];
+      final anchor = seedPhoneForTest(sideways: false);
+      final right = placeBridgeForTest(anchor, specs, mirror: true)!;
+      final left = placeBridgeForTest(anchor, specs, mirror: false)!;
+      expect(right[0].cx, closeTo(left[0].cx, 1e-9)); // same outer phones
+      expect(right[2].cx, closeTo(left[2].cx, 1e-9));
+      expect(
+        (right[1].cx - right[0].cx).sign,
+        isNot(equals((left[1].cx - left[0].cx).sign)),
+      );
+    });
+
+    test('bridge motif declines a middle phone too narrow to bridge safely',
+        () {
+      final narrow = PhoneSpec(
+        phoneId: 'p2',
+        label: 'narrow',
+        widthMm: 30, // half-width 15mm, well under the ~30mm floor needed
+        heightMm: 152.4,
+        bezelMm: 3,
+        dpi: 400,
+        devicePixelRatio: 3,
+        activePxWidth: 1080,
+        activePxHeight: 2400,
+      );
+      final specs = [phone('p1'), narrow, phone('p3')];
+      final placed = placeBridgeForTest(
+        seedPhoneForTest(sideways: false),
+        specs,
+        mirror: true,
+      );
+      expect(placed, isNull);
+    });
   });
 }
