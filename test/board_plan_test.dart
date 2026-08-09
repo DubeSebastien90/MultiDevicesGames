@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart' show PhoneSlice;
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
+import 'package:multiscreen_slingshot/sdk/layout/board_links.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
@@ -172,6 +173,93 @@ void main() {
       // bezel apart, not a bezel plus the depth difference.
       final gapMm = (shallow.top - deep.bottom) / 0.1;
       expect(gapMm, closeTo(6, 0.5), reason: 'both bezels, and nothing else');
+    });
+
+    test('a narrow phone is pulled to the seam, not centred in its column', () {
+      // A block of four with one smaller phone in it. Centred in its column,
+      // that phone floats clear of the vertical seam with a gap either side —
+      // the board still validates, because the gap is inside the tolerance for
+      // two bezels, and then the round runs with a dead strip down the middle
+      // of it. Rows have always been pulled toward their seam; columns had not.
+      final phones = [
+        phone('you'),
+        phone('small', widthMm: 52, heightMm: 120),
+        phone('p3'),
+        phone('p4'),
+      ];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+
+      final you = board.slices.firstWhere((s) => s.phoneId == 'you').viewport;
+      final small =
+          board.slices.firstWhere((s) => s.phoneId == 'small').viewport;
+
+      final gapMm = (small.left - you.right) / 0.1;
+      expect(gapMm, closeTo(6, 0.5),
+          reason: 'both bezels and nothing else — the small phone should be '
+              'pushed left until it touches its neighbour');
+    });
+
+    test('every neighbour in a mixed block is genuinely joined', () {
+      // Whatever sizes turn up. Not measured in millimetres — the number that
+      // matters is whether the platform calls them neighbours, because that is
+      // what puts a stripe on the two edges and what the seam is built on.
+      final phones = [
+        phone('a'),
+        phone('b', widthMm: 55, heightMm: 118),
+        phone('c', widthMm: 80, heightMm: 170),
+        phone('d', widthMm: 62, heightMm: 140),
+        phone('e'),
+        phone('f', widthMm: 75, heightMm: 160),
+      ];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+
+      bool joined(String x, String y) => board.links.any(
+            (l) => l.phoneId == x && l.partnerId == y,
+          );
+
+      // Along each row, and across the seam between them.
+      for (final pair in [
+        ['a', 'b'],
+        ['b', 'c'],
+        ['d', 'e'],
+        ['e', 'f'],
+        ['a', 'd'],
+        ['b', 'e'],
+        ['c', 'f'],
+      ]) {
+        expect(joined(pair[0], pair[1]), isTrue,
+            reason: '${pair[0]} and ${pair[1]} are not neighbours');
+      }
+    });
+
+    test('a block of four leaves nothing but bezels between screens', () {
+      // The whole point of pulling columns to the seam. Every gap on the board
+      // should be two bezels and no more — before this, a smaller phone sat
+      // 38mm from the one below it, a hair inside the 40mm at which the
+      // platform stops calling two screens neighbours at all.
+      final phones = [
+        phone('you'),
+        phone('small', widthMm: 52, heightMm: 120),
+        phone('p3'),
+        phone('p4'),
+      ];
+      final board = compiler.compile(
+        Layouts.grid(phones, rows: 2),
+        lobbyOf(phones),
+      );
+
+      for (final verdict in BoardLinks.explain(board.slices)) {
+        if (!verdict.joined) continue;
+        expect(verdict.gap / 0.1, closeTo(6, 0.5),
+            reason: '${verdict.aId} and ${verdict.bId} are '
+                '${(verdict.gap / 0.1).round()}mm apart');
+      }
     });
 
     test('a single row is just a row', () {

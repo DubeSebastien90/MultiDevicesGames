@@ -267,8 +267,11 @@ class Layouts {
     Gaps gap = Gaps.casingsTouching,
     PhoneOrientation orientation = PhoneOrientation.upright,
 
-    /// Pull each row toward the seam it shares with the next, so screens meet
-    /// edge to edge there whatever their depth. Off, rows are top-aligned.
+    /// Pull every phone toward the seam it shares with its neighbours, so
+    /// screens meet edge to edge whatever their size — rows toward the seam
+    /// below or above them, columns toward the one beside them.
+    ///
+    /// Off, rows are top-aligned and phones sit centred in their column.
     bool seamAlign = true,
     String? instruction,
   }) {
@@ -355,7 +358,25 @@ class Layouts {
         final spec = at(r, c);
         final w = widthOf(spec);
         final h = heightOf(spec);
-        final left = columnLefts[c] + (columnWidths[c] - w) / 2;
+
+        // Toward the seam, across: the left column hugs its right edge, the
+        // right column its left, and a middle column cannot favour both so it
+        // centres. Exactly the rule rows already follow, and it was missing
+        // here — a phone narrower than its column sat centred in it, so a small
+        // phone in a block of four floated clear of the seam with a gap on
+        // either side. The board still validated, because the gap was smaller
+        // than two bezels' tolerance, and then the game ran with a dead strip
+        // down the middle of it.
+        final double left;
+        if (!seamAlign || columns == 1) {
+          left = columnLefts[c] + (columnWidths[c] - w) / 2;
+        } else if (c == 0) {
+          left = columnLefts[c] + (columnWidths[c] - w);
+        } else if (c == columns - 1) {
+          left = columnLefts[c];
+        } else {
+          left = columnLefts[c] + (columnWidths[c] - w) / 2;
+        }
 
         // Toward the seam: the top row sits on its bottom edge, the bottom row
         // on its top, and a middle row cannot favour both so it centres.
