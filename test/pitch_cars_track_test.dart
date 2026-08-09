@@ -86,16 +86,28 @@ void main() {
   });
 
   group('TrackGenerator', () {
-    PhoneSpec phone(String id) => PhoneSpec(
+    /// Pixels follow the millimetres, at one fixed density.
+    ///
+    /// Derived rather than typed, so a fixture cannot name a size and keep
+    /// somebody else's pixel count — that describes a device with
+    /// non-square pixels, which does not exist, and a test built on one proves
+    /// nothing about a real table.
+    PhoneSpec phone(
+      String id, {
+      double widthMm = 68.58,
+      double heightMm = 152.4,
+      String? label,
+    }) =>
+        PhoneSpec(
           phoneId: id,
-          label: 'phone $id',
-          widthMm: 68.58,
-          heightMm: 152.4,
+          label: label ?? 'phone $id',
+          widthMm: widthMm,
+          heightMm: heightMm,
           bezelMm: 3,
           dpi: 400,
           devicePixelRatio: 3,
-          activePxWidth: 1080,
-          activePxHeight: 2400,
+          activePxWidth: widthMm * 400 / 25.4,
+          activePxHeight: heightMm * 400 / 25.4,
         );
 
     /// Three phones placed by hand into an L: p1—p2 side by side, p2—p3
@@ -352,17 +364,9 @@ void main() {
     });
 
     test('a very narrow corner phone does not throw', () {
-      final narrow = PhoneSpec(
-        phoneId: 'p2',
-        label: 'narrow',
-        widthMm: 20,
-        heightMm: 152.4,
-        bezelMm: 3,
-        dpi: 400,
-        devicePixelRatio: 3,
-        activePxWidth: 1080,
-        activePxHeight: 2400,
-      );
+      // A real sliver of a screen: 20mm across and full height, so its pixels
+      // are 315 x 2400 at the same density. Narrow, and possible.
+      final narrow = phone('p2', widthMm: 20, label: 'narrow');
       final phones = [phone('p1'), narrow, phone('p3')];
       final plan = BoardPlan(const [
         PhonePlacement('p1', xMm: 0, yMm: 0),

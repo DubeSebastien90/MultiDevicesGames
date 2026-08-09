@@ -406,6 +406,11 @@ void main() {
   });
 
   group('a screen is one size, not two', () {
+    // The only fixtures in the suite that describe an impossible device, and
+    // deliberately so: here the impossible device *is* the subject. Everywhere
+    // else a fixture derives its pixels from its millimetres, because a test
+    // built on non-square pixels proves nothing about a real table.
+    //
     // The compiler reserves a slot of widthMm by heightMm, but hands back a
     // screen sized from the pixel count and the density — and the density is
     // worked out from the width alone. Let those drift and a phone is drawn to
