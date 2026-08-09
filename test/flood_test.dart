@@ -16,6 +16,9 @@ import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
 /// Both Flood variants driven entirely through the SDK contract — no host, no
 /// sockets, no rendering, exactly as `games_contract_test.dart` does it.
+/// Pixels follow the millimetres, at a fixed density. A fixture that names a
+/// size in millimetres and keeps somebody else's pixel count is describing a
+/// device that cannot exist, and the compiler now says so.
 PhoneSpec phone(String id, {double widthMm = 68.58, double heightMm = 152.4}) =>
     PhoneSpec(
       phoneId: id,
@@ -25,8 +28,8 @@ PhoneSpec phone(String id, {double widthMm = 68.58, double heightMm = 152.4}) =>
       bezelMm: 3,
       dpi: 400,
       devicePixelRatio: 3,
-      activePxWidth: 1080,
-      activePxHeight: 2400,
+      activePxWidth: widthMm * 400 / 25.4,
+      activePxHeight: heightMm * 400 / 25.4,
     );
 
 ({FloodSim sim, BoardLayout board, Scoreboard scores}) start(

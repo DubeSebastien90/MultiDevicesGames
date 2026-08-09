@@ -82,7 +82,24 @@ class PhoneSpec {
     label: metrics.label,
     color: color,
     widthMm: metrics.widthMm,
-    heightMm: metrics.heightMm,
+    // Derived from the pixel count rather than taken as given, and this is
+    // load-bearing.
+    //
+    // A screen's physical size was being read two ways: the layout reserved a
+    // slot of `widthMm` by `heightMm`, while the camera and the compiled screen
+    // used `activePx` scaled by [DeviceMetrics.dpi] — which is worked out from
+    // the **width alone**. Those agree only while the entered millimetres have
+    // the same aspect ratio as the pixels, and the metrics card invites exactly
+    // the correction that breaks it: you measure the short edge with a ruler,
+    // fix the width, and leave the height at whatever was estimated. From then
+    // on the phone was drawn to one size and given room for another, so it
+    // reached over its neighbour — visible on the placement diagram and on the
+    // glass, while the plan itself validated cleanly because it had only ever
+    // checked the slot.
+    //
+    // Pixels are square, so the aspect ratio is not a matter of opinion: one
+    // measured edge fixes the other. Correcting the width now scales both.
+    heightMm: metrics.widthMm * metrics.activePxHeight / metrics.activePxWidth,
     bezelMm: metrics.bezelMm,
     dpi: metrics.dpi,
     devicePixelRatio: metrics.devicePixelRatio,

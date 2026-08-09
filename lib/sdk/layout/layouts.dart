@@ -269,6 +269,9 @@ class Layouts {
 
     /// Pull each row toward the seam it shares with the next, so screens meet
     /// edge to edge there whatever their depth. Off, rows are top-aligned.
+    ///
+    /// Only about depth. Across, phones are always packed against each other —
+    /// there is no arrangement in which a hole along a row is wanted.
     bool seamAlign = true,
     String? instruction,
   }) {
@@ -298,11 +301,8 @@ class Layouts {
     /// The phone at (row, column), reading row by row.
     PhoneSpec at(int row, int column) => ordered[row * columns + column];
 
-    // A column is as wide as its widest phone; a row as deep as its deepest.
-    final columnWidths = [
-      for (var c = 0; c < columns; c++)
-        [for (var r = 0; r < rows; r++) widthOf(at(r, c))].reduce(math.max),
-    ];
+    // A row is as deep as its deepest phone. There is deliberately no matching
+    // idea of a column width — see the packing below.
     final rowDepths = [
       for (var r = 0; r < rows; r++)
         [for (var c = 0; c < columns; c++) heightOf(at(r, c))].reduce(math.max),
@@ -328,34 +328,96 @@ class Layouts {
     }
     final totalDepth = y;
 
-    // Column x positions, and the same for the horizontal gaps.
-    final columnLefts = <double>[];
-    var x = 0.0;
-    for (var c = 0; c < columns; c++) {
-      columnLefts.add(x);
-      x += columnWidths[c];
-      if (c < columns - 1) {
-        x += [
-          for (var r = 0; r < rows; r++) gap.between(at(r, c), at(r, c + 1)),
-        ].reduce(math.max);
+    // Each row is packed **edge to edge** and then centred, rather than laid
+    // into columns as wide as their widest phone.
+    //
+    // Columns were the obvious shape and the wrong one. A column is only as
+    // wide as its biggest screen, so a smaller phone sharing that column sat
+    // centred in it with a hole on either side — touching nobody. Pulling it to
+    // one seam fixed the two-column case, because there each phone has a single
+    // neighbour to reach for; it cannot fix a middle column, where a phone has
+    // one on each side and centring is the least-bad compromise. Grouping
+    // similar widths into the same column would narrow the hole without ever
+    // closing it, and would take away the game's say in who sits where —
+    // Flood picks its order deliberately.
+    //
+    // Packing the row instead makes the hole impossible rather than small:
+    // every phone is placed against the one before it, so the only space left
+    // anywhere on a row is the bezels between two casings, whatever sizes turn
+    // up and however many are playing. What is given up is columns lining up
+    // exactly between rows, which nothing depends on — screens are joined by
+    // where they actually are, not by a grid index.
+    final rowLefts = <List<double>>[];
+    for (var r = 0; r < rows; r++) {
+      final lefts = <double>[];
+      var x = 0.0;
+      for (var c = 0; c < columns; c++) {
+        lefts.add(x);
+        x += widthOf(at(r, c));
+        if (c < columns - 1) x += gap.between(at(r, c), at(r, c + 1));
+      }
+      rowLefts.add(lefts);
+    }
+
+    // Then slide each row so the seams *between* columns line up down the
+    // board.
+    //
+    // Centring each row on its own was the obvious way to place them and it
+    // staggered the grid: rows of different total width drifted apart, columns
+    // stopped standing over each other, and a phone ended up joined to the one
+    // diagonally opposite it. The seams are what has to line up — they are
+    // where two screens meet, and a straight one is the difference between a
+    // block of phones and a pile of them.
+    //
+    // With two columns there is one seam per row and it lines up exactly. With
+    // more, no single slide can align them all unless the widths match, so each
+    // row takes the shift that puts its seams closest to where the others have
+    // theirs — the average error, which is the best one number can do.
+    double seamOf(int r, int k) =>
+        (rowLefts[r][k] + widthOf(at(r, k)) + rowLefts[r][k + 1]) / 2;
+
+    if (columns > 1) {
+      final reference = [
+        for (var k = 0; k < columns - 1; k++)
+          [for (var r = 0; r < rows; r++) seamOf(r, k)]
+                  .fold<double>(0, (sum, v) => sum + v) /
+              rows,
+      ];
+
+      for (var r = 0; r < rows; r++) {
+        var drift = 0.0;
+        for (var k = 0; k < columns - 1; k++) {
+          drift += reference[k] - seamOf(r, k);
+        }
+        final shift = drift / (columns - 1);
+        for (var c = 0; c < columns; c++) {
+          rowLefts[r][c] += shift;
+        }
+      }
+    } else {
+      // One column: no seam to line up on, so centre the rows on each other.
+      final widest = [
+        for (var r = 0; r < rows; r++) widthOf(at(r, 0)),
+      ].reduce(math.max);
+      for (var r = 0; r < rows; r++) {
+        rowLefts[r][0] = (widest - widthOf(at(r, 0))) / 2;
       }
     }
 
     final placements = <PhonePlacement>[];
-    var playLeft = double.infinity;
-    var playRight = double.negativeInfinity;
+
+    // The playfield across is the strip *every* row covers: a row that is
+    // shorter than the widest leaves ground at each end with no screen under
+    // it, and calling that playfield would invent a dead zone.
+    var playLeft = double.negativeInfinity;
+    var playRight = double.infinity;
 
     for (var c = 0; c < columns; c++) {
-      // Within a column, the playfield is the narrowest phone's band: the strip
-      // every row can see.
-      var columnLeft = double.negativeInfinity;
-      var columnRight = double.infinity;
-
       for (var r = 0; r < rows; r++) {
         final spec = at(r, c);
         final w = widthOf(spec);
         final h = heightOf(spec);
-        final left = columnLefts[c] + (columnWidths[c] - w) / 2;
+        final left = rowLefts[r][c];
 
         // Toward the seam: the top row sits on its bottom edge, the bottom row
         // on its top, and a middle row cannot favour both so it centres.
@@ -379,13 +441,9 @@ class Layouts {
           hint: _gridHint(r, c, rows, columns),
         ));
 
-        if (left > columnLeft) columnLeft = left;
-        if (left + w < columnRight) columnRight = left + w;
+        if (c == 0 && left > playLeft) playLeft = left;
+        if (c == columns - 1 && left + w < playRight) playRight = left + w;
       }
-
-      // Columns sit side by side, so each one adds ground.
-      if (columnLeft < playLeft) playLeft = columnLeft;
-      if (columnRight > playRight) playRight = columnRight;
     }
 
     return BoardPlan(
