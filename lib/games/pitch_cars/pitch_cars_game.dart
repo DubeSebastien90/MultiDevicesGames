@@ -3,8 +3,8 @@ import '../../sdk/contract/player_count.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/layout/board_plan.dart';
-import '../../sdk/layout/layouts.dart';
 import '../../sdk/layout/phone_spec.dart';
+import 'pitch_cars_layout.dart';
 import 'pitch_cars_sim.dart';
 import 'pitch_cars_view.dart';
 
@@ -21,13 +21,11 @@ class PitchCarsGame implements MultiscreenGame {
   );
 
   @override
-  BoardPlan planBoard(LobbyInfo lobby) => Layouts.path(
+  BoardPlan planBoard(LobbyInfo lobby) => PitchCarsLayout.motifChain(
     lobby.phones,
-    sort: PhoneSort.joinOrder,
     instruction:
-        'Lay the phones out in a path, each against the last — '
-        'match the coloured edges. The track winds along it, start to '
-        'finish.',
+        'Lay the phones out to match the coloured edges — the track '
+        'winds along it, start to finish.',
   );
 
   @override
