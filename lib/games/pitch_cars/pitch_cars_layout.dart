@@ -383,11 +383,54 @@ bool _fits(
   return true;
 }
 
+/// If [candidates] only fails `_fits` because its own first phone (the one
+/// flush against [anchor]) drifted within `BoardLinks` join range of some
+/// unrelated, already-placed phone — the cross-motif version of the same
+/// touch-triangle bug `_placeStaircase`'s own clearance push fixes inside a
+/// single motif — sliding the whole motif further along the shared heading
+/// axis, away from [anchor], can clear it without disturbing the deliberate
+/// anchor link. That link has slack: it starts at the flush casing gap
+/// (`_gapMm`, a few millimetres) and stays joined up to `BoardLinks`'
+/// `maxJoinGap` (40mm), so there's real budget to push into. Shifts by the
+/// full safe budget (minus a small margin, the same one the staircase push
+/// uses) rather than the minimum needed, since the direction — not the
+/// distance — determines whether this helps at all: if the blocking phone
+/// sits behind (relative to the direction of travel), any shift toward the
+/// budget's edge clears it; if it sits ahead, no shift along this axis
+/// would, and `_fits` on the result still says so. Returns null when the
+/// anchor link has no slack left, or when shifting doesn't clear the
+/// conflict.
+List<_MotifPhone>? _pushedClear(
+  _MotifPhone anchor,
+  List<_MotifPhone> candidates,
+  List<_MotifPhone> placedSoFar,
+) {
+  final ahead = _headingOf(anchor);
+  final unit = _unitOf(ahead);
+  final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
+  const marginMm = 5.0;
+  final budget = reachMm - _gapMm(anchor, candidates[0].spec!) - marginMm;
+  if (budget <= 0) return null;
+
+  final shifted = [
+    for (final p in candidates)
+      _MotifPhone.of(
+        p.spec!,
+        p.cx + unit.x * budget,
+        p.cy + unit.y * budget,
+        p.sideways,
+        arrivedBy: p.arrivedBy,
+      ),
+  ];
+  return _fits(shifted, placedSoFar, anchor) ? shifted : null;
+}
+
 /// Places one motif — 2 phones (always the L) or 3 (bridge, weighted 2:1
 /// over staircase, since the bridge motif covers both the "n-shape" and
-/// "T-shape" patterns from the design sketch) — retrying orientations and,
-/// for a 3-slot, the other variant, before giving up. Returns null only
-/// when every combination collided with something already placed.
+/// "T-shape" patterns from the design sketch) — retrying orientations,
+/// a clearance push along the heading axis, and, for a 3-slot, the other
+/// variant, before giving up. Returns null only when every combination
+/// collided with something already placed.
 List<_MotifPhone>? _placeSlot(
   _MotifPhone anchor,
   List<PhoneSpec> specs,
@@ -400,6 +443,8 @@ List<_MotifPhone>? _placeSlot(
     for (final mirror in mirrors) {
       final candidate = _placeL(anchor, specs, mirror: mirror);
       if (_fits(candidate, placedSoFar, anchor)) return candidate;
+      final pushed = _pushedClear(anchor, candidate, placedSoFar);
+      if (pushed != null) return pushed;
     }
     return null;
   }
@@ -417,9 +462,10 @@ List<_MotifPhone>? _placeSlot(
   for (final variant in variants) {
     for (final mirror in mirrors) {
       final candidate = variant(anchor, specs, mirror: mirror);
-      if (candidate != null && _fits(candidate, placedSoFar, anchor)) {
-        return candidate;
-      }
+      if (candidate == null) continue;
+      if (_fits(candidate, placedSoFar, anchor)) return candidate;
+      final pushed = _pushedClear(anchor, candidate, placedSoFar);
+      if (pushed != null) return pushed;
     }
   }
   return null;
@@ -452,18 +498,25 @@ _MotifPhone motifPhoneForTest({
 }) =>
     _MotifPhone(null, cx, cy, sideways, halfW, halfH);
 
-/// One full attempt at a chain: a random partition, then every motif placed
-/// in turn against a moving cursor. Returns null if any slot exhausted its
-/// own retries — the caller rerolls the whole partition in that case.
+/// One full attempt at a chain: a random partition of a shuffled phone
+/// order, then every motif placed in turn against a moving cursor. Returns
+/// null if any slot exhausted its own retries — the caller rerolls the
+/// whole attempt in that case, including which phones land in which slot:
+/// which pairing of phones shares a motif materially affects whether that
+/// motif's geometry clears everything already placed (mismatched screen
+/// sizes change every offset _placeTurn and _placeBridge compute), so a
+/// fixed assignment can leave some lobbies with no reachable board at all
+/// even though a different pairing of the same phones works fine.
 List<PhonePlacement>? _tryBuild(List<PhoneSpec> ordered, math.Random rng) {
-  final parts = _partSizes(ordered.length, rng);
+  final shuffled = List.of(ordered)..shuffle(rng);
+  final parts = _partSizes(shuffled.length, rng);
   final seedSideways = rng.nextBool();
   var cursor = _MotifPhone.seed(seedSideways);
   final placed = <_MotifPhone>[];
   var index = 0;
 
   for (final size in parts) {
-    final specs = ordered.sublist(index, index + size);
+    final specs = shuffled.sublist(index, index + size);
     index += size;
     final result = _placeSlot(cursor, specs, placed, rng);
     if (result == null) return null;
