@@ -10,19 +10,13 @@ import 'pitch_cars_config.dart';
 /// turn/progress readout.
 class PitchCarsView extends ShapeView {
   PitchCarsView({required this.phoneId})
-      : super(grid: false, playfield: const Color(0xFF141C33));
+    : super(grid: false, playfield: const Color(0xFF141C33));
 
   final String phoneId;
 
   final _aim = Paint()..style = PaintingStyle.stroke;
   final _finishedFill = Paint();
 
-  /// Pool cue, not slingshot: the car itself never moves while aiming
-  /// (`PitchCarsSim` holds it at its pre-turn position throughout the
-  /// pull). This draws the only visual feedback the player gets instead —
-  /// an arrow from the car, in the direction it is actually about to
-  /// launch (opposite the pull, same as the physics impulse), scaled by
-  /// how far back the pull has gone.
   @override
   void renderForeground(Canvas canvas, Frame frame) {
     _drawFinished(canvas, frame);
@@ -45,7 +39,8 @@ class PitchCarsView extends ShapeView {
     final direction = -pullVector / pulled; // opposite the pull = the shot
 
     final shaftLen =
-        PitchCarsConfig.carRadius * 1.5 + strength * PitchCarsConfig.maxPull * 1.5;
+        PitchCarsConfig.carRadius * 1.5 +
+        strength * PitchCarsConfig.maxPull * 1.5;
     final tip = origin + direction * shaftLen;
 
     final px = frame.onePixel;
@@ -65,7 +60,8 @@ class PitchCarsView extends ShapeView {
     final dirAngle = math.atan2(direction.dy, direction.dx);
     for (final sign in [-1, 1]) {
       final wingAngle = dirAngle + math.pi - sign * headAngle;
-      final wing = tip + Offset(math.cos(wingAngle), math.sin(wingAngle)) * headLen;
+      final wing =
+          tip + Offset(math.cos(wingAngle), math.sin(wingAngle)) * headLen;
       canvas.drawLine(tip, wing, _aim);
     }
   }
@@ -87,17 +83,6 @@ class PitchCarsView extends ShapeView {
     }
   }
 
-  /// Marks whichever car currently has the turn instead of a "YOUR TURN"
-  /// HUD label — a hovering ring, in that car's own colour. Drawn on every
-  /// phone (not gated to the current-turn player's own device): the board
-  /// spans several screens, so the active car may physically sit under a
-  /// different phone than the one its owner joined from, and a check
-  /// against this device's `phoneId` would leave nobody able to see it.
-  /// Hidden the instant a grab starts, reusing the same `pullX`/`pullY`
-  /// signal the aim arrow uses, and hidden again once the car is actually
-  /// in flight — a ring drawn around a car mid-bump reads as part of its
-  /// collision footprint, not as a turn marker, even though it never
-  /// touches the physics itself.
   void _drawTurnHighlight(Canvas canvas, Frame frame) {
     final currentTurn = frame.sharedState['currentTurn'] as String?;
     if (currentTurn == null) return;
@@ -125,18 +110,18 @@ class PitchCarsView extends ShapeView {
   }
 
   Widget _pill(String label, {required bool highlight}) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0x99000000),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: highlight ? const Color(0xFFFFD166) : const Color(0xFFFFFFFF),
-          ),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: const Color(0x99000000),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: highlight ? const Color(0xFFFFD166) : const Color(0xFFFFFFFF),
+      ),
+    ),
+  );
 }

@@ -24,10 +24,7 @@ part 'sim_contact.dart';
 class PitchCarsSim extends Forge2DGameSim {
   PitchCarsSim(super.context, {math.Random? random})
     : _random = random ?? math.Random() {
-    track = TrackGenerator.generate(
-      slices: context.slices,
-      random: _random,
-    );
+    track = TrackGenerator.generate(slices: context.slices, random: _random);
     _buildTrackEntities();
     _buildFinishLineEntities();
     _order = context.phoneIds;
@@ -74,9 +71,6 @@ class PitchCarsSim extends Forge2DGameSim {
   Vector2? _stallAnchor;
   Duration _sinceStallAnchor = Duration.zero;
 
-  /// Ids in the order they crossed the finish line. The last unfinished car
-  /// is appended automatically once it's the only one left — there's no
-  /// point making it prove what's already certain.
   final _finished = <String>{};
   final _finishOrder = <String>[];
   bool get _roundOver => _finished.length >= _order.length;
@@ -155,20 +149,8 @@ class PitchCarsSim extends Forge2DGameSim {
         _endTurn();
       }
     }
-
   }
 
-  /// Ranks against a fixed 8-slot ladder (pitch_cars' max field size) rather
-  /// than the actual field size — a small race just occupies the ladder's
-  /// top slots instead of stretching to fill it. That keeps the cost of
-  /// each rank step constant (~bestScore/7) regardless of N, instead of the
-  /// full 30-to-1 spread collapsing into however few placements a small
-  /// race has. Means the winner doesn't always net the full [bestScore]
-  /// like reaction's winner does — beating fewer opponents is worth less.
-  ///
-  /// Also builds [_outcome] here, once, right when the points themselves are
-  /// decided — `outcome` is polled every tick, so it must not rebuild its
-  /// `lines` map each time it's read.
   void _awardPoints() {
     final maxLast = PitchCarsConfig.maxPlayers - 1;
     final last = _order.length - 1;

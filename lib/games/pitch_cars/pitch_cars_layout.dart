@@ -30,21 +30,16 @@ class _MotifPhone {
     double cy,
     bool sideways, {
     int arrivedBy = -1,
-  }) =>
-      _MotifPhone(
-        spec,
-        cx,
-        cy,
-        sideways,
-        (sideways ? spec.heightMm : spec.widthMm) / 2,
-        (sideways ? spec.widthMm : spec.heightMm) / 2,
-        arrivedBy: arrivedBy,
-      );
+  }) => _MotifPhone(
+    spec,
+    cx,
+    cy,
+    sideways,
+    (sideways ? spec.heightMm : spec.widthMm) / 2,
+    (sideways ? spec.widthMm : spec.heightMm) / 2,
+    arrivedBy: arrivedBy,
+  );
 
-  /// A zero-size phantom anchor for the very first phone of the chain —
-  /// heading 0 (right) if it starts sideways, 1 (down) if upright, the same
-  /// convention `Layouts.path` falls back to for a phone with no
-  /// predecessor.
   factory _MotifPhone.seed(bool sideways) =>
       _MotifPhone(null, 0, 0, sideways, 0, 0, arrivedBy: sideways ? 0 : 1);
 
@@ -55,8 +50,6 @@ class _MotifPhone {
   final double halfW;
   final double halfH;
 
-  /// Which way the chain was travelling when it arrived here — 0 right, 1
-  /// down, 2 left, 3 up.
   final int arrivedBy;
 
   double get left => cx - halfW;
@@ -86,21 +79,15 @@ int _headingOf(_MotifPhone anchor) =>
 bool _isVertical(int heading) => heading == 1 || heading == 3;
 
 ({double x, double y}) _unitOf(int heading) => switch (heading) {
-      0 => (x: 1.0, y: 0.0),
-      1 => (x: 0.0, y: 1.0),
-      2 => (x: -1.0, y: 0.0),
-      _ => (x: 0.0, y: -1.0),
-    };
+  0 => (x: 1.0, y: 0.0),
+  1 => (x: 0.0, y: 1.0),
+  2 => (x: -1.0, y: 0.0),
+  _ => (x: 0.0, y: -1.0),
+};
 
-/// Casings touching: the same gap `Gaps.casingsTouching` computes, kept
-/// local rather than imported so this file has no dependency on
-/// `layouts.dart` at all. `anchor.spec` is null only for the seed phantom,
-/// which has no real casing.
 double _gapMm(_MotifPhone anchor, PhoneSpec spec) =>
     (anchor.spec?.bezelMm ?? 0) + spec.bezelMm;
 
-/// Continues straight ahead from [anchor]: same orientation, flush against
-/// its far edge, centered on its own line.
 _MotifPhone _placeStraight(_MotifPhone anchor, PhoneSpec spec) {
   final ahead = _headingOf(anchor);
   final sideways = anchor.sideways;
@@ -118,9 +105,6 @@ _MotifPhone _placeStraight(_MotifPhone anchor, PhoneSpec spec) {
   );
 }
 
-/// A quarter turn off [anchor]'s far end, flush with one of its flanks —
-/// [turnRight] picks which. Orientation flips: turning necessarily swaps
-/// which of the phone's own edges faces the direction of travel.
 _MotifPhone _placeTurn(
   _MotifPhone anchor,
   PhoneSpec spec, {
@@ -137,8 +121,9 @@ _MotifPhone _placeTurn(
   final halfAlongNew = _isVertical(ahead) ? candidate.halfH : candidate.halfW;
   final halfAcrossNew = _isVertical(ahead) ? candidate.halfW : candidate.halfH;
   final along = halfAlongAnchor + _gapMm(anchor, spec) + halfAlongNew;
-  final across =
-      turnRight ? (halfAcrossNew - acrossAnchor) : (acrossAnchor - halfAcrossNew);
+  final across = turnRight
+      ? (halfAcrossNew - acrossAnchor)
+      : (acrossAnchor - halfAcrossNew);
   return _MotifPhone.of(
     spec,
     anchor.cx + a.x * along + c.x * across,
@@ -164,24 +149,8 @@ List<_MotifPhone> placeLForTest(
   _MotifPhone anchor,
   List<PhoneSpec> specs, {
   required bool mirror,
-}) =>
-    _placeL(anchor, specs, mirror: mirror);
+}) => _placeL(anchor, specs, mirror: mirror);
 
-/// The 3-phone zigzag motif: a straight phone, then two quarter turns in
-/// *alternating* directions — two turns the same way would spiral a long
-/// chain of staircases back over itself; alternating keeps it a staircase.
-///
-/// The alternating turns return the chain to its original heading axis (a
-/// genuine "step" rather than a loop), but for tall, narrow phones that
-/// step can be short enough that phone 3 drifts back within `BoardLinks`'
-/// join distance of phone 1 — an unintended touch outside the
-/// meant-to-be chain (phone1-phone2, phone2-phone3), exactly the 3-phone
-/// touch-triangle this whole catalog exists to avoid. Phone 3 always
-/// shares phone 1's orientation and heading axis by construction, so
-/// pushing it further along that same axis (a free slide along its own
-/// touching edge with phone 2 — this never disturbs that join) clears it,
-/// generalized to any phone size via each phone's own half-extent along
-/// that axis rather than a formula assuming uniform dimensions.
 List<_MotifPhone> _placeStaircase(
   _MotifPhone anchor,
   List<PhoneSpec> specs, {
@@ -219,25 +188,15 @@ List<_MotifPhone> placeStaircaseForTest(
   _MotifPhone anchor,
   List<PhoneSpec> specs, {
   required bool mirror,
-}) =>
-    _placeStaircase(anchor, specs, mirror: mirror);
+}) => _placeStaircase(anchor, specs, mirror: mirror);
 
-/// A partition of [n] into parts of size 2 or 3, in random order.
-///
-/// Every count from 2 has at least one such partition (2 = [2], 3 = [3],
-/// and every larger n by induction), so this never returns an empty list
-/// for `n >= 2`. When more than one partition exists (e.g. n=6: three 2s,
-/// or two 3s), one is picked uniformly at random.
 List<int> _partSizes(int n, math.Random rng) {
   final options = <List<int>>[];
   for (var threes = 0; threes * 3 <= n; threes++) {
     final remainder = n - threes * 3;
     if (remainder % 2 == 0) {
       final twos = remainder ~/ 2;
-      options.add([
-        ...List.filled(twos, 2),
-        ...List.filled(threes, 3),
-      ]);
+      options.add([...List.filled(twos, 2), ...List.filled(threes, 3)]);
     }
   }
   final chosen = List.of(options[rng.nextInt(options.length)]);
@@ -245,25 +204,9 @@ List<int> _partSizes(int n, math.Random rng) {
   return chosen;
 }
 
-/// Test-only access to [_partSizes] — kept private otherwise, since nothing
-/// outside this file needs a partition on its own.
 @visibleForTesting
 List<int> partSizesForTest(int n, math.Random rng) => _partSizes(n, rng);
 
-/// The 3-phone bridge motif: a straight phone, a gap, another straight
-/// phone continuing the same line — with a third phone turned 90° and
-/// offset sideways, wide enough to touch both outer phones across the gap
-/// without them ever touching each other. This is the shared mechanic
-/// behind both the "n-shape" and "T-shape" patterns from the design sketch:
-/// which one it looks like falls out of the *incoming heading* alone (legs
-/// vertical with a horizontal bridge, or legs horizontal with a vertical
-/// one) — there is only one placement function.
-///
-/// Returns null if the middle phone isn't wide enough, in its short
-/// dimension, to keep the outer phones' gap safely past
-/// `BoardLinks.maxJoinGap` while still overlapping both of them — an
-/// unusually narrow real device, not expected in practice but not asserted
-/// away either.
 List<_MotifPhone>? _placeBridge(
   _MotifPhone anchor,
   List<PhoneSpec> specs, {
@@ -290,11 +233,6 @@ List<_MotifPhone>? _placeBridge(
   final halfAlongB = vertical ? bridge.halfH : bridge.halfW;
   final halfAcrossB = vertical ? bridge.halfW : bridge.halfH;
 
-  // The gap between the two outer phones must clear the join-distance
-  // threshold (so BoardLinks never calls them joined), and the middle
-  // phone's own width must comfortably span that gap with real overlap on
-  // each side (not just a touch), or a "stacked"/"sideBySide" join between
-  // it and either outer phone would never register at all.
   const overlapMm = 5.0;
   final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
   final gapAC = reachMm + 2 * overlapMm;
@@ -329,15 +267,8 @@ List<_MotifPhone>? placeBridgeForTest(
   _MotifPhone anchor,
   List<PhoneSpec> specs, {
   required bool mirror,
-}) =>
-    _placeBridge(anchor, specs, mirror: mirror);
+}) => _placeBridge(anchor, specs, mirror: mirror);
 
-/// The millimetre-space equivalent of `BoardLinks`' join predicate: real
-/// overlap on one axis and a gap within `BoardLinks.maxJoinGap` on the
-/// other. Duplicated here — against `_MotifPhone`'s already axis-aligned
-/// rects, since every placement in this file is a quarter turn — rather
-/// than routing through the full board compiler mid-placement, the same
-/// way `_placeBridge`'s `reachMm` already borrows this exact threshold.
 bool _wouldJoin(_MotifPhone a, _MotifPhone b) {
   final reachMm = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
   final vOverlap = math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
@@ -353,16 +284,6 @@ bool _wouldJoin(_MotifPhone a, _MotifPhone b) {
   return false;
 }
 
-/// Whether [candidates] can be added to the board: no bounding-box overlap
-/// with anything already placed, and no *unintended* `BoardLinks`-style
-/// join either. Only the deliberate chain link — the candidate's first
-/// phone joining [anchor] (the cursor this motif is attaching to), and
-/// each candidate's own consecutive internal phones (e.g. a staircase's
-/// phone1-phone2 and phone2-phone3) — is allowed to register as joined.
-/// Anything else joining is exactly the 3-phone touch-triangle this whole
-/// motif catalog exists to avoid by construction — a chain of motifs can
-/// curl back near itself several motifs later, so this is checked against
-/// everything placed so far, not just the immediate neighbor.
 bool _fits(
   List<_MotifPhone> candidates,
   List<_MotifPhone> placedSoFar,
@@ -383,23 +304,6 @@ bool _fits(
   return true;
 }
 
-/// If [candidates] only fails `_fits` because its own first phone (the one
-/// flush against [anchor]) drifted within `BoardLinks` join range of some
-/// unrelated, already-placed phone — the cross-motif version of the same
-/// touch-triangle bug `_placeStaircase`'s own clearance push fixes inside a
-/// single motif — sliding the whole motif further along the shared heading
-/// axis, away from [anchor], can clear it without disturbing the deliberate
-/// anchor link. That link has slack: it starts at the flush casing gap
-/// (`_gapMm`, a few millimetres) and stays joined up to `BoardLinks`'
-/// `maxJoinGap` (40mm), so there's real budget to push into. Shifts by the
-/// full safe budget (minus a small margin, the same one the staircase push
-/// uses) rather than the minimum needed, since the direction — not the
-/// distance — determines whether this helps at all: if the blocking phone
-/// sits behind (relative to the direction of travel), any shift toward the
-/// budget's edge clears it; if it sits ahead, no shift along this axis
-/// would, and `_fits` on the result still says so. Returns null when the
-/// anchor link has no slack left, or when shifting doesn't clear the
-/// conflict.
 List<_MotifPhone>? _pushedClear(
   _MotifPhone anchor,
   List<_MotifPhone> candidates,
@@ -425,12 +329,6 @@ List<_MotifPhone>? _pushedClear(
   return _fits(shifted, placedSoFar, anchor) ? shifted : null;
 }
 
-/// Places one motif — 2 phones (always the L) or 3 (bridge, weighted 2:1
-/// over staircase, since the bridge motif covers both the "n-shape" and
-/// "T-shape" patterns from the design sketch) — retrying orientations,
-/// a clearance push along the heading axis, and, for a 3-slot, the other
-/// variant, before giving up. Returns null only when every combination
-/// collided with something already placed.
 List<_MotifPhone>? _placeSlot(
   _MotifPhone anchor,
   List<PhoneSpec> specs,
@@ -449,15 +347,20 @@ List<_MotifPhone>? _placeSlot(
     return null;
   }
 
-  final variants = <List<_MotifPhone>? Function(
-    _MotifPhone,
-    List<PhoneSpec>, {
-    required bool mirror,
-  })>[
-    _placeBridge,
-    _placeBridge,
-    (a, s, {required bool mirror}) => _placeStaircase(a, s, mirror: mirror),
-  ]..shuffle(rng);
+  final variants =
+      <
+          List<_MotifPhone>? Function(
+            _MotifPhone,
+            List<PhoneSpec>, {
+            required bool mirror,
+          })
+        >[
+          _placeBridge,
+          _placeBridge,
+          (a, s, {required bool mirror}) =>
+              _placeStaircase(a, s, mirror: mirror),
+        ]
+        ..shuffle(rng);
 
   for (final variant in variants) {
     for (final mirror in mirrors) {
@@ -477,16 +380,14 @@ List<_MotifPhone>? placeSlotForTest(
   List<PhoneSpec> specs,
   List<_MotifPhone> placedSoFar,
   math.Random rng,
-) =>
-    _placeSlot(anchor, specs, placedSoFar, rng);
+) => _placeSlot(anchor, specs, placedSoFar, rng);
 
 @visibleForTesting
 bool fitsForTest(
   List<_MotifPhone> candidates,
   List<_MotifPhone> placedSoFar,
   _MotifPhone anchor,
-) =>
-    _fits(candidates, placedSoFar, anchor);
+) => _fits(candidates, placedSoFar, anchor);
 
 @visibleForTesting
 _MotifPhone motifPhoneForTest({
@@ -495,18 +396,8 @@ _MotifPhone motifPhoneForTest({
   required bool sideways,
   required double halfW,
   required double halfH,
-}) =>
-    _MotifPhone(null, cx, cy, sideways, halfW, halfH);
+}) => _MotifPhone(null, cx, cy, sideways, halfW, halfH);
 
-/// One full attempt at a chain: a random partition of a shuffled phone
-/// order, then every motif placed in turn against a moving cursor. Returns
-/// null if any slot exhausted its own retries — the caller rerolls the
-/// whole attempt in that case, including which phones land in which slot:
-/// which pairing of phones shares a motif materially affects whether that
-/// motif's geometry clears everything already placed (mismatched screen
-/// sizes change every offset _placeTurn and _placeBridge compute), so a
-/// fixed assignment can leave some lobbies with no reachable board at all
-/// even though a different pairing of the same phones works fine.
 List<PhonePlacement>? _tryBuild(List<PhoneSpec> ordered, math.Random rng) {
   final shuffled = List.of(ordered)..shuffle(rng);
   final parts = _partSizes(shuffled.length, rng);
@@ -537,10 +428,6 @@ List<PhonePlacement>? _tryBuild(List<PhoneSpec> ordered, math.Random rng) {
   ];
 }
 
-/// Pitch Cars' own board placement: a chain of curated tight-turn motifs
-/// (an "L", a staircase, or a bridge — see
-/// `docs/superpowers/specs/2026-08-08-pitch-cars-motif-track-generation-design.md`)
-/// rather than `Layouts.path`'s free-form 7-way placement.
 class PitchCarsLayout {
   const PitchCarsLayout._();
 
@@ -559,9 +446,10 @@ class PitchCarsLayout {
       if (result != null) {
         return BoardPlan(
           result,
-          instruction: instruction ??
+          instruction:
+              instruction ??
               'Lay the phones out to match the coloured edges — the track '
-              'winds along it, start to finish.',
+                  'winds along it, start to finish.',
         );
       }
     }
