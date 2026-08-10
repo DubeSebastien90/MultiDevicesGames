@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../platform_config.dart';
+import 'board_links.dart';
 import 'board_plan.dart';
 import 'phone_spec.dart';
 
@@ -513,21 +515,26 @@ class Layouts {
     final rng = random ?? math.Random();
     final ordered = List.of(phones)..sort(sort.compare);
 
-    final laid = <_LaidPhone>[
-      _LaidPhone(ordered.first, 0, 0, rng.nextBool()),
-    ];
-
-    for (var i = 1; i < ordered.length; i++) {
-      final next = _attach(ordered[i], laid, rng, gap);
-      if (next == null) {
-        // Every edge of every phone already has something against it. Possible
-        // in principle, absurd in practice — and refusing beats emitting a
-        // board with a phone sitting on top of another one.
-        throw BoardPlanError(
-          'nowhere left to put ${ordered[i].phoneId} on this path',
-        );
-      }
-      laid.add(next);
+    // A path paints itself into a corner sometimes: it curls round, and the
+    // only places left for the next phone all brush against something it was
+    // never attached to. There is nothing to repair at that point — the
+    // mistake was several phones ago — so the whole thing is thrown away and
+    // walked again from a different first turn.
+    //
+    // Cheap: laying eight phones is a handful of arithmetic, and each attempt
+    // is independent, so the chance of every one of them failing falls away
+    // fast. Deliberately *not* a search — no backtracking, no scoring — since
+    // rolling again is both simpler to follow and produces the variety this
+    // layout exists for.
+    List<_LaidPhone>? laid;
+    for (var attempt = 0; attempt < _pathAttempts && laid == null; attempt++) {
+      laid = _walkPath(ordered, rng, gap);
+    }
+    if (laid == null) {
+      throw BoardPlanError(
+        'could not lay ${ordered.length} phones into a path where each one '
+        'meets only the phone before it',
+      );
     }
 
     // Shift so the board starts at the origin, as every other helper does.
@@ -551,19 +558,43 @@ class Layouts {
     );
   }
 
-  /// Somewhere free against something already on the table.
+  /// How many times to lay the whole path out before giving up.
+  static const int _pathAttempts = 60;
+
+  /// One go at laying every phone down, or null if it got stuck.
+  static List<_LaidPhone>? _walkPath(
+    List<PhoneSpec> ordered,
+    math.Random rng,
+    Gaps gap,
+  ) {
+    final laid = <_LaidPhone>[
+      _LaidPhone(ordered.first, 0, 0, rng.nextBool()),
+    ];
+
+    for (var i = 1; i < ordered.length; i++) {
+      final next = _attach(ordered[i], laid, rng, gap);
+      if (next == null) return null;
+      laid.add(next);
+    }
+    return laid;
+  }
+
+  /// Against the head of the path, and only the head.
   ///
-  /// Anchors are tried newest first so the board grows end to end; falling back
-  /// to an earlier phone only matters once the head has no room left, and keeps
-  /// a crowded board from failing outright.
+  /// It used to fall back to earlier phones when the head had no room, which
+  /// kept a crowded board from failing — and quietly built a fork every time it
+  /// did, because the phone it reached back to then had three neighbours. Now
+  /// that a stuck path is simply walked again, that fallback buys nothing and
+  /// costs the one guarantee this layout is for: phone *i* meets phone *i-1*
+  /// and nothing else, so the board is a chain from one end to the other.
   static _LaidPhone? _attach(
     PhoneSpec spec,
     List<_LaidPhone> laid,
     math.Random rng,
     Gaps gap,
   ) {
-    for (var i = laid.length - 1; i >= 0; i--) {
-      final anchor = laid[i];
+    {
+      final anchor = laid.last;
       final options = _sevenWays(anchor, spec, gap)..shuffle(rng);
 
       for (final candidate in options) {
@@ -571,6 +602,23 @@ class Layouts {
         // A join running the whole length of a phone is the one thing this
         // layout will not have — see [_sharesAWholeLength].
         if (laid.any((other) => _sharesAWholeLength(candidate, other))) {
+          continue;
+        }
+        // And it must meet its anchor and nothing else.
+        //
+        // A path is allowed to wind, and winding brings it back alongside
+        // phones it was never attached to. Those brush past close enough to
+        // count as neighbours, and the board stops being a chain and becomes a
+        // web: every extra join is a fork, and anything walking the board end
+        // to end has to guess which way to go. A game reading the board as a
+        // route then drops whatever the walk it picked did not reach — which
+        // on a table means somebody watching a blank screen for the round.
+        //
+        // Cheaper to refuse the placement than to describe the tangle
+        // afterwards: there are seven ways to carry on and the next one is
+        // usually fine.
+        if (laid.any((other) =>
+            !identical(other, anchor) && candidate.touches(other))) {
           continue;
         }
         return candidate;
@@ -852,6 +900,22 @@ class _LaidPhone {
   double get right => cx + halfW;
   double get top => cy - halfH;
   double get bottom => cy + halfH;
+
+  /// Close enough that the platform would call these two neighbours.
+  ///
+  /// The same judgement [BoardLinks] makes — near on one axis while overlapping
+  /// on the other — read from the same constant, so "the path thinks these
+  /// touch" and "the board draws a connector between them" can never drift
+  /// apart.
+  bool touches(_LaidPhone o) {
+    final apartX = math.max(o.left - right, left - o.right);
+    final apartY = math.max(o.top - bottom, top - o.bottom);
+    const within = BoardLinks.maxJoinGap / PlatformConfig.mmToWorld;
+
+    final sideBySide = apartX <= within && apartY < 0;
+    final stacked = apartY <= within && apartX < 0;
+    return sideBySide || stacked;
+  }
 
   /// Touching is fine — that is the whole idea. Sharing area is not.
   bool overlaps(_LaidPhone o) {
