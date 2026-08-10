@@ -636,6 +636,10 @@ class Layouts {
   /// - **at the end**: straight on, or turned a quarter each way (3)
   /// - **on each side**: turned a quarter, or alongside (2 + 2)
   ///
+  /// Eight entries come back rather than seven: carrying straight on can be
+  /// flush with either flank, and those are the same place only when the two
+  /// phones are the same width.
+  ///
   /// Everything is flush at a corner except the last pair. Two phones laid
   /// alongside each other *flush* would share one whole long edge, and a join
   /// running the entire length of a phone is what this layout exists to avoid:
@@ -686,14 +690,35 @@ class Layouts {
     final sideAcross = aAcross + between;
 
     return [
-      // 1. Straight on, corner to corner all the way across.
-      at(straight, endAlong + halfAlong(straight), 0, ahead),
+      // 1. Straight on, flush with one flank or the other.
+      //
+      // Two entries rather than one because the phones need not be the same
+      // width. Centring the newcomer looked right — with matched phones it is
+      // flush on both sides at once — and put a narrower phone in the middle of
+      // its neighbour's end, overhanging equally at both flanks with no corner
+      // meeting anywhere. That is not one of the ways this layout offers, and on
+      // a real table it is the placement nobody can reproduce: there is nothing
+      // to line the phone up against. With matched phones both entries land in
+      // the same place, so nothing changes there.
+      at(straight, endAlong + halfAlong(straight),
+          aAcross - halfAcross(straight), ahead),
+      at(straight, endAlong + halfAlong(straight),
+          halfAcross(straight) - aAcross, ahead),
 
       // 2 and 3. A quarter turn at the end, flush with one flank or the other.
+      //
+      // The heading is the way the path leaves, which is the *opposite* of the
+      // flank it is flush against — a phone flush with the anchor's left flank
+      // reaches away to the right, so that is where the next one goes. These
+      // two were the wrong way round, and the mistake did not show on the phone
+      // being placed but on the one after it: the path believed it was heading
+      // back toward the phone it had just come from, so it offered the next
+      // placement against the half already spoken for, and two neighbours ended
+      // up sharing a half with nothing on the other.
       at(turned, endAlong + halfAlong(turned),
-          aAcross - halfAcross(turned), left),
+          aAcross - halfAcross(turned), right),
       at(turned, endAlong + halfAlong(turned),
-          halfAcross(turned) - aAcross, right),
+          halfAcross(turned) - aAcross, left),
 
       // 4 and 5. A quarter turn out to the side, flush with the far end.
       at(turned, aAlong - halfAlong(turned),

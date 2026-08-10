@@ -9,20 +9,28 @@ import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_links.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
 /// A board laid out differently every round, and no game on top of it.
-PhoneSpec phone(String id) => PhoneSpec(
-  phoneId: id,
-  label: 'phone $id',
-  widthMm: 68.58,
-  heightMm: 152.4,
-  bezelMm: 3,
-  dpi: 400,
-  devicePixelRatio: 3,
-  activePxWidth: 1080,
-  activePxHeight: 2400,
-);
+/// Pixels follow the millimetres, so every fixture is a device that could
+/// exist.
+PhoneSpec phone(
+  String id, {
+  double widthMm = 68.58,
+  double heightMm = 152.4,
+}) =>
+    PhoneSpec(
+      phoneId: id,
+      label: 'phone $id',
+      widthMm: widthMm,
+      heightMm: heightMm,
+      bezelMm: 3,
+      dpi: 400,
+      devicePixelRatio: 3,
+      activePxWidth: widthMm * 400 / 25.4,
+      activePxHeight: heightMm * 400 / 25.4,
+    );
 
 List<PhoneSpec> phones(int count) =>
     [for (var i = 0; i < count; i++) phone('p${i + 1}')];
@@ -95,6 +103,120 @@ void main() {
               neighbours.entries.where((e) => e.value == 1).length;
           expect(ends, count == 1 ? 0 : 2,
               reason: '$count phones, seed $seed: the path is in pieces');
+        }
+      }
+    });
+
+    test('every pair meets corner to corner, whatever the phones', () {
+      // Each placement has to be one of the ways this layout offers, and the
+      // ones at an end all put a corner of the newcomer against a corner of the
+      // phone before it. Carrying straight on used to centre instead, which is
+      // the same thing only while every phone is the same width — put a smaller
+      // one in and it sat in the middle of its neighbour's end, overhanging
+      // both flanks with no corner meeting anywhere. Nobody can lay that out:
+      // there is nothing to line the phone up against.
+      final sizes = <(double, double)>[
+        (68.58, 152.4),
+        (55, 118),
+        (80, 170),
+        (62, 140),
+        (75, 160),
+        (58, 125),
+      ];
+
+      for (var count = 2; count <= 6; count++) {
+        for (var seed = 0; seed < 40; seed++) {
+          final phones = [
+            for (var i = 0; i < count; i++)
+              phone('p${i + 1}',
+                  widthMm: sizes[i].$1, heightMm: sizes[i].$2),
+          ];
+          final plan = Layouts.path(phones, random: math.Random(seed));
+          final board =
+              const BoardCompiler().compile(plan, LobbyInfo(phones));
+          final byId = {for (final s in board.slices) s.phoneId: s};
+
+          for (var i = 1; i < plan.placements.length; i++) {
+            final a = byId[plan.placements[i - 1].phoneId]!.viewport;
+            final b = byId[plan.placements[i].phoneId]!.viewport;
+
+            final apartX = math.max(b.left - a.right, a.left - b.right);
+            final apartY = math.max(b.top - a.bottom, a.top - b.bottom);
+            final sideBySide = apartX > apartY;
+
+            // The edges actually facing each other, not the phones' short
+            // sides — a phone can meet its neighbour along either.
+            final facingA = sideBySide ? a.height : a.width;
+            final facingB = sideBySide ? b.height : b.width;
+            final shared = sideBySide
+                ? math.min(a.bottom, b.bottom) - math.max(a.top, b.top)
+                : math.min(a.right, b.right) - math.max(a.left, b.left);
+            final flush = sideBySide
+                ? (a.top - b.top).abs() < 0.05 ||
+                    (a.bottom - b.bottom).abs() < 0.05
+                : (a.left - b.left).abs() < 0.05 ||
+                    (a.right - b.right).abs() < 0.05;
+
+            // Either the whole of the shorter facing edge with a corner
+            // meeting, or the deliberate half-length step to one side.
+            final cornerToCorner =
+                (shared - math.min(facingA, facingB)).abs() < 0.05 && flush;
+            final alongside = (shared - facingA / 2).abs() < 0.05 ||
+                (shared - facingB / 2).abs() < 0.05;
+
+            expect(cornerToCorner || alongside, isTrue,
+                reason: '$count phones, seed $seed: '
+                    '${plan.placements[i - 1].phoneId} and '
+                    '${plan.placements[i].phoneId} share '
+                    '${shared.toStringAsFixed(1)} of ${facingA.toStringAsFixed(1)}'
+                    ' and ${facingB.toStringAsFixed(1)}, flush=$flush');
+          }
+        }
+      }
+    });
+
+    test('a phone is entered on one half and left on the other', () {
+      // Look at any phone in the middle of the path: the one before it and the
+      // one after it must be against opposite halves of it. That is what makes
+      // the board read as a route rather than a huddle — a phone entered and
+      // left on the same side has a whole half doing nothing, and the two
+      // neighbours crowd one end of it.
+      //
+      // It broke on the phone *after* the mistake, not the one being placed: a
+      // quarter turn at the end recorded the path as heading back toward where
+      // it had just come from, so the next placement was offered against the
+      // half already spoken for.
+      final sizes = <(double, double)>[
+        (68.58, 152.4), (55, 118), (80, 170),
+        (62, 140), (75, 160), (58, 125),
+      ];
+
+      for (var count = 3; count <= 6; count++) {
+        for (var seed = 0; seed < 50; seed++) {
+          final phones = [
+            for (var i = 0; i < count; i++)
+              phone('p${i + 1}', widthMm: sizes[i].$1, heightMm: sizes[i].$2),
+          ];
+          final plan = Layouts.path(phones, random: math.Random(seed));
+          final board = const BoardCompiler().compile(plan, LobbyInfo(phones));
+          final byId = {for (final s in board.slices) s.phoneId: s};
+
+          for (var i = 1; i < plan.placements.length - 1; i++) {
+            final a = byId[plan.placements[i - 1].phoneId]!.viewport;
+            final b = byId[plan.placements[i].phoneId]!.viewport;
+            final c = byId[plan.placements[i + 1].phoneId]!.viewport;
+
+            final entry = _contactMiddle(a, b);
+            final exit = _contactMiddle(b, c);
+            final dot = (entry.x - b.centerX) * (exit.x - b.centerX) +
+                (entry.y - b.centerY) * (exit.y - b.centerY);
+
+            expect(dot, lessThanOrEqualTo(0.01),
+                reason: '$count phones, seed $seed: '
+                    '${plan.placements[i].phoneId} is entered and left on the '
+                    'same half — ${plan.placements[i - 1].phoneId} and '
+                    '${plan.placements[i + 1].phoneId} are both against it');
+          }
         }
       }
     });
@@ -362,4 +484,22 @@ void main() {
       expect(started.sim.outcome, isNull);
     });
   });
+}
+
+/// The middle of the strip where two screens face each other.
+({double x, double y}) _contactMiddle(WorldRect a, WorldRect b) {
+  final apartX = math.max(b.left - a.right, a.left - b.right);
+  final apartY = math.max(b.top - a.bottom, a.top - b.bottom);
+  if (apartX > apartY) {
+    final x = a.right < b.left ? (a.right + b.left) / 2 : (b.right + a.left) / 2;
+    return (
+      x: x,
+      y: (math.max(a.top, b.top) + math.min(a.bottom, b.bottom)) / 2,
+    );
+  }
+  final y = a.bottom < b.top ? (a.bottom + b.top) / 2 : (b.bottom + a.top) / 2;
+  return (
+    x: (math.max(a.left, b.left) + math.min(a.right, b.right)) / 2,
+    y: y,
+  );
 }

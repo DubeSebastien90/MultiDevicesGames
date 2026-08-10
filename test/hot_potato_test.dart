@@ -38,38 +38,73 @@ PhoneSpec phone(String id) => PhoneSpec(
   return (sim: sim, board: board, scores: scores);
 }
 
-/// A swipe from the middle of [phoneId]'s screen toward a world point.
-void swipeToward(
+/// A swipe up or down [phoneId]'s **own screen**, as a player's thumb makes it.
+///
+/// The gesture the game reads: the phones lie with their long edge along the
+/// rim, so a screen's top points along the ring and up and down are the two
+/// ways round it. Built here the way the platform builds a real one — a screen
+/// direction turned into the world by that phone's own angle — so the test
+/// swipes what a thumb swipes.
+void swipeAlongScreen(
   HotPotatoSim sim,
   BoardLayout board,
-  String phoneId,
-  double towardX,
-  double towardY,
-) {
+  String phoneId, {
+  required bool up,
+}) {
   final me = board.forPhone(phoneId)!;
-  final cx = me.worldCenterX;
-  final cy = me.worldCenterY;
-  final dx = towardX - cx;
-  final dy = towardY - cy;
-  final len = math.sqrt(dx * dx + dy * dy);
-  final reach = HotPotatoConfig.minSwipeWorld * 3;
+  final turn = me.turnRadians;
+  // Screen space has y growing downward, so the top is (0, -1).
+  final sy = up ? -1.0 : 1.0;
+  final wx = -sy * math.sin(turn);
+  final wy = sy * math.cos(turn);
 
-  sim.onTouch(
-    TouchEvent(
-      phoneId: phoneId,
-      worldX: cx,
-      worldY: cy,
-      phase: TouchPhase.down,
-    ),
-  );
-  sim.onTouch(
-    TouchEvent(
-      phoneId: phoneId,
-      worldX: cx + dx / len * reach,
-      worldY: cy + dy / len * reach,
-      phase: TouchPhase.up,
-    ),
-  );
+  final reach = HotPotatoConfig.minSwipeWorld * 3;
+  sim.onTouch(TouchEvent(
+    phoneId: phoneId,
+    worldX: me.worldCenterX,
+    worldY: me.worldCenterY,
+    phase: TouchPhase.down,
+  ));
+  sim.onTouch(TouchEvent(
+    phoneId: phoneId,
+    worldX: me.worldCenterX + wx * reach,
+    worldY: me.worldCenterY + wy * reach,
+    phase: TouchPhase.up,
+  ));
+}
+
+/// The seats in the order they sit round the ring, by angle.
+///
+/// Deliberately *not* the order the compiled board hands them over: that is
+/// reading order, top to bottom and left to right, which on a ring puts phones
+/// from opposite sides of the table next to each other in the list.
+List<String> ringOrder(BoardLayout board) {
+  final cx = board.board.centerX;
+  final cy = board.board.centerY;
+  final seats = List.of(board.slices)
+    ..sort((a, b) => math
+        .atan2(a.screen.centerY - cy, a.screen.centerX - cx)
+        .compareTo(math.atan2(b.screen.centerY - cy, b.screen.centerX - cx)));
+  return [for (final s in seats) s.phoneId];
+}
+
+/// Which way round the ring a swipe up this phone's screen sends it.
+int upStep(BoardLayout board, String phoneId) {
+  final ring = ringOrder(board);
+  final here = ring.indexOf(phoneId);
+  final me = board.forPhone(phoneId)!;
+  final turn = me.turnRadians;
+  final upX = math.sin(turn), upY = -math.cos(turn);
+
+  double towardSeat(int step) {
+    final other = board.forPhone(ring[(here + step + ring.length) % ring.length])!;
+    final dx = other.worldCenterX - me.worldCenterX;
+    final dy = other.worldCenterY - me.worldCenterY;
+    final len = math.sqrt(dx * dx + dy * dy);
+    return (dx / len) * upX + (dy / len) * upY;
+  }
+
+  return towardSeat(1) > towardSeat(-1) ? 1 : -1;
 }
 
 void main() {
@@ -325,52 +360,87 @@ void main() {
   });
 
   group('passing it on', () {
-    test('a swipe toward a neighbour hands it over', () {
+    test('a swipe up the screen sends it one way round the ring', () {
       final started = start(5);
       final sim = started.sim;
       final board = started.board;
 
       final from = sim.holder;
-      final order = board.phones.map((p) => p.phoneId).toList();
-      final next = order[(order.indexOf(from) + 1) % order.length];
-      final target = board.forPhone(next)!;
+      final ring = ringOrder(board);
+      final step = upStep(board, from);
+      final expected =
+          ring[(ring.indexOf(from) + step + ring.length) % ring.length];
 
-      swipeToward(sim, board, from, target.worldCenterX, target.worldCenterY);
-      expect(sim.holder, next);
+      swipeAlongScreen(sim, board, from, up: true);
+      expect(sim.holder, expected);
     });
 
-    test('and the other way, for the other neighbour', () {
+    test('and a swipe down sends it the other way', () {
       final started = start(5);
       final sim = started.sim;
       final board = started.board;
 
       final from = sim.holder;
-      final order = board.phones.map((p) => p.phoneId).toList();
-      final prev =
-          order[(order.indexOf(from) - 1 + order.length) % order.length];
-      final target = board.forPhone(prev)!;
+      final ring = ringOrder(board);
+      final step = -upStep(board, from);
+      final expected =
+          ring[(ring.indexOf(from) + step + ring.length) % ring.length];
 
-      swipeToward(sim, board, from, target.worldCenterX, target.worldCenterY);
-      expect(sim.holder, prev);
+      swipeAlongScreen(sim, board, from, up: false);
+      expect(sim.holder, expected);
     });
 
-    test('direction is read in world space, so every seat works', () {
-      // The point of the tangent test: in a ring no two phones agree on which
-      // way "right" is, and none of them needs to.
-      for (var seat = 0; seat < 5; seat++) {
-        final started = start(5);
+    test('it only ever goes to a phone actually sitting next to you', () {
+      // The fault this pins. The compiled board is sorted into reading order,
+      // and passing to "the next one in that list" threw the potato clean
+      // across the table: on four phones, two entries next to each other in
+      // the list sit opposite each other on the ring. Three players hid it
+      // completely, because in a triangle everybody is everybody's neighbour.
+      for (final count in [3, 4, 5, 6]) {
+        final started = start(count);
         final sim = started.sim;
         final board = started.board;
-        final order = board.phones.map((p) => p.phoneId).toList();
+        final ring = ringOrder(board);
 
-        // Walk it around to the seat under test.
-        while (sim.holder != order[seat]) {
-          final here = order.indexOf(sim.holder);
-          final next = order[(here + 1) % order.length];
-          final t = board.forPhone(next)!;
-          swipeToward(sim, board, sim.holder, t.worldCenterX, t.worldCenterY);
+        for (var pass = 0; pass < count * 3; pass++) {
+          final from = sim.holder;
+          swipeAlongScreen(sim, board, from, up: pass.isEven);
+
+          final was = ring.indexOf(from);
+          final now = ring.indexOf(sim.holder);
+          final hop = (now - was + count) % count;
+          expect(hop == 1 || hop == count - 1, isTrue,
+              reason: '$count players: the potato went from $from to '
+                  '${sim.holder}, which is $hop seats away round the ring');
         }
-        expect(sim.holder, order[seat]);
+      }
+    });
+
+    test('every seat passes it the same way, whoever is holding it', () {
+      // In a ring no two phones agree on which way "up" points in the world,
+      // and none of them needs to: the gesture is read against each phone's own
+      // screen, so the same thumb movement means the same thing at every seat.
+      for (final count in [3, 4, 5, 6]) {
+        final started = start(count);
+        final sim = started.sim;
+        final board = started.board;
+        final ring = ringOrder(board);
+
+        // Walk right round the ring with the same gesture every time.
+        final visited = <String>{sim.holder};
+        for (var i = 0; i < count - 1; i++) {
+          final from = sim.holder;
+          final step = upStep(board, from);
+          swipeAlongScreen(sim, board, from, up: true);
+
+          final expected =
+              ring[(ring.indexOf(from) + step + count) % count];
+          expect(sim.holder, expected,
+              reason: '$count players, from $from');
+          visited.add(sim.holder);
+        }
+        expect(visited, hasLength(count),
+            reason: '$count players: swiping up never reached everybody');
       }
     });
 
@@ -378,18 +448,12 @@ void main() {
       final started = start(4);
       final sim = started.sim;
       final board = started.board;
-      final order = board.phones.map((p) => p.phoneId).toList();
-      final notHolder = order.firstWhere((id) => id != sim.holder);
+      final notHolder = board.phones
+          .map((p) => p.phoneId)
+          .firstWhere((id) => id != sim.holder);
       final before = sim.holder;
 
-      final target = board.forPhone(before)!;
-      swipeToward(
-        sim,
-        board,
-        notHolder,
-        target.worldCenterX,
-        target.worldCenterY,
-      );
+      swipeAlongScreen(sim, board, notHolder, up: true);
       expect(sim.holder, before);
     });
 
@@ -427,10 +491,7 @@ void main() {
       }
       final victim = sim.holder;
 
-      final order = started.board.phones.map((p) => p.phoneId).toList();
-      final next = order[(order.indexOf(victim) + 1) % order.length];
-      final t = started.board.forPhone(next)!;
-      swipeToward(sim, started.board, victim, t.worldCenterX, t.worldCenterY);
+      swipeAlongScreen(sim, started.board, victim, up: true);
 
       expect(sim.holder, victim, reason: 'no passing the blame after the bang');
     });
@@ -442,13 +503,14 @@ void main() {
       final sim = started.sim;
       final board = started.board;
 
-      final order = board.phones.map((p) => p.phoneId).toList();
+      final ring = ringOrder(board);
       final from = sim.holder;
-      final next = order[(order.indexOf(from) + 1) % order.length];
+      final step = upStep(board, from);
+      final next = ring[(ring.indexOf(from) + step + ring.length) % ring.length];
       final target = board.forPhone(next)!;
 
       final startPos = sim.entities.single;
-      swipeToward(sim, board, from, target.worldCenterX, target.worldCenterY);
+      swipeAlongScreen(sim, board, from, up: true);
 
       // One step is not a teleport — it is on its way.
       sim.step(1 / PlatformConfig.simHz);

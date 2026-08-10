@@ -28,9 +28,34 @@ class HotPotatoSim implements GameSim {
   final BoardContext context;
   final math.Random _random;
 
-  /// The passing order *is* the board order, which for a ring runs clockwise
-  /// from the top. Neighbours in this list are neighbours on the table.
-  List<String> get _order => context.phoneIds;
+  /// The seats, in the order they actually sit around the ring.
+  ///
+  /// Worked out from where the screens ended up, not taken from the order the
+  /// board hands them over. `planBoard` does place them clockwise, but the
+  /// compiler sorts the compiled board into reading order — top to bottom, left
+  /// to right — which is the right answer for a row and meaningless for a ring.
+  /// On four phones that put `slices[1]` and `slices[2]` on *opposite sides of
+  /// the table*, so "pass to your neighbour" threw the potato straight across
+  /// it. Three players hid the fault completely, because in a triangle every
+  /// phone is next to every other.
+  late final List<int> _ring = _seatsByAngle();
+
+  /// Slice indices sorted by their angle about the middle of the board.
+  List<int> _seatsByAngle() {
+    final cx = context.board.centerX;
+    final cy = context.board.centerY;
+    return [for (var i = 0; i < context.slices.length; i++) i]..sort((a, b) {
+      final sa = context.slices[a].screen;
+      final sb = context.slices[b].screen;
+      return math
+          .atan2(sa.centerY - cy, sa.centerX - cx)
+          .compareTo(math.atan2(sb.centerY - cy, sb.centerX - cx));
+    });
+  }
+
+  /// Phone ids in ring order — the passing order.
+  List<String> get _order =>
+      [for (final i in _ring) context.slices[i].phoneId];
 
   static const _potatoId = 'potato';
 
@@ -52,18 +77,17 @@ class HotPotatoSim implements GameSim {
 
   // ----------------------------------------------------------------- seats
 
-  /// The middle of a phone's screen — where the potato rests when held.
+  /// The middle of a seat's screen — where the potato rests when held.
   _Point _seatOf(int index) {
-    final slice = context.slices[index % context.slices.length];
+    final slice = _sliceAt(index);
     return _Point(slice.screen.centerX, slice.screen.centerY);
   }
 
-  /// Which way "clockwise around the ring" points at this phone.
-  ///
-  /// A swipe arrives in *world* coordinates, and in a circle every phone faces
-  /// a different way, so there is no fixed "right". Comparing the swipe against
-  /// the direction of the next seat is orientation-free and works for a ring, a
-  /// row, or anything else a game invents.
+  /// The screen sitting at a place in the ring.
+  PhoneSlice _sliceAt(int index) =>
+      context.slices[_ring[index % _ring.length]];
+
+  /// Which way the next seat round the ring lies from this one.
   _Point _towardNeighbour(int from, int step) {
     final here = _seatOf(from);
     final there = _seatOf((from + step + _order.length) % _order.length);
@@ -97,16 +121,39 @@ class HotPotatoSim implements GameSim {
     }
   }
 
-  /// Send it whichever way the swipe was actually pointing.
+  /// Send it round the ring, the way the swipe went up or down the screen.
+  ///
+  /// **Up and down, not left and right**, and the phones are the reason. They
+  /// lie with their long edge along the rim, so each screen's top points *along*
+  /// the ring — which makes up and down the two ways round it, and left and
+  /// right the two ways across it. Comparing a left-right swipe against the two
+  /// neighbours gave each of them exactly the same score, on any number of
+  /// players: a tie broken by rounding error, which is why passing felt random.
+  ///
+  /// Which of up or down leads to which neighbour is read off the geometry
+  /// rather than assumed from the angle the layout chose, so this keeps working
+  /// if the ring is ever built the other way round.
   void _passInDirection(double dx, double dy) {
-    final forward = _towardNeighbour(_holderIndex, 1);
-    final backward = _towardNeighbour(_holderIndex, -1);
-    final alongForward = dx * forward.x + dy * forward.y;
-    final alongBackward = dx * backward.x + dy * backward.y;
+    final up = _screenUpOf(_holderIndex);
+    final toNext = _towardNeighbour(_holderIndex, 1);
+    final toPrev = _towardNeighbour(_holderIndex, -1);
 
-    final step = alongForward >= alongBackward ? 1 : -1;
+    final upLeadsToNext =
+        up.x * toNext.x + up.y * toNext.y > up.x * toPrev.x + up.y * toPrev.y;
+    final swipedUp = dx * up.x + dy * up.y >= 0;
+
+    final step = swipedUp == upLeadsToNext ? 1 : -1;
     _holderIndex = (_holderIndex + step + _order.length) % _order.length;
     _target = _seatOf(_holderIndex);
+  }
+
+  /// Which way "toward the top of the screen" points, in the world, for the
+  /// phone at this seat.
+  _Point _screenUpOf(int index) {
+    final turn = _sliceAt(index).screen.turnRadians;
+    // Screen space has y growing downward, so the top is (0, -1) turned into
+    // the world by the phone's own angle.
+    return _Point(math.sin(turn), -math.cos(turn));
   }
 
   // ------------------------------------------------------------------ step
