@@ -67,6 +67,51 @@ void main() {
       }
     });
 
+    test('is a chain: every phone meets only the one before it', () {
+      // The guarantee Pitch Cars reads the board with — it walks the phones end
+      // to end to lay a track along them. A path that wound back and brushed an
+      // earlier phone made a fork, and a walk through a fork picks one way and
+      // drops the rest: on a table that is somebody watching a blank screen for
+      // the whole round.
+      for (var count = 2; count <= 8; count++) {
+        for (var seed = 0; seed < 60; seed++) {
+          final board = pathBoard(count, seed: seed);
+
+          final neighbours = <String, int>{};
+          for (final link in board.links) {
+            if (link.partnerId == null) continue;
+            neighbours[link.phoneId] = (neighbours[link.phoneId] ?? 0) + 1;
+          }
+
+          for (final entry in neighbours.entries) {
+            expect(entry.value, lessThanOrEqualTo(2),
+                reason: '$count phones, seed $seed: ${entry.key} has '
+                    '${entry.value} neighbours — the path forked');
+          }
+
+          // And it is one chain, not two: exactly two ends, or none at all
+          // when there are only two phones and both are ends.
+          final ends =
+              neighbours.entries.where((e) => e.value == 1).length;
+          expect(ends, count == 1 ? 0 : 2,
+              reason: '$count phones, seed $seed: the path is in pieces');
+        }
+      }
+    });
+
+    test('a path that paints itself into a corner is walked again', () {
+      // Winding into a dead end is not a repairable mistake — it was made
+      // several phones ago — so the whole layout is rolled again rather than
+      // patched. What must never happen is giving up on a table that a
+      // different roll would have placed.
+      for (var count = 2; count <= 8; count++) {
+        for (var seed = 0; seed < 60; seed++) {
+          expect(() => pathBoard(count, seed: seed), returnsNormally,
+              reason: '$count phones, seed $seed: gave up');
+        }
+      }
+    });
+
     test('turns, rather than growing in a straight line', () {
       // A path that never turns is a row, and a row is already a helper.
       var turned = 0;

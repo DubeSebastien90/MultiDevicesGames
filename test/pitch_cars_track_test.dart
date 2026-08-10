@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_config.dart';
+import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_game.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/track.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
@@ -82,6 +83,57 @@ void main() {
       final p = track.pointAtArclength(39.5);
       expect(p.x, closeTo(-5, 1e-6));
       expect(p.y, closeTo(-4.5, 1e-6));
+    });
+  });
+
+  group('the game and its board', () {
+    /// A real device: pixels follow the millimetres at one density.
+    PhoneSpec device(String id) => PhoneSpec(
+          phoneId: id,
+          label: 'phone $id',
+          widthMm: 68.58,
+          heightMm: 152.4,
+          bezelMm: 3,
+          dpi: 400,
+          devicePixelRatio: 3,
+          activePxWidth: 1080,
+          activePxHeight: 2400,
+        );
+
+    test('every phone on the table gets a piece of the track', () {
+      // The contract between this game and the layout it asks for, and the
+      // reason it asks for a path rather than any old arrangement: the track is
+      // laid by walking the board end to end, so a board that forks makes the
+      // walk pick one way and drop the rest — and a dropped phone is somebody
+      // watching a blank screen for the whole round.
+      //
+      // Checked through `planBoard` rather than by calling the layout helper
+      // directly, so it is the game's own choice being tested.
+      const game = PitchCarsGame();
+
+      for (var count = 2; count <= 8; count++) {
+        for (var seed = 0; seed < 25; seed++) {
+          final phones = [for (var i = 0; i < count; i++) device('p${i + 1}')];
+          final board = const BoardCompiler()
+              .compile(game.planBoard(LobbyInfo(phones)), LobbyInfo(phones));
+          final track = TrackGenerator.generate(
+            slices: board.slices,
+            random: math.Random(seed),
+          );
+
+          for (final slice in board.slices) {
+            final v = slice.viewport;
+            final touched = track.waypoints.any((w) =>
+                w.x >= v.left - 0.5 &&
+                w.x <= v.right + 0.5 &&
+                w.y >= v.top - 0.5 &&
+                w.y <= v.bottom + 0.5);
+            expect(touched, isTrue,
+                reason: '$count phones, seed $seed: no track reaches '
+                    '${slice.phoneId}');
+          }
+        }
+      }
     });
   });
 

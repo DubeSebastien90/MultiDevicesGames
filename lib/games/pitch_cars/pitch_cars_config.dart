@@ -6,9 +6,11 @@ class PitchCarsConfig {
 
   static const double lineAmplitudeWorld = 3.0;
 
-  /// A deliberate, tuned hook rather than a subtle wiggle — the catalog of
-  /// motifs `PitchCarsLayout` produces is closed, so every corner's
-  /// geometry is known in advance and this can be generous rather than
+  /// A deliberate, tuned hook rather than a subtle wiggle.
+  ///
+  /// `Layouts.path` joins two phones corner to corner and never along a whole
+  /// edge, so a corner's geometry sits inside a known range rather than being
+  /// anything at all — which is what lets this be generous instead of
   /// conservative.
   static const double cornerAmplitudeWorld = 1.8;
 
