@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/contract/game.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/ui/game_picker.dart';
@@ -162,15 +163,21 @@ void main() {
       ),
     );
 
+    // Counted from the playlist rather than written out: registering a game is
+    // meant to be one import and one list entry, not one import, one list entry
+    // and a test to go and fix.
+    final total = GameCatalog.playlist.length;
+
     await tester.tap(find.byIcon(Icons.settings));
     await tester.pumpAndSettle();
     expect(find.text('Games in the run'), findsOneWidget);
     expect(find.text('Slingshot'), findsOneWidget);
     // Nobody has connected, so nothing fits and nothing is in the run — and it
-    // says so rather than counting twelve ticks as twelve games.
+    // says so rather than counting every tick as a game.
     expect(
       find.text(
-        '0 of 12 in the run · 12 ticked but the wrong size for this table',
+        '0 of $total in the run · $total ticked but the wrong size for this '
+        'table',
       ),
       findsOneWidget,
     );
@@ -181,7 +188,8 @@ void main() {
         isNot(contains('slingshot')));
     expect(
       find.text(
-        '0 of 12 in the run · 11 ticked but the wrong size for this table',
+        '0 of $total in the run · ${total - 1} ticked but the wrong size for '
+        'this table',
       ),
       findsOneWidget,
       reason: 'the sheet did not redraw from the session it wrote to',
@@ -189,7 +197,7 @@ void main() {
 
     await tester.tap(find.text('None'));
     await tester.pumpAndSettle();
-    expect(find.text('0 of 12 in the run'), findsOneWidget);
+    expect(find.text('0 of $total in the run'), findsOneWidget);
     expect(host.chosenGames, isEmpty);
   });
 }
