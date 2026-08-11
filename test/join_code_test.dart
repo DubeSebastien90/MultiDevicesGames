@@ -824,8 +824,13 @@ void main() {
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
       phones[2].dispose();
-      await waitFor('the others were told',
-          () => phones[0].tableChange != null);
+      // Both, not just the first. Two phones on two sockets are not told in the
+      // same instant, and waiting on one then reading the other is a race the
+      // test loses whenever the machine is busy.
+      await waitFor(
+        'the others were told',
+        () => phones[0].tableChange != null && phones[1].tableChange != null,
+      );
 
       expect(phones[0].tableChange!.nextGame, isNotNull);
       expect(phones[1].tableChange!.who, phones[0].tableChange!.who,

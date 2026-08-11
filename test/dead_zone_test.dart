@@ -1,0 +1,105 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
+import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
+import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
+
+/// Two phones side by side have a strip of board between their lit areas that no
+/// screen covers — the bezels. The world does not stop there: physics owns the
+/// gap like anywhere else, so a bird crossing it keeps flying and reappears on
+/// the far screen rather than pausing at the edge of the first one.
+///
+/// **Asked of the simulation, not of the stream.** This used to live in the
+/// end-to-end test, which watched the bird through two real sockets and an
+/// interpolating render buffer, and it was the suite's one reliably flaky test.
+/// The reason turned out to be interesting: the host sim shares an isolate with
+/// the test, so when the machine is busy — eleven other test files running in
+/// parallel — the *host* is starved too and emits few, widely spaced snapshots.
+/// A client can only show positions it has been sent, and when its render clock
+/// runs ahead of the newest snapshot it extrapolates from that one. So the number
+/// of distinct positions observable is capped by the packets that arrived, no
+/// matter how finely the test samples. Two consecutive snapshots straddling a 6 mm
+/// gap make "was it ever inside the gap" unanswerable through the stream.
+///
+/// Whether the gap is simulated is a fact about the sim, and here it is settled
+/// against the sim, at a fixed timestep, with the same answer every run.
+PhoneSpec phone(String id) => PhoneSpec(
+  phoneId: id,
+  label: 'phone $id',
+  widthMm: 68.58, // 400 dpi
+  heightMm: 152.4,
+  bezelMm: 3,
+  dpi: 400,
+  devicePixelRatio: 3,
+  activePxWidth: 1080,
+  activePxHeight: 2400,
+);
+
+void main() {
+  test('the bird flies through the dead zone rather than stopping at it', () {
+    final lobby = LobbyInfo([phone('p1'), phone('p2')]);
+    final scores = Scoreboard();
+    for (final p in lobby.phones) {
+      scores.register(p.phoneId, p.label);
+    }
+    const game = SlingshotGame();
+    final board = const BoardCompiler().compile(game.planBoard(lobby), lobby);
+    final sim = game.createSim(board.contextFor(scores));
+    scores.beginRound();
+
+    final seam = board.coverage.seamRects().single;
+    final world = board.coverage.board;
+
+    // The gap is genuinely not backed by a screen...
+    expect(board.coverage.isCovered(seam.centerX, world.centerY), isFalse);
+    // ...but it is inside the board, so physics owns it like anywhere else.
+    expect(world.contains(seam.centerX, world.centerY), isTrue);
+
+    final anchorX = sim.sharedState['anchorX']! as double;
+    final anchorY = sim.sharedState['anchorY']! as double;
+    expect(anchorX, lessThan(seam.left),
+        reason: 'the sling must start left of the gap for the flight to cross');
+
+    void touch(double x, double y, String phase) => sim.onTouch(
+      TouchEvent(phoneId: 'p1', worldX: x, worldY: y, phase: phase),
+    );
+
+    // Pull back and down: a shallow rising shot to the right, the same gesture
+    // the end-to-end test sends as pixels.
+    const dt = 1 / 60;
+    touch(anchorX, anchorY, TouchPhase.down);
+    sim.step(dt);
+    touch(anchorX - 2.8, anchorY + 1.0, TouchPhase.move);
+    sim.step(dt);
+    touch(anchorX - 2.8, anchorY + 1.0, TouchPhase.up);
+
+    // Every tick of the flight, so nothing can be stepped over: at 60 Hz the
+    // bird moves a fraction of a millimetre per tick and the gap is 6 mm wide.
+    var seenBefore = false;
+    var seenInside = false;
+    var seenAfter = false;
+    var ticksInside = 0;
+
+    for (var i = 0; i < 150; i++) {
+      sim.step(dt);
+      final bird = sim.entities.where((e) => e.id == 'bird').firstOrNull;
+      if (bird == null) continue;
+      final x = bird.x;
+      if (x < seam.left) seenBefore = true;
+      if (x >= seam.left && x <= seam.right) {
+        seenInside = true;
+        ticksInside++;
+      }
+      if (x > seam.right) seenAfter = true;
+    }
+
+    expect(seenBefore, isTrue, reason: 'the bird never left the first screen');
+    expect(seenInside, isTrue, reason: 'never simulated inside the gap');
+    expect(seenAfter, isTrue, reason: 'the gap acted like a wall');
+    // Not a lucky single frame: it was in there long enough to be drawn.
+    expect(ticksInside, greaterThan(1));
+
+    sim.dispose();
+  });
+}

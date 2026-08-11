@@ -388,58 +388,6 @@ void main() {
         reason: 'the descriptor arrived with the spawn, not just a transform');
   });
 
-  test('the bird flies through the dead zone rather than stopping at it',
-      () async {
-    await _startPlaying(host, phone1, phone2);
-
-    final coverage = phone1.coverage!;
-    final seam = coverage.seamRects().single;
-    final board = phone1.board!;
-
-    // The gap is genuinely not backed by a screen...
-    expect(coverage.isCovered(seam.centerX, board.centerY), isFalse);
-    // ...but it is inside the board, so physics owns it like anywhere else.
-    expect(board.contains(seam.centerX, board.centerY), isTrue);
-
-    final anchorX = phone1.sharedState['anchorX']! as double;
-    final anchorY = phone1.sharedState['anchorY']! as double;
-
-    void touchPhone1(double wx, double wy, String phase) {
-      final px = phone1.layout!.worldToPhysicalPx(wx, wy);
-      final dpr = phone1.metrics.devicePixelRatio;
-      phone1.sendTouch(px.x / dpr, px.y / dpr, phase);
-    }
-
-    touchPhone1(anchorX, anchorY, TouchPhase.down);
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    touchPhone1(anchorX - 2.8, anchorY + 1.0, TouchPhase.move);
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    touchPhone1(anchorX - 2.8, anchorY + 1.0, TouchPhase.up);
-
-    // Sample the trajectory and check it passes *through* the dead zone: seen
-    // on both sides of it, with no plateau at its left edge.
-    var seenBefore = false;
-    var seenInside = false;
-    var seenAfter = false;
-
-    final clock = Stopwatch()..start();
-    var lastUs = 0;
-    while (clock.elapsedMilliseconds < 2500) {
-      await Future<void>.delayed(const Duration(milliseconds: 8));
-      final nowUs = clock.elapsedMicroseconds;
-      final bird = phone1.frameAt((nowUs - lastUs) / 1000)?.byId('bird');
-      lastUs = nowUs;
-      if (bird == null) continue;
-
-      if (bird.x < seam.left) seenBefore = true;
-      if (bird.x >= seam.left && bird.x <= seam.right) seenInside = true;
-      if (bird.x > seam.right) seenAfter = true;
-    }
-
-    expect(seenBefore, isTrue);
-    expect(seenInside, isTrue, reason: 'never simulated inside the gap');
-    expect(seenAfter, isTrue, reason: 'the gap acted like a wall');
-  });
 }
 
 /// Drives the handshake to the point where both phones are rendering.
