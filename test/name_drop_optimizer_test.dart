@@ -97,6 +97,34 @@ void main() {
     });
   });
 
+  test('the greedy path is walked when there are too many to enumerate', () {
+    // Nine phones: past the point where 2^n states are worth visiting, so a
+    // different search runs. No game in the catalogue seats nine, which is
+    // exactly why it is worth a test — nothing else exercises it.
+    final specs = [
+      for (var i = 0; i < 9; i++) spec('p${i + 1}', 58 + i * 4.0),
+    ];
+    // A stack, built here rather than by a game, since none of them fits nine.
+    var y = 0.0;
+    final placements = <PhonePlacement>[];
+    for (final s in specs) {
+      y += s.widthMm / 2;
+      placements.add(PhonePlacement(s.phoneId, xMm: 100, yMm: y, turnDeg: 90));
+      y += s.widthMm / 2 + 6;
+    }
+
+    final raw = BoardPlan(placements, instruction: 'stack', allowGaps: true);
+    final fixed = NameDropOptimizer.optimize(raw, LobbyInfo(specs));
+
+    final order = fixed.placements.toList()
+      ..sort((a, b) => a.yMm.compareTo(b.yMm));
+    for (var i = 1; i < order.length; i++) {
+      expect(order[i].turnDeg, isNot(order[i - 1].turnDeg),
+          reason: '${order[i - 1].phoneId} and ${order[i].phoneId} are stacked '
+              'and face the same way, so their tops touch');
+    }
+  });
+
   test('a whole stack is untangled, not just the closest pair', () {
     // Five phones, every one a different size: four neighbouring pairs, and the
     // old scoring saw only the ones whose phones happened to be alike.

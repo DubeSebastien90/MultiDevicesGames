@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'board_plan.dart';
 import 'phone_spec.dart';
@@ -57,6 +58,10 @@ import 'phone_spec.dart';
 /// turned from the original plan. If nothing helps, the original plan comes back
 /// unchanged: this only ever asks somebody to turn a phone around when doing so
 /// actually removes a trigger.
+///
+/// Every state is scored from a table built once up front — see [_buildTable].
+/// The search visits thousands of states and would otherwise redo the same
+/// handful of geometry tests in each of them.
 class NameDropOptimizer {
   const NameDropOptimizer._();
 
@@ -80,41 +85,107 @@ class NameDropOptimizer {
     final n = placements.length;
     if (n == 0) return plan;
 
-    final best =
-        n <= 8 ? _bruteForce(placements, lobby) : _greedy(placements, lobby);
+    final table = _buildTable(placements, lobby);
+    final mask = n <= 8 ? _bruteForce(n, table) : _greedy(n, table);
 
-    if (_listEqual(best, placements)) return plan;
+    // Nothing turned, so nothing to say: the caller keeps the plan it wrote,
+    // object identity included.
+    if (mask == 0) return plan;
 
     return BoardPlan(
-      best,
+      [
+        for (int i = 0; i < n; i++)
+          mask & (1 << i) != 0 ? _flip(placements[i]) : placements[i],
+      ],
       instruction: plan.instruction,
       bounds: plan.bounds,
       allowGaps: plan.allowGaps,
     );
   }
 
-  // ── brute force ─────────────────────────────────────────────────────────────
+  // ── the table ────────────────────────────────────────────────────────────────
 
-  static List<PhonePlacement> _bruteForce(
+  /// Whether each pair of phones is dangerous, in each of the four ways the two
+  /// of them can be turned.
+  ///
+  /// The search asks the same question over and over: eight phones means 256 turn
+  /// combinations × 28 pairs = 7168 geometry tests, drawn from a pool of only
+  /// 4 × 28 = 112 distinct ones. They can be reused because the score is a sum of
+  /// independent pairwise terms, and a term depends on nothing except whether its
+  /// own two phones are turned — no third phone can change it. So each is settled
+  /// once and looked up thereafter, which took eight phones from 10 ms to well
+  /// under one. The answers are identical; this is bookkeeping, not a heuristic.
+  ///
+  /// Flat, indexed by `((i * n + j) * 2 + turnedI) * 2 + turnedJ`, and filled only
+  /// for `i < j`. A phone the lobby has no measurements for is in no dangerous
+  /// pair at all — its entries stay zero, as they did when it was skipped.
+  static Uint8List _buildTable(
     List<PhonePlacement> placements,
     LobbyInfo lobby,
   ) {
     final n = placements.length;
-    int bestScore = _totalScore(placements, lobby);
+    final danger = Uint8List(n * n * 4);
+
+    // Two zones per phone — as planned, and turned around — rather than two per
+    // phone per state. This is where the trigonometry stops being repeated.
+    final zones = <List<List<(double, double)>>?>[];
+    for (final p in placements) {
+      final spec = lobby.byId(p.phoneId);
+      zones.add(
+        spec == null ? null : [_dangerZone(p, spec), _dangerZone(_flip(p), spec)],
+      );
+    }
+
+    for (int i = 0; i < n; i++) {
+      final zonesI = zones[i];
+      if (zonesI == null) continue;
+      for (int j = i + 1; j < n; j++) {
+        final zonesJ = zones[j];
+        if (zonesJ == null) continue;
+        for (int a = 0; a < 2; a++) {
+          for (int b = 0; b < 2; b++) {
+            if (_polygonDistance(zonesI[a], zonesJ[b]) < _kProximityMm) {
+              danger[((i * n + j) * 2 + a) * 2 + b] = 1;
+            }
+          }
+        }
+      }
+    }
+    return danger;
+  }
+
+  /// How many pairs of phones have their tops together, for one set of turns.
+  ///
+  /// One point per pair, not per corner: a pair is either a trigger or it is
+  /// not, and counting the corners involved made a head-on pair look worse than
+  /// a diagonal one for no physical reason.
+  static int _scoreOf(int mask, int n, Uint8List table) {
+    int score = 0;
+    for (int i = 0; i < n; i++) {
+      final a = (mask >> i) & 1;
+      for (int j = i + 1; j < n; j++) {
+        final b = (mask >> j) & 1;
+        score += table[((i * n + j) * 2 + a) * 2 + b];
+      }
+    }
+    return score;
+  }
+
+  // ── brute force ─────────────────────────────────────────────────────────────
+
+  /// Which phones to turn, as a bit per phone.
+  static int _bruteForce(int n, Uint8List table) {
+    int bestScore = _scoreOf(0, n, table);
     int bestFlips = 0;
-    List<PhonePlacement> best = placements;
+    int best = 0;
 
     for (int mask = 1; mask < (1 << n); mask++) {
-      final candidate = [
-        for (int i = 0; i < n; i++)
-          mask & (1 << i) != 0 ? _flip(placements[i]) : placements[i],
-      ];
-      final score = _totalScore(candidate, lobby);
+      final score = _scoreOf(mask, n, table);
       final flips = _popcount(mask);
       if (score < bestScore || (score == bestScore && flips < bestFlips)) {
         bestScore = score;
         bestFlips = flips;
-        best = candidate;
+        best = mask;
       }
     }
     return best;
@@ -122,47 +193,20 @@ class NameDropOptimizer {
 
   // ── greedy ───────────────────────────────────────────────────────────────────
 
-  static List<PhonePlacement> _greedy(
-    List<PhonePlacement> placements,
-    LobbyInfo lobby,
-  ) {
-    var current = List<PhonePlacement>.of(placements);
+  static int _greedy(int n, Uint8List table) {
+    var current = 0;
     var improved = true;
     while (improved) {
       improved = false;
-      for (int i = 0; i < current.length; i++) {
-        final candidate = List<PhonePlacement>.of(current);
-        candidate[i] = _flip(candidate[i]);
-        if (_totalScore(candidate, lobby) < _totalScore(current, lobby)) {
+      for (int i = 0; i < n; i++) {
+        final candidate = current ^ (1 << i);
+        if (_scoreOf(candidate, n, table) < _scoreOf(current, n, table)) {
           current = candidate;
           improved = true;
         }
       }
     }
     return current;
-  }
-
-  // ── scoring ──────────────────────────────────────────────────────────────────
-
-  /// How many pairs of phones have their tops together.
-  ///
-  /// One point per pair, not per corner: a pair is either a trigger or it is
-  /// not, and counting the corners involved made a head-on pair look worse than
-  /// a diagonal one for no physical reason.
-  static int _totalScore(List<PhonePlacement> placements, LobbyInfo lobby) {
-    int score = 0;
-    for (int i = 0; i < placements.length; i++) {
-      final specA = lobby.byId(placements[i].phoneId);
-      if (specA == null) continue;
-      final zoneA = _dangerZone(placements[i], specA);
-      for (int j = i + 1; j < placements.length; j++) {
-        final specB = lobby.byId(placements[j].phoneId);
-        if (specB == null) continue;
-        final zoneB = _dangerZone(placements[j], specB);
-        if (_polygonDistance(zoneA, zoneB) < _kProximityMm) score++;
-      }
-    }
-    return score;
   }
 
   // ── geometry ─────────────────────────────────────────────────────────────────
@@ -275,19 +319,6 @@ class NameDropOptimizer {
       p.copyWith(turnDeg: (p.turnDeg + 180) % 360);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
-
-  static bool _listEqual(
-    List<PhonePlacement> a,
-    List<PhonePlacement> b,
-  ) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i].turnDeg != b[i].turnDeg || a[i].phoneId != b[i].phoneId) {
-        return false;
-      }
-    }
-    return true;
-  }
 
   static int _popcount(int n) {
     int count = 0;
