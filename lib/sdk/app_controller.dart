@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'client/client_session.dart';
 import 'host/host_session.dart';
+import 'model/device_identity.dart';
 import 'model/device_metrics.dart';
 import 'net/loopback_transport.dart';
 import 'net/websocket_transport.dart';
@@ -15,6 +16,19 @@ enum AppRole { host, join }
 /// as everyone else.
 class AppController extends ChangeNotifier {
   AppRole? _role;
+
+  /// What this device calls itself, loaded once and kept for the app's life.
+  ///
+  /// Read from storage rather than remembered in a field the way the
+  /// host-assigned number used to be: that only survived leaving and rejoining,
+  /// and the case worth surviving is the app being closed — a phone that runs
+  /// out of battery mid-game should come back to its own seat.
+  String? _deviceId;
+
+  /// Load it now, so joining does not have to wait on storage.
+  Future<void> warmUp() async {
+    _deviceId ??= await DeviceIdentity.load();
+  }
   HostSession? _host;
   ClientSession? _client;
   LoopbackPair? _loopback;
@@ -63,10 +77,14 @@ class AppController extends ChangeNotifier {
   }) async {
     _begin(AppRole.join);
     try {
+      await warmUp();
       final client = ClientSession(
         transport: WebSocketTransport(uri),
         metrics: metrics,
         joinCode: code,
+        // Who this device is, so a session it drops out of and comes back to
+        // gives it its own row in the standings rather than a second one.
+        deviceId: _deviceId,
       );
       await client.connect();
       _client = client..addListener(notifyListeners);

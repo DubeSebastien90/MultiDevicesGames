@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
+import 'package:multiscreen_slingshot/sdk/model/device_identity.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
 import 'package:multiscreen_slingshot/sdk/net/discovery.dart';
 import 'package:multiscreen_slingshot/sdk/net/host_address.dart';
@@ -52,11 +54,14 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
   });
 
-  ClientSession joiner({String? code}) => ClientSession(
-    transport: WebSocketTransport(local),
-    metrics: phone('joiner'),
-    joinCode: code,
-  );
+  ClientSession joiner({String? code, String? deviceId, String? label}) =>
+      ClientSession(
+        transport: WebSocketTransport(local),
+        metrics: phone(label ?? 'joiner'),
+        joinCode: code,
+        // A real phone always has one, and it is the same every run.
+        deviceId: deviceId ?? DeviceIdentity.generate(),
+      );
 
   group('the lobby offers games the table can actually play', () {
     test('nothing is offered before a phone has reported its size', () async {
@@ -186,6 +191,325 @@ void main() {
         expect(offer.reason == null, offer.manifest.fits(1));
       }
       client.dispose();
+    });
+  });
+
+  group('a player who drops out keeps their seat', () {
+    test('their row stays, marked disconnected', () async {
+      final client = joiner(label: 'Ada');
+      await client.connect();
+      await waitFor('welcomed', () => host.phones.length == 1);
+      final seat = host.phones.single.phoneId;
+
+      host.scores.award(seat, 7);
+      client.dispose();
+      await waitFor('noticed', () => !host.phones.single.connected);
+
+      // Still on the roster, still holding their points — the lobby used to
+      // erase them, which is what made a returning player a stranger.
+      expect(host.phones, hasLength(1));
+      expect(host.phones.single.phoneId, seat);
+      expect(host.scores[seat], 7);
+    });
+
+    test('coming back takes the same seat, not a second one', () async {
+      final adasPhone = DeviceIdentity.generate();
+      final first = joiner(deviceId: adasPhone, label: 'Ada');
+      await first.connect();
+      await waitFor('welcomed', () => host.phones.length == 1);
+      final seat = host.phones.single.phoneId;
+      host.scores.award(seat, 12);
+
+      first.dispose();
+      await waitFor('noticed', () => !host.phones.single.connected);
+
+      final again = joiner(deviceId: adasPhone, label: 'Ada');
+      await again.connect();
+      await waitFor('back', () => again.phase == ClientPhase.lobby);
+
+      expect(host.phones, hasLength(1), reason: 'they were seated twice');
+      expect(again.phoneId, seat, reason: 'they were given a new number');
+      expect(host.phones.single.connected, isTrue);
+      expect(host.scores[seat], 12, reason: 'their score did not follow them');
+
+      again.dispose();
+    });
+
+    test('a phone that has never been here gets a seat of its own', () async {
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      await waitFor('welcomed', () => host.phones.length == 1);
+
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('two in', () => host.phones.length == 2);
+
+      expect(host.phones.map((p) => p.phoneId).toSet(), hasLength(2));
+
+      ada.dispose();
+      bob.dispose();
+    });
+
+    test('a seat still being sat in cannot be claimed', () async {
+      // Either a mistake or somebody helping themselves to a stranger's score.
+      // Whoever is holding the seat keeps it; the newcomer is just a newcomer.
+      final adasPhone = DeviceIdentity.generate();
+      final ada = joiner(deviceId: adasPhone, label: 'Ada');
+      await ada.connect();
+      await waitFor('welcomed', () => host.phones.length == 1);
+      final seat = host.phones.single.phoneId;
+      host.scores.award(seat, 5);
+
+      final impostor = joiner(deviceId: adasPhone, label: 'Bob');
+      await impostor.connect();
+      await waitFor('two in', () => host.phones.length == 2);
+
+      expect(impostor.phoneId, isNot(seat));
+      expect(host.scores[seat], 5);
+      expect(host.phones.where((p) => p.connected), hasLength(2));
+
+      ada.dispose();
+      impostor.dispose();
+    });
+
+    test('their name and score reach every other phone, not just the host',
+        () async {
+      // What the table sees is the point. The standings are keyed by phone but
+      // read by name, and the label only arrives with a phone's measurements —
+      // so without a broadcast at that moment every other screen showed a
+      // nameless row for somebody it had already met, and kept showing it after
+      // they dropped out. On a joiner that reads as the player having vanished.
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('both calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+      await waitFor('names reached Ada',
+          () => ada.scores.ranked.every((e) => e.label != e.phoneId));
+
+      final bobsSeat = host.phones[1].phoneId;
+      host.scores.award(bobsSeat, 6);
+      bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+      await waitFor('Ada was told',
+          () => ada.scores.entryFor(bobsSeat)?.total == 6);
+
+      final onAda = ada.scores.entryFor(bobsSeat)!;
+      expect(onAda.label, 'Bob', reason: 'still a bare phone number');
+      expect(onAda.total, 6, reason: 'their score did not survive the drop');
+
+      ada.dispose();
+    });
+
+    test('a round is built from who is here, not who is remembered', () async {
+      // The seat that stays behind must not ask for a slice of the board.
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('both calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      bob.dispose();
+      await waitFor('bob gone',
+          () => host.phones.where((p) => p.connected).length == 1);
+
+      // One phone left, so the one-phone game is what fits — and the host is
+      // not blocked by a seat nobody is sitting in.
+      expect(host.canStart, isTrue,
+          reason: 'an empty seat should not stop the table playing');
+      host.startRound();
+      expect(host.phase, HostPhase.placing);
+      expect(host.layout!.phones, hasLength(1));
+
+      ada.dispose();
+    });
+  });
+
+  group('coming back to a round already under way', () {
+    /// Two phones in, calibrated, and a round started.
+    Future<
+        ({
+          ClientSession ada,
+          ClientSession bob,
+          String bobsSeat,
+          String bobsPhone,
+        })> aRoundInProgress() async {
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const BallBinGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      return (
+        ada: ada,
+        bob: bob,
+        bobsSeat: host.phones[1].phoneId,
+        bobsPhone: bobsPhone,
+      );
+    }
+
+    test('a phone that was in the game gets its seat and the board back',
+        () async {
+      final table = await aRoundInProgress();
+      table.bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+
+      // The door used to be shut the moment a socket opened, before the host
+      // knew who was knocking. Somebody whose phone died is not a stranger.
+      final again = joiner(deviceId: table.bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('back in', () => again.phase == ClientPhase.placing);
+
+      expect(again.phoneId, table.bobsSeat, reason: 'a new seat, not his own');
+      expect(host.phones, hasLength(2), reason: 'seated twice');
+      expect(again.layout, isNotNull,
+          reason: 'he came back to a round with no slice of the board');
+      expect(again.slices, isNotEmpty,
+          reason: 'he cannot see where anybody is');
+
+      table.ada.dispose();
+      again.dispose();
+    });
+
+    test('a phone nobody has met is still turned away, and told why', () async {
+      final table = await aRoundInProgress();
+
+      final stranger = joiner(label: 'Cat');
+      await stranger.connect();
+      await waitFor('turned away',
+          () => stranger.phase == ClientPhase.rejected);
+
+      expect(stranger.message, contains('already started'));
+      expect(host.phones, hasLength(2), reason: 'a stranger got a seat');
+
+      table.ada.dispose();
+      table.bob.dispose();
+      stranger.dispose();
+    });
+
+    test('a phone claiming a seat somebody is sitting in is turned away',
+        () async {
+      final table = await aRoundInProgress();
+
+      // Bob has not gone anywhere, so his seat is not free to claim.
+      final impostor = joiner(deviceId: table.bobsPhone, label: 'Cat');
+      await impostor.connect();
+      await waitFor('turned away',
+          () => impostor.phase == ClientPhase.rejected);
+
+      expect(host.phones, hasLength(2));
+      expect(host.phones[1].connected, isTrue, reason: 'Bob was evicted');
+
+      table.ada.dispose();
+      table.bob.dispose();
+      impostor.dispose();
+    });
+
+    test('somebody who left before the round started waits for the next one',
+        () async {
+      // There is no slice for them: the board was laid out for the phones that
+      // were there. Better to wait in the lobby than to be handed a screen with
+      // nothing on it.
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+      final bobsSeat = host.phones[1].phoneId;
+
+      bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+
+      host.startRound();
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      expect(host.layout!.phones, hasLength(1),
+          reason: 'the board was built for a phone that is not here');
+
+      final again = joiner(deviceId: bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('welcomed', () => again.phoneId != null);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(again.phoneId, bobsSeat, reason: 'he lost his seat');
+      expect(again.layout, isNull,
+          reason: 'he was handed a slice of a board he is not on');
+
+      ada.dispose();
+      again.dispose();
+    });
+  });
+
+  group('a device knows its own name', () {
+    test('two phones never think of the same one', () {
+      final ids = {for (var i = 0; i < 500; i++) DeviceIdentity.generate()};
+      expect(ids, hasLength(500));
+    });
+
+    test('it is long enough that nobody guesses it', () {
+      // The whole reason a seat is matched on this rather than on the phone
+      // number the host hands out: `p2` can be typed by anyone.
+      final id = DeviceIdentity.generate();
+      expect(id, matches(RegExp(r'^[0-9a-f]{32}$')));
+    });
+
+    test('a seat cannot be taken by guessing the phone number', () async {
+      // The hole the device id closes. `p1` is short, published in every lobby
+      // broadcast, and reused by the next player to join.
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      await waitFor('welcomed', () => host.phones.length == 1);
+      final seat = host.phones.single.phoneId;
+      host.scores.award(seat, 9);
+
+      ada.dispose();
+      await waitFor('ada gone', () => !host.phones.single.connected);
+
+      // Somebody who knows the seat number but is not that phone.
+      final guesser = joiner(deviceId: seat, label: 'Cat');
+      await guesser.connect();
+      await waitFor('seated', () => guesser.phoneId != null);
+
+      expect(guesser.phoneId, isNot(seat), reason: 'the seat was guessed into');
+      expect(host.scores[seat], 9, reason: 'somebody took over their score');
+
+      guesser.dispose();
+    });
+
+    test('a phone with no name at all is simply a newcomer', () async {
+      // An older build, or the very first run before storage answers.
+      final anonymous = ClientSession(
+        transport: WebSocketTransport(local),
+        metrics: phone('Ada'),
+      );
+      await anonymous.connect();
+      await waitFor('welcomed', () => anonymous.phase == ClientPhase.lobby);
+      expect(host.phones, hasLength(1));
+
+      anonymous.dispose();
+      await waitFor('gone', () => !host.phones.single.connected);
+
+      final second = ClientSession(
+        transport: WebSocketTransport(local),
+        metrics: phone('Ada'),
+      );
+      await second.connect();
+      await waitFor('welcomed again', () => second.phase == ClientPhase.lobby);
+
+      // Nameless phones cannot be told apart, so they get a seat each rather
+      // than the first empty one they find.
+      expect(host.phones, hasLength(2));
+      second.dispose();
     });
   });
 

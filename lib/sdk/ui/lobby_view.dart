@@ -82,6 +82,7 @@ class LobbyView extends StatelessWidget {
                   StandingsCard(
                     scores: host?.scores.view ?? client.scores,
                     meId: client.phoneId,
+                    offline: awayPhoneIds(controller),
                     onReset: host?.resetScores,
                   ),
                   if (host != null) ...[

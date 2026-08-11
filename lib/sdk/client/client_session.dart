@@ -161,9 +161,11 @@ class ClientSession extends ChangeNotifier {
     required Transport transport,
     required DeviceMetrics metrics,
     String? joinCode,
+    String? deviceId,
   }) : _transport = transport,
        _metrics = metrics,
-       _joinCode = joinCode;
+       _joinCode = joinCode,
+       _deviceId = deviceId;
 
   final Transport _transport;
   DeviceMetrics _metrics;
@@ -171,6 +173,12 @@ class ClientSession extends ChangeNotifier {
   /// The 5-digit code proving we were invited. Null on the host's own
   /// loopback, which the host trusts without asking.
   final String? _joinCode;
+
+  /// What this device calls itself, the same on every run.
+  ///
+  /// Offered rather than claimed: the host hands a seat back only if it is
+  /// empty, so this can never take one from a phone still sitting in it.
+  final String? _deviceId;
 
   final buffer = SnapshotBuffer();
   final _clock = Stopwatch()..start();
@@ -255,6 +263,7 @@ class ClientSession extends ChangeNotifier {
       _transport.send({
         'type': ClientMsg.join,
         if (_joinCode != null) 'code': _joinCode,
+        if (_deviceId != null) 'deviceId': _deviceId,
         'catalog': GameCatalog.fingerprint,
       });
       _sendCalibration();

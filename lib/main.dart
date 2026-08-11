@@ -44,6 +44,14 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
   final _controller = AppController();
 
   @override
+  void initState() {
+    super.initState();
+    // Read this device's own name off storage now rather than when somebody
+    // taps Join, so rejoining a game never waits on a disk read.
+    _controller.warmUp();
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();

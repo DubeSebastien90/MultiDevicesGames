@@ -144,7 +144,12 @@ class _JoinSheetState extends State<JoinSheet> {
                   for (final game in games)
                     _GameTile(
                       game: game,
-                      onTap: game.open ? () => _joinDiscovered(game) : null,
+                      // A round in progress is worth tapping now: if this
+                      // phone was in that game before it dropped out, the host
+                      // knows the seat and gives it back. If it was not, the
+                      // host says so — which is a better answer than a row
+                      // that will not respond to a finger.
+                      onTap: () => _joinDiscovered(game),
                     ),
                 const SizedBox(height: 20),
                 Row(
@@ -217,10 +222,12 @@ class _GameTile extends StatelessWidget {
         ),
         title: Text(game.name),
         subtitle: Text(
-          game.open ? '$players in · tap to join' : '$players · already started',
+          game.open
+              ? '$players in · tap to join'
+              : '$players · under way — tap to rejoin',
           style: theme.textTheme.bodySmall,
         ),
-        trailing: onTap == null ? null : const Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.chevron_right),
       ),
     );
   }

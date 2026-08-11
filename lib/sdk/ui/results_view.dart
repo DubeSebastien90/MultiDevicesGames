@@ -105,6 +105,7 @@ class ResultsView extends StatelessWidget {
                     scores: host?.scores.view ?? client.scores,
                     meId: client.phoneId,
                     showDeltas: true,
+                    offline: awayPhoneIds(controller),
                   ),
                   const SizedBox(height: 20),
                   // The host drives what happens next, and the button no longer

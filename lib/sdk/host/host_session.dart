@@ -66,8 +66,12 @@ class PhoneRecord {
   PhoneRecord({required this.link});
 
   /// Assigned once the join code checks out — an unauthenticated connection
-  /// never burns a phone number.
+  /// never burns a phone number. Only meaningful inside this session.
   String phoneId = '';
+
+  /// What the device on the other end calls itself, the same on every run.
+  /// How a phone that drops out is recognised when it comes back.
+  String? deviceId;
 
   final PeerLink link;
 
@@ -175,8 +179,21 @@ class HostSession extends ChangeNotifier {
   String? get qrPayload => _address == null ? null : '$_address#$_joinCode';
   String? get discoveryFailure => _beacon?.failure;
 
-  /// Ordered as the board is laid out.
+  /// Everyone the session knows about, including phones that have dropped out.
+  ///
+  /// A player who disconnects stays on this list, marked not connected, so the
+  /// standings keep one row per person rather than growing a second one when
+  /// they come back.
   List<PhoneRecord> get phones => List.unmodifiable(_phones);
+
+  /// The phones actually here — the ones a round is built from.
+  ///
+  /// Everything about *playing* counts these: how many are at the table, who
+  /// gets a slice of the board, whether a game can start. Everything about
+  /// *remembering* — the standings, and matching a returning phone to who it
+  /// was — counts [phones].
+  List<PhoneRecord> get _present =>
+      [for (final p in _phones) if (p.connected) p];
 
   double get simTimeMs => _stepCount * (1000 / PlatformConfig.simHz);
 
@@ -187,18 +204,18 @@ class HostSession extends ChangeNotifier {
 
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming =>
-      GameCatalog.playableFrom(_gameIndex, _phones.length);
+      GameCatalog.playableFrom(_gameIndex, _present.length);
 
   bool get canStart =>
       _phase == HostPhase.lobby &&
-      _phones.isNotEmpty &&
-      _phones.every((p) => p.calibrated && p.connected) &&
+      _present.isNotEmpty &&
+      _present.every((p) => p.calibrated) &&
       upcoming != null;
 
   /// Why the Play button is unavailable, for the lobby to say out loud.
   String? get blockedReason {
-    if (_phones.isEmpty) return 'Waiting for a phone to connect…';
-    if (!_phones.every((p) => p.calibrated && p.connected)) {
+    if (_present.isEmpty) return 'Waiting for a phone to connect…';
+    if (!_present.every((p) => p.calibrated)) {
       return 'Waiting for every phone to report its size…';
     }
     if (upcoming == null) {
@@ -206,11 +223,11 @@ class HostSession extends ChangeNotifier {
       // particular is baffling otherwise: four phones failing when three and
       // five both work needs explaining.
       final sizes = GameCatalog.playableTableSizes();
-      final nearest = sizes.where((n) => n > _phones.length).toList();
+      final nearest = sizes.where((n) => n > _present.length).toList();
       final advice = nearest.isEmpty
           ? ''
           : ' Try ${nearest.first} phone(s).';
-      return 'No game fits ${_phones.length} phone(s).$advice '
+      return 'No game fits ${_present.length} phone(s).$advice '
           '${GameCatalog.requirementSummary()}.';
     }
     return null;
@@ -246,18 +263,14 @@ class HostSession extends ChangeNotifier {
   void addLocalPeer(PeerLink peer) => _attachPeer(peer, trusted: true);
 
   void _attachPeer(PeerLink link, {bool trusted = false}) {
-    if (_phase == HostPhase.playing || _phase == HostPhase.placing) {
-      _reject(link, 'Game already set up. Ask the host to re-calibrate.');
-      return;
-    }
-
-    // JOIN CODE DISABLED — nothing can be locked out while nothing is checked.
-    // final remote = link.debugName;
-    // final until = _lockedOut[remote];
-    // if (until != null && DateTime.now().isBefore(until)) {
-    //   _reject(link, 'Too many wrong codes. Wait a moment and try again.');
-    //   return;
-    // }
+    // A round in progress is no longer a closed door here.
+    //
+    // It used to be turned away the moment a socket opened, which was too
+    // early to be fair: at that point the host knows nothing about who is
+    // knocking. Somebody whose phone died two minutes ago is not a stranger,
+    // and the seat they left is still on the roster with their score in it. So
+    // the door is answered, and the decision waits for the `join` message,
+    // where there is a name to judge — see [_handleJoin].
 
     final record = PhoneRecord(link: link);
 
@@ -308,7 +321,26 @@ class HostSession extends ChangeNotifier {
     // it is simply not checked. To bring the door policy back, delete the
     // `_admit` below and uncomment the block under it, then the four other
     // `JOIN CODE DISABLED` markers (`grep -rn "JOIN CODE DISABLED"`).
-    _admit(record);
+    final deviceId = msg['deviceId'] as String?;
+
+    // The door policy for a round already under way: your own seat, or nothing.
+    //
+    // A returning player is let back in because the table already knows them —
+    // their seat is on the roster, their score is in it, and if the round was
+    // laid out while they were here then a slice of the board is still theirs.
+    // A phone nobody has met cannot be let in, and not out of strictness: the
+    // board was compiled for the phones that were present, so there is no slice
+    // to give them and no way to make one without asking everybody to pick
+    // their phones up and start again.
+    if (_phase != HostPhase.lobby && _seatFor(deviceId) == null) {
+      _reject(
+        record.link,
+        'That game has already started. Ask the host to re-calibrate.',
+      );
+      return;
+    }
+
+    _admit(record, deviceId: deviceId);
 
     // final offered = (msg['code'] as String?)?.trim() ?? '';
     // if (_codeMatches(offered)) {
@@ -341,23 +373,101 @@ class HostSession extends ChangeNotifier {
   //   return diff == 0;
   // }
 
-  void _admit(PhoneRecord record) {
+  /// The seat this device left behind, if it is empty and waiting.
+  ///
+  /// Matched on the device's own name rather than the phone number this session
+  /// handed out. That number is short, guessable and reused, so a seat could be
+  /// claimed by typing it; a device id is picked at random once and published
+  /// to nobody. It also outlives the app being closed, which the number never
+  /// could — it only ever existed in memory.
+  ///
+  /// Only a seat whose phone has actually gone: a live connection claiming a
+  /// seat in use is either a mistake or somebody helping themselves to a
+  /// stranger's score, and either way the answer is to treat them as a
+  /// newcomer rather than to evict whoever is sitting there.
+  PhoneRecord? _seatFor(String? deviceId) {
+    if (deviceId == null || deviceId.isEmpty) return null;
+    for (final p in _phones) {
+      if (p.deviceId == deviceId && !p.connected) return p;
+    }
+    return null;
+  }
+
+  void _admit(PhoneRecord record, {String? deviceId}) {
     record.authenticated = true;
-    record.phoneId = 'p${_nextPhoneNumber++}';
-    // Seat them immediately. A player who never opens the picker still has an
-    // identity, so choosing is a change rather than a gate on starting.
-    record.color = PlayerPalette.firstFree(_takenColorIds());
-    _phones.add(record);
+    record.deviceId = deviceId;
+
+    final returning = _seatFor(deviceId);
+    if (returning != null) {
+      // The same person, back again. They take their old seat with everything
+      // that was in it — number, colour, measurements — so the scoreboard,
+      // which is keyed by that number, carries straight on rather than opening
+      // a second row under the same name.
+      record.phoneId = returning.phoneId;
+      record.color = returning.color;
+      record.metrics ??= returning.metrics;
+      _phones[_phones.indexOf(returning)] = record;
+    } else {
+      record.phoneId = 'p${_nextPhoneNumber++}';
+      // Seat them immediately. A player who never opens the picker still has an
+      // identity, so choosing is a change rather than a gate on starting.
+      record.color = PlayerPalette.firstFree(_takenColorIds());
+      _phones.add(record);
+    }
+
     scores.register(record.phoneId, record.label);
     record.link.send({
       'type': HostMsg.welcome,
       'phoneId': record.phoneId,
       'sessionName': _name,
     });
+    _catchUp(record);
     _broadcastLobby();
     _broadcastScores();
     _updateBeacon();
     notifyListeners();
+  }
+
+  /// Bring one phone up to date with a round that is already happening.
+  ///
+  /// Everything a phone is told when a round starts, said again to one peer:
+  /// where its screen sits, what is in the world, and that play is under way.
+  /// Sent only if the board still holds a slice for it — a phone that dropped
+  /// out *before* the round was laid out has no place in it, so it waits in the
+  /// lobby for the next one rather than being handed an empty screen.
+  ///
+  /// The entity list is taken from the simulation as it stands rather than from
+  /// how the round began, so what arrives is the world as it is now; the
+  /// ordinary snapshots that follow carry it on from there.
+  void _catchUp(PhoneRecord record) {
+    final solved = _layout;
+    if (solved == null || _phase == HostPhase.lobby) return;
+
+    final mine = solved.forPhone(record.phoneId);
+    if (mine == null) return;
+
+    record.link.send({
+      'type': HostMsg.layout,
+      ...mine.toJson(),
+      'coverage': solved.coverage.toJson(),
+      'slices': [for (final s in solved.slices) s.toJson()],
+      'links': [for (final l in solved.links) l.toJson()],
+      'instruction': solved.instruction,
+      ..._gameFields,
+    });
+
+    final sim = _sim;
+    if (sim == null) return;
+
+    record.link.send({
+      'type': HostMsg.worldInit,
+      'board': solved.coverage.board.toJson(),
+      'entities': [for (final e in sim.entities) e.descriptor.toJson()],
+      ..._gameFields,
+    });
+    record.link.send({'type': HostMsg.shared, 'state': sim.sharedState});
+    record.link.send({'type': HostMsg.scores, 'scores': scores.view.toJson()});
+    record.link.send({'type': HostMsg.start});
   }
 
   void _reject(PeerLink link, String reason) {
@@ -411,15 +521,22 @@ class HostSession extends ChangeNotifier {
     if (!record.authenticated || !record.connected) return;
     record.connected = false;
 
-    if (_phase == HostPhase.lobby) {
-      _phones.remove(record);
-    } else {
+    // Kept either way, marked not connected.
+    //
+    // The lobby used to erase them, which is why somebody who dropped and came
+    // back appeared twice in the standings: they were admitted as a stranger
+    // and handed a fresh phone number, and the scoreboard is keyed by that
+    // number. Remembering the seat is what lets them have it back.
+    if (_phase != HostPhase.lobby) {
       // Mid-game: leave the world alone (its slice just goes dark) rather than
       // silently rearranging a board people have physically laid out.
       _warning = '${record.label} disconnected — re-calibrate to rebuild the '
           'board.';
     }
     _broadcastLobby();
+    // Their row stays on every screen, name and score intact, rather than the
+    // rest of the table being left with whatever it happened to know last.
+    _broadcastScores();
     _updateBeacon();
     notifyListeners();
   }
@@ -437,8 +554,15 @@ class HostSession extends ChangeNotifier {
       case ClientMsg.calibration:
         record.metrics =
             DeviceMetrics.fromJson(msg['metrics'] as Map<String, dynamic>);
+        // This is where a phone stops being 'p2' and becomes a name: the label
+        // rides in with the measurements. The standings are keyed by phone but
+        // *read* by name, so they have to be told — without this, every other
+        // phone at the table showed a nameless row for somebody it had already
+        // met. The broadcast is diffed, so saying so costs nothing when nothing
+        // has changed.
         scores.register(record.phoneId, record.label);
         _broadcastLobby();
+        _broadcastScores();
         notifyListeners();
 
       case ClientMsg.pickColor:
@@ -495,7 +619,7 @@ class HostSession extends ChangeNotifier {
   /// fits the table.
   MultiscreenGame? get nextGame => _mode == RoundMode.oneOff
       ? null
-      : GameCatalog.playableFrom(_gameIndex + 1, _phones.length);
+      : GameCatalog.playableFrom(_gameIndex + 1, _present.length);
 
   /// One game, then back to the lobby. The games list.
   ///
@@ -503,7 +627,7 @@ class HostSession extends ChangeNotifier {
   /// screen in between: the game already knows where the phones go.
   void startGame(MultiscreenGame game) {
     if (!canStart) return;
-    if (!game.manifest.fits(_phones.length)) return;
+    if (!game.manifest.fits(_present.length)) return;
     final index = GameCatalog.playlist
         .indexWhere((g) => g.manifest.id == game.manifest.id);
     if (index < 0) return;
@@ -517,7 +641,7 @@ class HostSession extends ChangeNotifier {
     _mode = RoundMode.playlist;
     // Always from the top: a run is the whole list, not a resumption of one
     // somebody abandoned.
-    _startGame(GameCatalog.playableIndexFrom(0, _phones.length)!);
+    _startGame(GameCatalog.playableIndexFrom(0, _present.length)!);
   }
 
   /// Every game, with whether this table can play it. The lobby's list.
@@ -525,8 +649,8 @@ class HostSession extends ChangeNotifier {
     for (final game in GameCatalog.playlist)
       GameOffer(
         game: game,
-        playable: canStart && game.manifest.fits(_phones.length),
-        reason: game.manifest.fits(_phones.length)
+        playable: canStart && game.manifest.fits(_present.length),
+        reason: game.manifest.fits(_present.length)
             ? null
             : game.manifest.requirement(),
       ),
@@ -540,7 +664,7 @@ class HostSession extends ChangeNotifier {
     _planError = null;
 
     final lobby = LobbyInfo([
-      for (final p in _phones)
+      for (final p in _present)
         PhoneSpec.fromMetrics(p.phoneId, p.metrics!, color: p.color),
     ]);
 
@@ -565,7 +689,7 @@ class HostSession extends ChangeNotifier {
       p.confirmed = false;
     }
 
-    for (final phone in _phones) {
+    for (final phone in _present) {
       final l = solved.forPhone(phone.phoneId)!;
       phone.link.send({
         'type': HostMsg.layout,
@@ -724,7 +848,7 @@ class HostSession extends ChangeNotifier {
   /// symptom is every player being told they lost. Said out loud at the moment
   /// it happens rather than left to be puzzled over on five screens at once.
   void _warnAboutUnknownPhones(GameOutcome outcome) {
-    final known = {for (final p in _phones) p.phoneId};
+    final known = {for (final p in _present) p.phoneId};
     final named = <String>{
       ...?outcome.winners,
       ...?outcome.lines?.keys,
@@ -791,9 +915,10 @@ class HostSession extends ChangeNotifier {
     _sim?.dispose();
     _sim = null;
     _layout = null;
-    _phones.removeWhere((p) => !p.connected);
+    // Deliberately not dropped: a phone that has gone quiet keeps its place on
+    // the roster, so its score is still there when it comes back.
     final index =
-        GameCatalog.playableIndexFrom(_gameIndex + 1, _phones.length);
+        GameCatalog.playableIndexFrom(_gameIndex + 1, _present.length);
     if (index == null) {
       returnToLobby();
       return;
@@ -811,7 +936,8 @@ class HostSession extends ChangeNotifier {
     _sim?.dispose();
     _sim = null;
     _warning = null;
-    _phones.removeWhere((p) => !p.connected);
+    // Deliberately not dropped: a phone that has gone quiet keeps its place on
+    // the roster, so its score is still there when it comes back.
     for (final p in _phones) {
       p.confirmed = false;
     }
@@ -828,7 +954,8 @@ class HostSession extends ChangeNotifier {
     _warning = null;
     _outcome = null;
     _game = null;
-    _phones.removeWhere((p) => !p.connected);
+    // Deliberately not dropped: a phone that has gone quiet keeps its place on
+    // the roster, so its score is still there when it comes back.
     for (final p in _phones) {
       p.confirmed = false;
     }
