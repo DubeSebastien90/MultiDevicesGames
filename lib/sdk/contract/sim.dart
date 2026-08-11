@@ -251,6 +251,36 @@ class BoardContext {
 /// timers. The platform decides when time passes, which is what keeps the
 /// timeline reproducible and the snapshots evenly spaced — and therefore what
 /// keeps two screens agreeing at the seam.
+/// A game that wants to be told when somebody leaves the table or comes back.
+///
+/// Opt in by implementing it alongside [GameSim]:
+///
+/// ```dart
+/// class YourSim implements GameSim, PlayerPresence { … }
+/// ```
+///
+/// Separate from [GameSim] rather than part of it, and that is not tidiness:
+/// most games say `implements GameSim`, and Dart makes an `implements` clause
+/// carry every member of the interface — even ones with a body. Adding a method
+/// there would break every game at once and force each of them to write an
+/// empty one. This way a game says it cares, or says nothing.
+///
+/// **Saying nothing has a meaning.** A round whose game has not opted in ends
+/// in a draw the moment a player drops out, because the platform cannot know
+/// whether the game is still fair without them — a two-player race with one
+/// runner is not a race. A game that can carry on says so by implementing this.
+///
+/// Both run on the host, in the middle of a round, and never during a step:
+/// there is one thread, so a socket closing cannot interrupt one.
+abstract class PlayerPresence {
+  /// [phoneId] has gone. Their seat is still on the roster and still holds
+  /// their score; they may be back.
+  void onPlayerLeft(String phoneId);
+
+  /// [phoneId] is back, in the same seat, mid-round.
+  void onPlayerReturned(String phoneId);
+}
+
 abstract class GameSim {
   /// Advance by exactly [dt] seconds. Called at a fixed rate.
   void step(double dt);

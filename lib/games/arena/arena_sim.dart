@@ -9,7 +9,7 @@ import 'arena_config.dart';
 /// No physics engine — extends [GameSim] directly like Hot Potato. Movement,
 /// attacks and blocking are encoded via touch gestures: drag to move, tap to
 /// attack, hold to block.
-class ArenaSim implements GameSim {
+class ArenaSim implements GameSim, PlayerPresence {
   ArenaSim(this.context) {
     _initFighters();
   }
@@ -20,6 +20,14 @@ class ArenaSim implements GameSim {
   String _phase = 'countdown'; // 'countdown' | 'playing' | 'finished'
   double _countdown = ArenaConfig.countdownSeconds;
   String? _winnerId;
+
+  /// Fighters whose player has dropped out.
+  ///
+  /// The fighter stays exactly where it was and can still be cut down — a body
+  /// left standing in the middle of a brawl is fair game, and taking it off the
+  /// board would rescue whoever was losing to it. It only goes grey, so nobody
+  /// wonders why it has stopped fighting back.
+  final _away = <String>{};
 
   // -- fighters ---------------------------------------------------------------
   late final List<_Fighter> _fighters;
@@ -178,6 +186,25 @@ class ArenaSim implements GameSim {
     }
   }
 
+  // -- who is still here ------------------------------------------------------
+
+  @override
+  void onPlayerLeft(String phoneId) {
+    _away.add(phoneId);
+    // Their hands are off the glass, so nothing should still be held down.
+    final f = _fighterOf(phoneId);
+    if (f == null) return;
+    f
+      ..moveAngle = null
+      ..touchDown = false
+      ..touchMoved = false
+      ..touchHeldTime = 0;
+    if (f.blocking) _endBlock(f);
+  }
+
+  @override
+  void onPlayerReturned(String phoneId) => _away.remove(phoneId);
+
   // -- input ------------------------------------------------------------------
 
   @override
@@ -281,6 +308,7 @@ class ArenaSim implements GameSim {
       map['blkCd_$key'] = _quantize(f.blockCooldownLeft);
       map['invincible_$key'] = f.invincibleLeft > 0;
       map['alive_$key'] = f.alive;
+      map['away_$key'] = _away.contains(f.phoneId);
     }
     return map;
   }
@@ -320,6 +348,9 @@ class ArenaSim implements GameSim {
     _phase = 'countdown';
     _countdown = ArenaConfig.countdownSeconds;
     _winnerId = null;
+    // Who is at the table is the session's business, not the round's, so this
+    // is deliberately *not* cleared: a player who is away stays away across a
+    // replay until they actually come back.
     // The latched verdict belongs to the round that just ended.
     _outcome = null;
     for (var i = 0; i < _fighters.length; i++) {

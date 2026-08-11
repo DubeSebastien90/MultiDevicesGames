@@ -1,10 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
+import 'package:multiscreen_slingshot/sdk/contract/game.dart';
+import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_identity.dart';
@@ -510,6 +513,74 @@ void main() {
       // than the first empty one they find.
       expect(host.phones, hasLength(2));
       second.dispose();
+    });
+  });
+
+  group('a game hears about the table emptying', () {
+    /// Two phones, calibrated, and [game] running.
+    Future<({ClientSession ada, ClientSession bob, String bobsPhone})>
+        aRoundOf(MultiscreenGame game) async {
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(game);
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      for (final c in [ada, bob]) {
+        c.confirmPlacement();
+      }
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+      return (ada: ada, bob: bob, bobsPhone: bobsPhone);
+    }
+
+    test('a game that has not asked ends the round level', () async {
+      // Carrying on is a claim only the game can make. Ball Bin has not made
+      // it, so rather than let one player finish a round the other was dropped
+      // out of, the platform calls it even.
+      final table = await aRoundOf(const BallBinGame());
+      table.bob.dispose();
+      await waitFor('round called', () => host.phase == HostPhase.finished);
+
+      expect(host.outcome!.kind, OutcomeKind.draw);
+      expect(host.outcome!.summary, contains('Bob'));
+
+      table.ada.dispose();
+    });
+
+    test('a game that has asked is told, and keeps playing', () async {
+      // Arena implements PlayerPresence, so it decides what a missing player
+      // means — the round carries on with their fighter left standing.
+      final table = await aRoundOf(const ArenaGame());
+      final bobsSeat = host.phones[1].phoneId;
+
+      table.bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      expect(host.phase, HostPhase.playing,
+          reason: 'the round was ended for a game that can handle this');
+
+      // Read off Ada's phone rather than the host: what matters is that the
+      // other screens are told, since that is what greys the fighter out.
+      await waitFor('Ada sees him greyed',
+          () => table.ada.sharedState['away_p1'] == true);
+
+      // And back again, mid-round.
+      final again = joiner(deviceId: table.bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('back in', () => host.phones[1].connected);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      await waitFor('Ada sees him back',
+          () => table.ada.sharedState['away_p1'] == false);
+      expect(again.phoneId, bobsSeat);
+
+      table.ada.dispose();
+      again.dispose();
     });
   });
 

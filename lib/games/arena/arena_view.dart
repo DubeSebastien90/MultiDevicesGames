@@ -8,6 +8,13 @@ import 'arena_config.dart';
 
 /// Renders the arena: fighters, HP bars, attack cones, block shields, stun
 /// stars, invincibility pulses, and the countdown overlay.
+/// The same colour drained of it: kept dark enough to read against the floor,
+/// light enough to see the fighter is still standing there.
+Color _greyed(Color c) {
+  final grey = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) * 0.7;
+  return Color.from(alpha: c.a, red: grey, green: grey, blue: grey);
+}
+
 class ArenaView extends GameView {
   ArenaView({required this.phoneId});
 
@@ -106,8 +113,11 @@ class ArenaView extends GameView {
         canvas.restore();
       }
 
-      // Fighter body.
-      _fill.color = isStunned ? color.withAlpha(140) : color;
+      // Fighter body. A player who has dropped out goes grey — still there,
+      // still hittable, plainly nobody home.
+      final away = frame.sharedState['away_p${e.propInt('index', 0)}'] == true;
+      final body = away ? _greyed(color) : color;
+      _fill.color = isStunned ? body.withAlpha(140) : body;
       canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
 
       // Direction indicator (small triangle).

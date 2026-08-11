@@ -421,6 +421,13 @@ class HostSession extends ChangeNotifier {
       'phoneId': record.phoneId,
       'sessionName': _name,
     });
+    if (returning != null && _phase == HostPhase.playing) {
+      final sim = _sim;
+      if (sim is PlayerPresence) {
+        (sim as PlayerPresence).onPlayerReturned(record.phoneId);
+      }
+    }
+
     _catchUp(record);
     _broadcastLobby();
     _broadcastScores();
@@ -532,6 +539,7 @@ class HostSession extends ChangeNotifier {
       // silently rearranging a board people have physically laid out.
       _warning = '${record.label} disconnected — re-calibrate to rebuild the '
           'board.';
+      _tellTheGameSomebodyLeft(record);
     }
     _broadcastLobby();
     // Their row stays on every screen, name and score intact, rather than the
@@ -539,6 +547,28 @@ class HostSession extends ChangeNotifier {
     _broadcastScores();
     _updateBeacon();
     notifyListeners();
+  }
+
+  /// Hand a mid-round disconnection to the game, or end the round if it has
+  /// not asked to hear about them.
+  ///
+  /// The default is a draw rather than carrying on, because carrying on is a
+  /// claim only the game can make. A hippo down one player is still a game; a
+  /// two-player race with one runner is not, and finishing it would hand
+  /// somebody a win they did not earn against somebody whose battery died.
+  /// Ending level is the answer that is wrong in the fewest ways, and any game
+  /// that disagrees says so by implementing [PlayerPresence].
+  void _tellTheGameSomebodyLeft(PhoneRecord record) {
+    final sim = _sim;
+    if (sim == null || _phase != HostPhase.playing) return;
+
+    if (sim is PlayerPresence) {
+      (sim as PlayerPresence).onPlayerLeft(record.phoneId);
+      return;
+    }
+    _finishRound(GameOutcome.draw(
+      summary: '${record.label} dropped out',
+    ));
   }
 
   void _handleMessage(PhoneRecord record, Map<String, dynamic> msg) {
