@@ -8,8 +8,11 @@ import '../model/device_metrics.dart';
 /// [DeviceMetrics]. Falls back to [DeviceMetrics.estimate] on any failure,
 /// so callers are never exposed to a channel exception.
 class NativeDpiChannel {
-  static const _channel =
-      MethodChannel('com.multidevicesgames/display_metrics');
+  /// Shared with [NameDropSupport], which asks the same native handler a
+  /// different question. Named rather than repeated so the two cannot drift.
+  static const channelName = 'com.multidevicesgames/display_metrics';
+
+  static const _channel = MethodChannel(channelName);
 
   static Future<DeviceMetrics> detect({
     required Size physicalPx,

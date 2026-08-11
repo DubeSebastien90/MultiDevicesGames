@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../layout/board_links.dart';
+import '../model/name_drop_status.dart';
 import '../model/table_change.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
@@ -17,6 +18,7 @@ import '../contract/game.dart';
 import '../contract/sim.dart' show OutcomeKind, PhoneSlice;
 import '../contract/view.dart';
 import '../score/scoreboard.dart';
+import 'interruption_watcher.dart';
 import 'snapshot_buffer.dart';
 
 enum ClientPhase {
@@ -202,6 +204,10 @@ class ClientSession extends ChangeNotifier {
   final buffer = SnapshotBuffer();
   final _clock = Stopwatch()..start();
 
+  /// Watches for the screen being covered by something that is not the player
+  /// leaving — the only trace NameDrop leaves that an app is allowed to see.
+  late final _interruptions = InterruptionWatcher(_sendInterrupted);
+
   StreamSubscription<Map<String, dynamic>>? _sub;
   Timer? _pingTimer;
 
@@ -307,6 +313,7 @@ class ClientSession extends ChangeNotifier {
       _sendCalibration();
       _pingTimer =
           Timer.periodic(const Duration(seconds: 1), (_) => _sendPing());
+      _interruptions.start();
     } catch (e) {
       _fail(ClientPhase.disconnected, _friendlyError(e));
     }
@@ -382,6 +389,21 @@ class ClientSession extends ChangeNotifier {
       'type': ClientMsg.ping,
       't': _clock.elapsedMilliseconds,
       if (_rttMs != null) 'rtt': _rttMs,
+    });
+  }
+
+  /// Tell the host the screen was covered, and for how long.
+  ///
+  /// Reported on the way *out* of the interruption rather than into it, for
+  /// the plain reason that its length is not known until it ends — and the
+  /// length is half of what makes it worth reporting. The cost is that the two
+  /// phones of a pair report at different moments, because two people dismiss
+  /// a card at their own speed; sending how long ago it *began* is what lets
+  /// the host line them back up.
+  void _sendInterrupted(Duration held) {
+    _transport.send({
+      'type': ClientMsg.interrupted,
+      'agoMs': held.inMilliseconds,
     });
   }
 
@@ -605,6 +627,17 @@ class ClientSession extends ChangeNotifier {
       case HostMsg.pong:
         final sent = (msg['t'] as num).toDouble();
         _rttMs = _clock.elapsedMilliseconds - sent;
+
+      case HostMsg.nameDropSuspected:
+        // Reopen the question, and say nothing about it now. A full-screen
+        // notice about being interrupted, delivered as an interruption, would
+        // be a strange thing to do to somebody mid-round — so this only
+        // changes what the lobby will ask next time it is reached.
+        //
+        // Not awaited and not reported: whether the write lands is not worth
+        // stalling a message pump over, and there is nothing on screen that
+        // depends on it.
+        NameDropPref.save(NameDropStatus.waiting);
     }
   }
 
@@ -689,6 +722,7 @@ class ClientSession extends ChangeNotifier {
   @override
   void dispose() {
     _pingTimer?.cancel();
+    _interruptions.stop();
     _sub?.cancel();
     _disposeView();
     _transport.dispose();

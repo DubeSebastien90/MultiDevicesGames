@@ -4,6 +4,7 @@ import '../app_controller.dart';
 import '../client/client_session.dart';
 import 'game_view.dart';
 import 'lobby_view.dart';
+import 'name_drop_notice.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
 import 'scoreboard_view.dart';
@@ -59,7 +60,13 @@ class SessionScreen extends StatelessWidget {
         return const _Waiting(message: 'Connecting…');
 
       case ClientPhase.lobby:
-        return LobbyView(controller: controller);
+        // The NameDrop question belongs to *arriving at* the lobby, which is a
+        // phase transition and therefore this screen's business rather than the
+        // lobby's. Sitting here, the gate's State is created when the phase
+        // becomes lobby and disposed when it stops being lobby, so the check
+        // runs once per visit — including the visit after a mid-game
+        // interruption reopened the question.
+        return NameDropGate(child: LobbyView(controller: controller));
 
       case ClientPhase.placing:
         // Keyed per round for the same reason the game below is: Flutter reuses

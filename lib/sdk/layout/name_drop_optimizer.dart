@@ -103,6 +103,51 @@ class NameDropOptimizer {
     );
   }
 
+  /// The pairs [optimize] could not separate, as canonical [pairKey]s.
+  ///
+  /// Turning phones around fixes most tables but not all of them: three phones
+  /// in a row have a middle one whose top faces *somebody* whichever way it is
+  /// turned, and a plan can simply run out of room to help. Those leftovers are
+  /// where NameDrop can still fire, and knowing which ones they are is what
+  /// lets the host tell a real interruption from a stray thumb.
+  ///
+  /// Run this on the plan [optimize] returned, not the one handed to it — the
+  /// question is which dangers survived, and the raw plan's are mostly gone.
+  ///
+  /// Deliberately a second pass rather than a value threaded out of the search.
+  /// It is a handful of polygon tests once per round, against a search that
+  /// runs thousands of states, and keeping [optimize] returning a plain
+  /// [BoardPlan] leaves every existing caller and test alone.
+  static Set<(String, String)> dangerousPairs(BoardPlan plan, LobbyInfo lobby) {
+    final placements = plan.placements;
+    final n = placements.length;
+
+    final zones = <List<(double, double)>?>[];
+    for (final p in placements) {
+      final spec = lobby.byId(p.phoneId);
+      zones.add(spec == null ? null : _dangerZone(p, spec));
+    }
+
+    final pairs = <(String, String)>{};
+    for (int i = 0; i < n; i++) {
+      final zonesI = zones[i];
+      if (zonesI == null) continue;
+      for (int j = i + 1; j < n; j++) {
+        final zonesJ = zones[j];
+        if (zonesJ == null) continue;
+        if (_polygonDistance(zonesI, zonesJ) < _kProximityMm) {
+          pairs.add(pairKey(placements[i].phoneId, placements[j].phoneId));
+        }
+      }
+    }
+    return pairs;
+  }
+
+  /// Two phone ids in a fixed order, so a pair means the same thing whichever
+  /// end of it reports first.
+  static (String, String) pairKey(String a, String b) =>
+      a.compareTo(b) <= 0 ? (a, b) : (b, a);
+
   // ── the table ────────────────────────────────────────────────────────────────
 
   /// Whether each pair of phones is dangerous, in each of the four ways the two

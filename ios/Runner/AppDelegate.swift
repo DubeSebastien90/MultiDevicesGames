@@ -20,12 +20,35 @@ import UIKit
       binaryMessenger: messenger
     )
     channel.setMethodCallHandler { [weak self] call, result in
-      guard call.method == "getPhysicalScreenInfo" else {
+      switch call.method {
+      case "getPhysicalScreenInfo":
+        self?.handleDisplayMetrics(result: result)
+      case "getDeviceInfo":
+        self?.handleDeviceInfo(result: result)
+      default:
         result(FlutterMethodNotImplemented)
-        return
       }
-      self?.handleDisplayMetrics(result: result)
     }
+  }
+
+  /// What kind of device this is, for features that only exist on some of them.
+  ///
+  /// [idiom] rather than the model identifier because the simulator reports its
+  /// host architecture — 'arm64' — where a device reports 'iPhone17,1', so a
+  /// prefix test on the model would call every simulator an iPad and the one
+  /// place this is used would go untested.
+  private func handleDeviceInfo(result: FlutterResult) {
+    let idiom: String
+    switch UIDevice.current.userInterfaceIdiom {
+    case .phone: idiom = "phone"
+    case .pad: idiom = "pad"
+    default: idiom = "other"
+    }
+    // Major only. The callers ask "is this at least iOS 17", and parsing the
+    // whole version string in Dart to answer that invites the usual mistakes
+    // with '17.10' sorting below '17.9'.
+    let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+    result(["idiom": idiom, "systemMajor": major])
   }
 
   private func handleDisplayMetrics(result: FlutterResult) {

@@ -21,6 +21,17 @@ class ClientMsg {
   static const touch = 'touch';
   static const ping = 'ping';
   static const reset = 'reset';
+
+  /// 'Something covered my screen for a moment, and it was not me leaving.'
+  ///
+  /// Carries `agoMs`: how long ago the interruption *started*, measured on the
+  /// sender's own clock. Deliberately a duration and not a timestamp — the two
+  /// phones share no clock, and the host only needs to know whether two of
+  /// these began at the same moment, which arithmetic on elapsed time answers
+  /// without anybody agreeing what time it is.
+  ///
+  /// One of these on its own means very little; see [HostMsg.nameDropSuspected].
+  static const interrupted = 'interrupted';
 }
 
 /// Host -> Client.
@@ -60,6 +71,19 @@ class HostMsg {
   /// else is playing, and the lobby broadcast says the same thing to all of
   /// them.
   static const sitOut = 'sitOut';
+
+  /// 'You and the phone beside you were both interrupted at once, and your
+  /// tops are touching. Whatever you told us about that setting, it is on.'
+  ///
+  /// Sent to both phones of a pair, because the interaction takes two: if it
+  /// fired, neither of them had it turned off, whatever either of them said.
+  ///
+  /// This is inference, not detection — iOS offers no way to observe NameDrop,
+  /// so what the host actually saw was two screens going away together on a
+  /// pair the layout says is dangerous. It is enough to reopen a question and
+  /// nowhere near enough to make an accusation, which is why the only thing it
+  /// does is set the state back to waiting.
+  static const nameDropSuspected = 'nameDropSuspected';
 
   static const pong = 'pong';
 }

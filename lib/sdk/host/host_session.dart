@@ -21,6 +21,7 @@ import '../layout/board_plan.dart';
 import '../layout/name_drop_optimizer.dart';
 import '../layout/phone_spec.dart';
 import '../score/scoreboard.dart';
+import 'name_drop_detector.dart';
 
 /// The host's journey through one session.
 ///
@@ -269,6 +270,13 @@ class HostSession extends ChangeNotifier {
   /// starts, and this says why on the host's own screen.
   String? get planError => _planError;
   String? _planError;
+
+  /// Pairs of phones whose tops are still together in the current layout.
+  /// Empty whenever [_layout] is null, which is what stops a stale set from
+  /// being consulted in the lobby.
+  Set<(String, String)> _dangerPairs = const {};
+
+  final _nameDrop = NameDropDetector();
 
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming => GameCatalog.playableFrom(
@@ -942,6 +950,9 @@ class HostSession extends ChangeNotifier {
           phase: msg['phase'] as String,
         ));
 
+      case ClientMsg.interrupted:
+        _handleInterrupted(record, msg);
+
       case ClientMsg.reset:
         _sim?.reset();
 
@@ -954,6 +965,40 @@ class HostSession extends ChangeNotifier {
         final rtt = (msg['rtt'] as num?)?.toDouble();
         if (rtt != null) record.rttMs = rtt;
     }
+  }
+
+  /// A phone says its screen was covered by something that was not the player
+  /// leaving. On its own that means little; see [NameDropDetector].
+  ///
+  /// Only while a layout exists. In the lobby the phones are in pockets and on
+  /// chair arms, nowhere near each other, and [_dangerPairs] still describes
+  /// whatever table the last round was played on — so the one place a stale
+  /// set could do harm is the one place this refuses to look at it.
+  void _handleInterrupted(PhoneRecord record, Map<String, dynamic> msg) {
+    if (_layout == null) return;
+
+    final agoMs = (msg['agoMs'] as num?)?.toInt();
+    if (agoMs == null) return;
+
+    final pair = _nameDrop.report(
+      record.phoneId,
+      Duration(milliseconds: agoMs),
+      _dangerPairs,
+    );
+    if (pair == null) return;
+
+    // Both ends, because the interaction takes two: if it fired, neither of
+    // them had the setting off, whatever either of them told us.
+    for (final phoneId in [pair.$1, pair.$2]) {
+      _phoneById(phoneId)?.link.send({'type': HostMsg.nameDropSuspected});
+    }
+  }
+
+  PhoneRecord? _phoneById(String phoneId) {
+    for (final p in _phones) {
+      if (p.connected && p.phoneId == phoneId) return p;
+    }
+    return null;
   }
 
   // ----------------------------------------------------------- the round
@@ -1052,6 +1097,14 @@ class HostSession extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    // Measured on the plan the optimizer *returned*, so these are the pairs it
+    // could not save — a middle phone in a row of three has its top against
+    // somebody whichever way it is turned. Those are the only places NameDrop
+    // can still fire, and knowing which they are is what lets an interruption
+    // be told from a stray thumb.
+    _dangerPairs = NameDropOptimizer.dangerousPairs(plan, lobby);
+    _nameDrop.clear();
 
     _layout = solved;
     _phase = HostPhase.placing;
