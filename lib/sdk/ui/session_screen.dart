@@ -6,6 +6,7 @@ import 'game_view.dart';
 import 'lobby_view.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
+import 'scoreboard_view.dart';
 import 'standings_card.dart';
 import 'table_change_screen.dart';
 import 'waiting_room_view.dart';
@@ -40,13 +41,16 @@ class SessionScreen extends StatelessWidget {
         change: change,
         // Two different endings need two different buttons. Carrying on is only
         // an acknowledgement — the next round is already laid out and waiting.
-        // A dead end is not: the playlist has to be wound back to the top,
-        // otherwise the lobby it lands on is one where nothing can be started.
-        // Dismissing the message would have left exactly that, which is what
-        // "the button does not work" looked like.
+        // A dead end is not: nothing left in the list can be played by the
+        // phones that are here, so the run is over, and what a finished run owes
+        // the table is its final standings. The scoreboard's own way out is the
+        // lobby, which winds the playlist back to the top — so the screen this
+        // eventually lands on is one where Play works again.
         onDismiss: host == null
             ? null
-            : (change.carriesOn ? host.dismissTableChange : host.returnToLobby),
+            : (change.carriesOn
+                ? host.dismissTableChange
+                : host.showScoreboard),
       );
     }
 
@@ -94,6 +98,17 @@ class SessionScreen extends StatelessWidget {
 
       case ClientPhase.finished:
         return ResultsView(controller: controller);
+
+      case ClientPhase.scoreboard:
+        return ScoreboardView(
+          // The host's own totals where they exist, the broadcast copy
+          // otherwise — the same choice every standings screen makes.
+          scores: controller.host?.scores.view ?? client.scores,
+          meId: client.phoneId,
+          colors: playerColors(controller),
+          offline: awayPhoneIds(controller),
+          onBackToLobby: controller.host?.returnToLobby,
+        );
 
       case ClientPhase.rejected:
       case ClientPhase.disconnected:

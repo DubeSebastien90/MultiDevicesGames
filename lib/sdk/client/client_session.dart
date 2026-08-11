@@ -26,6 +26,10 @@ enum ClientPhase {
   playing,
   finished,
 
+  /// The playlist is spent and the host has put the final standings up. The end
+  /// of the evening's run, on every screen at once.
+  scoreboard,
+
   /// Connected, but with no place in the round the table is playing — a phone
   /// that came back mid-game. It waits for the next one.
   waiting,
@@ -69,6 +73,7 @@ class RoundResult {
     this.nextTitle,
     this.nextTagline,
     this.nextInstruction,
+    this.runIsOver = false,
   });
 
   final bool won;
@@ -137,6 +142,14 @@ class RoundResult {
   /// How to rearrange the phones for what is coming.
   final String? nextInstruction;
 
+  /// This was the last game of a playlist run, so what comes after this screen
+  /// is the final standings rather than the games list.
+  ///
+  /// Told rather than inferred: from a joiner, a spent playlist and a one-off
+  /// game look identical — neither has a next game — and they end in different
+  /// places.
+  final bool runIsOver;
+
   bool get hasNext => nextTitle != null;
 
   static RoundResult fromJson(Map<String, dynamic> j) => RoundResult(
@@ -154,6 +167,7 @@ class RoundResult {
     nextTitle: j['nextTitle'] as String?,
     nextTagline: j['nextTagline'] as String?,
     nextInstruction: j['nextInstruction'] as String?,
+    runIsOver: j['runOver'] as bool? ?? false,
   );
 }
 
@@ -484,9 +498,25 @@ class ClientSession extends ChangeNotifier {
           // Whatever it was waiting for is not happening, so it waits in the
           // lobby with everybody else.
           ClientPhase.waiting,
+          // The run has been totalled up and put away.
+          ClientPhase.scoreboard,
         };
         if (_hostPhase == 'lobby' && stale.contains(_phase)) {
           _phase = ClientPhase.lobby;
+          _result = null;
+        }
+
+        // The run is over and the host has put the final standings up. Every
+        // phone follows, from wherever it happened to be — the results screen
+        // usually, the placement screen when the table ran out of games it could
+        // play while it was still being laid out.
+        //
+        // `rejected` and `disconnected` stay out of it for the same reason they
+        // stay out of the set above: those are this phone's own state, and the
+        // host does not get to talk it out of them.
+        const mine = {ClientPhase.rejected, ClientPhase.disconnected};
+        if (_hostPhase == 'scoreboard' && !mine.contains(_phase)) {
+          _phase = ClientPhase.scoreboard;
           _result = null;
         }
         notifyListeners();

@@ -423,6 +423,10 @@ The platform shows standings in the lobby and on the results screen, and shows
 **nothing at all** until somebody scores — so a co-operative game that never
 awards is completely normal.
 
+The one exception is the score board at the end of a playlist run, which is the
+whole screen rather than a card beside other things: it lists the table either
+way, because a final screen with nothing on it is not an ending.
+
 ## Ending a round
 
 Return a `GameOutcome` from `outcome` and the round is over. Which constructor

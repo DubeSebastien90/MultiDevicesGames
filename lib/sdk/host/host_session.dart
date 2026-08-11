@@ -28,7 +28,10 @@ import '../score/scoreboard.dart';
 /// measurements. [placing] is about the table. There is deliberately no step in
 /// between: the game's `planBoard` already decided the arrangement, better than
 /// a host squinting at a diagram could.
-enum HostPhase { idle, lobby, placing, playing, finished }
+///
+/// [scoreboard] is the end of a run: the playlist is spent, the final standings
+/// are on every screen, and the only way on is back to the lobby.
+enum HostPhase { idle, lobby, placing, playing, finished, scoreboard }
 
 /// How a round was started, which decides where it ends.
 enum RoundMode {
@@ -352,7 +355,7 @@ class HostSession extends ChangeNotifier {
     // board was compiled for the phones that were present, so there is no slice
     // to give them and no way to make one without asking everybody to pick
     // their phones up and start again.
-    if (_phase != HostPhase.lobby && _seatFor(deviceId) == null) {
+    if (!_openToStrangers && _seatFor(deviceId) == null) {
       _reject(
         record.link,
         'That game has already started. Ask the host to re-calibrate.',
@@ -557,9 +560,18 @@ class HostSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether somebody the table has never met can walk in right now.
+  ///
+  /// The scoreboard counts as open. It is the lobby with the final standings on
+  /// it — nothing is being played, no board has been laid out — so a person
+  /// arriving between two runs belongs in the room for the next one rather than
+  /// being told a game has already started.
+  bool get _openToStrangers =>
+      _phase == HostPhase.lobby || _phase == HostPhase.scoreboard;
+
   void _updateBeacon() => _beacon?.update(
     players: _phones.where((p) => p.connected).length,
-    open: _phase == HostPhase.lobby,
+    open: _openToStrangers,
     // Which seats are sitting empty, said in a way only their owner
     // recognises. It is what lets a phone see that a game already under way is
     // still *its* game, instead of tapping and being turned away.
@@ -813,6 +825,14 @@ class HostSession extends ChangeNotifier {
   MultiscreenGame? get nextGame => _mode == RoundMode.oneOff
       ? null
       : GameCatalog.playableFrom(_gameIndex + 1, _present.length);
+
+  /// The playlist has been played out: this round was the last game that fits
+  /// the table, and there is nothing after it.
+  ///
+  /// Deliberately not the same question as `nextGame == null`, which is also
+  /// true of a single game started from the games list. That one ends where it
+  /// started — at the list — and has no run to total up.
+  bool get runIsOver => _mode == RoundMode.playlist && nextGame == null;
 
   /// One game, then back to the lobby. The games list.
   ///
@@ -1089,6 +1109,10 @@ class HostSession extends ChangeNotifier {
       if (outcome.winners != null) 'winners': outcome.winners!.toList(),
       if (outcome.lines != null) 'lines': outcome.lines,
       ..._gameFields,
+      // What follows this screen, for the phones that have no button to press.
+      // A joiner cannot tell a spent playlist from a one-off — both arrive with
+      // no next game — and the two end in different places.
+      'runOver': runIsOver,
       // Present only on a playlist round. Its absence is how every phone knows
       // this one ends at the lobby.
       if (next != null) ...{
@@ -1129,10 +1153,52 @@ class HostSession extends ChangeNotifier {
     final index =
         GameCatalog.playableIndexFrom(_gameIndex + 1, _present.length);
     if (index == null) {
-      returnToLobby();
+      // Only reachable by somebody dropping out between the button being drawn
+      // and being tapped — the button that leads here is only offered when
+      // there *is* a next game. Either way the run is over, and a run that is
+      // over ends at the standings.
+      showScoreboard();
       return;
     }
     _startGame(index);
+  }
+
+  /// The run is over: put the final standings on every screen.
+  ///
+  /// The end of a playlist, and the only thing between the last round and the
+  /// lobby. It is a phase rather than a screen the host opens locally because
+  /// the standings are the *table's* — six people leaning in to see who won is
+  /// the point, and one of them reading it on the host's phone while the other
+  /// five look at "back to the games" is not.
+  ///
+  /// Reached from two endings: the last round of the list finishing, and the
+  /// table shrinking past what anything left in the list can be played by. Both
+  /// tear the round down here, so neither needs to do it on its way in.
+  void showScoreboard() {
+    if (_phase == HostPhase.scoreboard) return;
+    _loop?.cancel();
+    _loop = null;
+    _sim?.dispose();
+    _sim = null;
+    _layout = null;
+    _warning = null;
+    // Read, by getting here. Left set it would be routed ahead of this screen
+    // and the button that led here would look like it had done nothing.
+    _tableChange = null;
+    _outcome = null;
+    _game = null;
+    // Deliberately not dropped: a phone that has gone quiet keeps its place on
+    // the roster, so its score is still on the board it is being totalled on.
+    for (final p in _phones) {
+      p.confirmed = false;
+    }
+    _phase = HostPhase.scoreboard;
+    // Forced, because this screen *is* the scores: a phone whose last snapshot
+    // was diffed away has nothing else to draw.
+    _broadcastScores(force: true);
+    _broadcastLobby();
+    _updateBeacon();
+    notifyListeners();
   }
 
   void resetRound() => _sim?.reset();

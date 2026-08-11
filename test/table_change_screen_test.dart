@@ -33,17 +33,24 @@ void main() {
     expect(find.text('AngryHippo left'), findsOneWidget);
     expect(find.text('Guacamole'), findsOneWidget);
     expect(find.text('Go to next game'), findsOneWidget);
-    expect(find.text('Back to the lobby'), findsNothing);
+    expect(find.text('Score board'), findsNothing);
   });
 
-  testWidgets('a dead end offers the menu and promises no game', (tester) async {
+  testWidgets('a dead end offers the standings and promises no game', (
+    tester,
+  ) async {
     // No `nextGame`, so there must be no next-game panel to read: a player told
     // the round is over and shown a game title in the same breath has been told
     // two different things.
+    //
+    // The way out is the score board rather than the lobby: nothing left in the
+    // list fits the phones that are here, so this is the end of the run, and a
+    // run that ends owes the table its final standings before it drops everybody
+    // back at the games list.
     await show(tester, const TableChange(who: 'AngryHippo left'));
 
     expect(find.text('AngryHippo left'), findsOneWidget);
-    expect(find.text('Back to the lobby'), findsOneWidget);
+    expect(find.text('Score board'), findsOneWidget);
     expect(find.text('NEXT GAME'), findsNothing);
     expect(find.text('Go to next game'), findsNothing);
   });

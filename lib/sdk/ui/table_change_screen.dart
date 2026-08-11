@@ -134,8 +134,12 @@ class TableChangeScreen extends StatelessWidget {
                         minimumSize: const Size(200, 48),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
+                      // A dead end is the end of the run, so it goes where every
+                      // finished run goes: the final standings. The lobby is one
+                      // more tap past that, on a screen that has first told the
+                      // table how the evening actually went.
                       child: Text(
-                        carriesOn ? 'Go to next game' : 'Back to the lobby',
+                        carriesOn ? 'Go to next game' : 'Score board',
                       ),
                     )
                   else

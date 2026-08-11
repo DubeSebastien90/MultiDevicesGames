@@ -795,8 +795,18 @@ void main() {
       // were wrong with tapping the button, and all three read as "it does
       // nothing": the message survived, the joiner kept its placement screen,
       // and the lobby it landed on could not start a thing.
-      host.returnToLobby();
+      //
+      // The button is the score board now, not the lobby: a dead end is the end
+      // of the run, and a run that ends owes the table its final standings
+      // before dropping everybody back at the games list. Everybody goes there,
+      // not only the host — the standings are the table's.
+      host.showScoreboard();
+      expect(host.phase, HostPhase.scoreboard);
       expect(host.tableChange, isNull, reason: 'the screen would not close');
+      await waitFor('ada is looking at the standings too',
+          () => ada.phase == ClientPhase.scoreboard && ada.tableChange == null);
+
+      host.returnToLobby();
       expect(host.canStart, isTrue,
           reason: 'a lobby that cannot start a game is not a way out — the '
               'playlist was left past the end, so Slingshot, which one phone '

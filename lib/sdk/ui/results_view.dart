@@ -45,6 +45,12 @@ class ResultsView extends StatelessWidget {
     final hasNext =
         host != null ? host.nextGame != null : (result?.hasNext ?? false);
 
+    // Three endings, not two. A game picked off the list ends back at the list;
+    // a playlist that has run out of games ends at the standings for the whole
+    // run, which is the thing everyone stayed for.
+    final runIsOver =
+        host != null ? host.runIsOver : (result?.runIsOver ?? false);
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -113,13 +119,26 @@ class ResultsView extends StatelessWidget {
                   // "Up next" card was.
                   if (host != null)
                     FilledButton.icon(
-                      onPressed:
-                          hasNext ? host.advanceToNextGame : host.returnToLobby,
-                      icon: Icon(hasNext ? Icons.arrow_forward : Icons.list),
+                      onPressed: hasNext
+                          ? host.advanceToNextGame
+                          : runIsOver
+                              ? host.showScoreboard
+                              : host.returnToLobby,
+                      icon: Icon(
+                        hasNext
+                            ? Icons.arrow_forward
+                            : runIsOver
+                                ? Icons.emoji_events
+                                : Icons.list,
+                      ),
                       label: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Text(
-                          hasNext ? 'Next game' : 'Back to the games',
+                          hasNext
+                              ? 'Next game'
+                              : runIsOver
+                                  ? 'Score board'
+                                  : 'Back to the games',
                         ),
                       ),
                     )
@@ -127,7 +146,9 @@ class ResultsView extends StatelessWidget {
                     Text(
                       hasNext
                           ? 'Waiting for the host to start the next one…'
-                          : 'Waiting for the host to pick the next game…',
+                          : runIsOver
+                              ? 'Waiting for the host to show the score board…'
+                              : 'Waiting for the host to pick the next game…',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
