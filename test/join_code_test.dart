@@ -584,6 +584,68 @@ void main() {
     });
   });
 
+  group('nobody is waited on for a screen they do not have', () {
+    test('a phone that rejoins mid-placement does not stall the round',
+        () async {
+      // The freeze. Bob drops out before the round is laid out, so the board is
+      // built for Ada alone. He comes back while she is on the placement
+      // screen — connected again, but with no slice and so no button to press.
+      // Counting him left the table waiting for a confirmation that could
+      // never arrive.
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+
+      // A game one phone can play, since Bob is not here to make up a pair.
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      expect(host.layout!.phones, hasLength(1),
+          reason: 'the board should have been built for Ada alone');
+
+      final again = joiner(deviceId: bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('bob back', () => host.phones[1].connected);
+
+      ada.confirmPlacement();
+      await waitFor('the round started', () => host.phase == HostPhase.playing);
+
+      ada.dispose();
+      again.dispose();
+    });
+
+    test('the last phone leaving instead of confirming starts the round',
+        () async {
+      // The mirror of it. Nothing else was going to ask the question: a
+      // confirmation is what triggers the check, and that phone left rather
+      // than pressing.
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const BallBinGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+
+      ada.confirmPlacement();
+      await waitFor('ada is in place',
+          () => host.phones.first.confirmed);
+
+      bob.dispose();
+      await waitFor('the round started', () => host.phase == HostPhase.playing);
+
+      ada.dispose();
+    });
+  });
+
   test('a host has a 5-digit code and a name', () {
     expect(host.joinCode, matches(RegExp(r'^\d{5}$')));
     expect(host.name, 'kitchen table');

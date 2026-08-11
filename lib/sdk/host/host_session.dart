@@ -540,6 +540,8 @@ class HostSession extends ChangeNotifier {
       _warning = '${record.label} disconnected — re-calibrate to rebuild the '
           'board.';
       _tellTheGameSomebodyLeft(record);
+      // They may have been the one everybody was waiting on.
+      _beginPlayIfEveryoneIsInPlace();
     }
     _broadcastLobby();
     // Their row stays on every screen, name and score intact, rather than the
@@ -547,6 +549,32 @@ class HostSession extends ChangeNotifier {
     _broadcastScores();
     _updateBeacon();
     notifyListeners();
+  }
+
+  /// Start the round once everyone the board was built for says they are in
+  /// place.
+  ///
+  /// **Everyone it was built for**, not everyone connected, and the difference
+  /// is a phone that rejoined after the board was laid out. There is no slice
+  /// for it — the arrangement was compiled for the phones that were here — so
+  /// it never sees a placement screen and has nothing to confirm. Counting it
+  /// left the table waiting for a fourth pair of hands that had no button to
+  /// press.
+  ///
+  /// Also checked when somebody drops out, not only when somebody confirms:
+  /// the last phone the round is waiting on might leave rather than press, and
+  /// then no message ever arrives to ask the question again.
+  void _beginPlayIfEveryoneIsInPlace() {
+    if (_phase != HostPhase.placing) return;
+    final board = _layout;
+    if (board == null) return;
+
+    final onTheBoard = [
+      for (final p in _phones)
+        if (p.connected && board.forPhone(p.phoneId) != null) p,
+    ];
+    if (onTheBoard.isEmpty) return;
+    if (onTheBoard.every((p) => p.confirmed)) _beginPlay();
   }
 
   /// Hand a mid-round disconnection to the game, or end the round if it has
@@ -603,9 +631,7 @@ class HostSession extends ChangeNotifier {
         record.confirmed = true;
         _broadcastLobby();
         notifyListeners();
-        if (_phones.where((p) => p.connected).every((p) => p.confirmed)) {
-          _beginPlay();
-        }
+        _beginPlayIfEveryoneIsInPlace();
 
       case ClientMsg.touch:
         final sim = _sim;
