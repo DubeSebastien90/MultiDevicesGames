@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../model/player_name.dart';
+
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
 import '../platform/native_dpi_channel.dart';
@@ -48,23 +50,33 @@ class _RoleScreenState extends State<RoleScreen> {
   Future<void> _loadSavedPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    final name = prefs.getString(_kNameKey);
+    // Nobody arrives without a name. A blank field is a small wall between
+    // opening the app and playing, and "phone" in the standings tells the table
+    // nothing — so one is picked and written down on the first run, and anyone
+    // who dislikes theirs types over it.
+    final saved = prefs.getString(_kNameKey);
+    final name = (saved != null && saved.isNotEmpty)
+        ? saved
+        : PlayerNames.random();
+    if (saved == null || saved.isEmpty) {
+      await prefs.setString(_kNameKey, name);
+      if (!mounted) return;
+    }
+
     final widthMm = prefs.getDouble(_kWidthMmKey);
     final heightMm = prefs.getDouble(_kHeightMmKey);
     final bezelMm = prefs.getDouble(_kBezelMmKey);
     setState(() {
-      if (name != null && name.isNotEmpty) {
-        _nameController.text = name;
-      }
+      _nameController.text = name;
       if (widthMm != null && heightMm != null) {
         _hasSavedScreenSize = true;
         _metrics = _metrics?.copyWith(
           widthMm: widthMm,
           heightMm: heightMm,
           bezelMm: bezelMm,
-          label: name != null && name.isNotEmpty ? name : null,
+          label: name,
         );
-      } else if (name != null && name.isNotEmpty) {
+      } else {
         _metrics = _metrics?.copyWith(label: name);
       }
     });
