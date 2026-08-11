@@ -7,6 +7,7 @@ import '../host/host_session.dart';
 import '../model/player_color.dart';
 import 'game_picker.dart';
 import 'standings_card.dart';
+import 'table_notice.dart';
 
 /// The connection screen, and only that: the code, the QR, the address, and who
 /// has arrived.
@@ -85,6 +86,11 @@ class LobbyView extends StatelessWidget {
                     offline: awayPhoneIds(controller),
                     onReset: host?.resetScores,
                   ),
+                  if (controller.client?.warning != null ||
+                      host?.warning != null) ...[
+                    const SizedBox(height: 14),
+                    TableNotice(controller: controller),
+                  ],
                   if (host != null) ...[
                     if (host.planError != null) ...[
                       const SizedBox(height: 14),

@@ -429,6 +429,18 @@ class HostSession extends ChangeNotifier {
       }
     }
 
+    // Back before the round began: they belong on the board, so it is laid out
+    // again to include them. Everybody confirms afresh — one more phone changes
+    // where all the others go.
+    if (returning != null && _phase == HostPhase.placing) {
+      _broadcastLobby();
+      _broadcastScores();
+      _updateBeacon();
+      _layOutAgain(because: '${record.label} came back');
+      notifyListeners();
+      return;
+    }
+
     _catchUp(record);
     _broadcastLobby();
     _broadcastScores();
@@ -548,9 +560,11 @@ class HostSession extends ChangeNotifier {
       // silently rearranging a board people have physically laid out.
       _warning = '${record.label} disconnected — re-calibrate to rebuild the '
           'board.';
-      _tellTheGameSomebodyLeft(record);
-      // They may have been the one everybody was waiting on.
-      _beginPlayIfEveryoneIsInPlace();
+      if (_phase == HostPhase.placing) {
+        _layoutAgainWithoutThem(record);
+      } else {
+        _tellTheGameSomebodyLeft(record);
+      }
     }
     _broadcastLobby();
     // Their row stays on every screen, name and score intact, rather than the
@@ -558,6 +572,79 @@ class HostSession extends ChangeNotifier {
     _broadcastScores();
     _updateBeacon();
     notifyListeners();
+  }
+
+  /// Somebody walked off while the table was still being laid out.
+  ///
+  /// The arrangement was compiled for the phones that were here, so their
+  /// leaving leaves a hole in the middle of it: a slice of the world belonging
+  /// to a screen nobody is holding. Starting anyway would hand everyone else a
+  /// board with a gap in it.
+  ///
+  /// So it is worked out again for whoever is left, and everybody is asked to
+  /// confirm afresh — not out of pedantry, but because the new arrangement
+  /// almost certainly puts their phone somewhere else, and a Ready from before
+  /// was about a table that no longer exists.
+  ///
+  /// Only when the phone that left was actually *on* the board. One that
+  /// rejoined without a slice and dropped out again changes nothing about the
+  /// arrangement, and rebuilding would make everybody re-place their phones for
+  /// no reason.
+  void _layoutAgainWithoutThem(PhoneRecord who) {
+    if (_layout?.forPhone(who.phoneId) == null) {
+      // They were never on this board — but they may have been the last one
+      // everybody was waiting on.
+      _beginPlayIfEveryoneIsInPlace();
+      return;
+    }
+
+    _layOutAgain(because: '${who.label} left');
+  }
+
+  /// Lay the table out again for exactly the phones that are here.
+  ///
+  /// Used whenever the table changes shape while it is still being set up —
+  /// somebody walking off, or walking back on. Both need the same thing: an
+  /// arrangement for the phones actually present, and everybody asked to
+  /// confirm afresh, because the new one almost certainly puts their phone
+  /// somewhere else.
+  ///
+  /// If the game cannot be played by who is left, the playlist moves on to one
+  /// that can rather than dropping everybody back to the lobby — the table came
+  /// here to play, and losing a player is a reason to change game, not to stop.
+  ///
+  /// Whether it can is asked of the *manifest*, not left to the layout to
+  /// refuse, because most layouts will not: `Layouts.column` will happily
+  /// arrange a single phone, so Ball Bin would have quietly gone ahead as a
+  /// one-player game after its second player walked off.
+  void _layOutAgain({required String because}) {
+    final game = _game;
+    // Forward only. The playlist is played through once, so a table that has
+    // shrunk past what this game needs carries on down the list rather than
+    // doubling back — and if nothing further suits it, the lobby is the honest
+    // answer rather than replaying something.
+    final index = game != null && game.manifest.fits(_present.length)
+        ? _gameIndex
+        : GameCatalog.playableIndexFrom(_gameIndex + 1, _present.length);
+
+    if (index == null) {
+      _planError = '$because — nothing left in the playlist fits '
+          '${_present.length} phone(s). ${GameCatalog.requirementSummary()}.';
+      _game = null;
+      _layout = null;
+      _phase = HostPhase.lobby;
+      _broadcastLobby();
+      notifyListeners();
+      return;
+    }
+
+    // Said every time the table changes shape, not only when the game does.
+    // Everybody is about to be asked to put their phone somewhere new and the
+    // Ready they already gave has been thrown away; being told only when the
+    // *game* changed would leave that looking like the app forgetting itself.
+    _warning = '$because — next game: '
+        '${GameCatalog.playlist[index].manifest.title}.';
+    _startGame(index);
   }
 
   /// Start the round once everyone the board was built for says they are in
@@ -742,8 +829,16 @@ class HostSession extends ChangeNotifier {
     } on BoardPlanError catch (e) {
       // The game's plan is unusable. Nobody is asked to rearrange a table for
       // a round that cannot run.
+      //
+      // Back to the lobby rather than wherever we were: this can now be reached
+      // *from* the placement screen, when the table shrinks below what the game
+      // needs, and leaving the phase alone would strand everybody on a screen
+      // for a round that no longer has a board.
       _planError = '${game.manifest.title}: ${e.message}';
       _game = null;
+      _layout = null;
+      _phase = HostPhase.lobby;
+      _broadcastLobby();
       notifyListeners();
       return;
     }
@@ -805,6 +900,13 @@ class HostSession extends ChangeNotifier {
       return;
     }
     _sim = sim;
+
+    // The notice has been read by now, so it stops here rather than following
+    // the table into the next round. It is only ever shown on the placement
+    // screen and in the lobby, and both are behind us — leaving it set means the
+    // *next* time the board is laid out, whoever put it away sees it come back,
+    // and whoever did not is reading last round's news.
+    _warning = null;
     _phase = HostPhase.playing;
     _stepCount = 0;
     _accumulatorMs = 0;
@@ -1076,6 +1178,9 @@ class HostSession extends ChangeNotifier {
     _broadcast({
       'type': HostMsg.lobby,
       'phase': _phase.name,
+      // The table changing shape is news for every phone, not only the one
+      // running the session — everybody is about to be asked to move.
+      if (_warning != null) 'warning': _warning,
       ..._gameFields,
       'phones': [
         for (final (i, p) in _phones.indexed)

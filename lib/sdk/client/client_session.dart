@@ -232,6 +232,17 @@ class ClientSession extends ChangeNotifier {
   RoundResult? get result => _result;
   String? get hostPhase => _hostPhase;
 
+  /// Something the table should know: a player arriving or leaving while the
+  /// board was being laid out, and what is being played now.
+  String? get warning => _warning;
+  String? _warning;
+
+  /// Stop showing it. Local — the host is not told, because the host said it.
+  void dismissWarning() {
+    _warning = null;
+    notifyListeners();
+  }
+
   /// How the phones should be arranged for this round.
   String? get instruction => _instruction;
   String? _instruction;
@@ -434,6 +445,7 @@ class ClientSession extends ChangeNotifier {
         notifyListeners();
 
       case HostMsg.lobby:
+        _warning = msg['warning'] as String?;
         _lobbyPhones = [
           for (final p in msg['phones'] as List) p as Map<String, dynamic>,
         ];
@@ -489,6 +501,9 @@ class ClientSession extends ChangeNotifier {
 
       case HostMsg.start:
         _phase = ClientPhase.playing;
+        // Forgotten at the same moment the host forgets it, rather than waiting
+        // for a lobby broadcast that does not come until the round is over.
+        _warning = null;
         buffer.clear();
         notifyListeners();
 

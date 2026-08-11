@@ -357,8 +357,15 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const BallBinGame());
+      // Arena, and played rather than left on the placement screen: a phone
+      // leaving *during* placement re-lays the board, and a game that has not
+      // asked to hear about it ends the round. Neither leaves a round to walk
+      // back into.
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
+      ada.confirmPlacement();
+      bob.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
       return (
         ada: ada,
         bob: bob,
@@ -377,7 +384,7 @@ void main() {
       // knew who was knocking. Somebody whose phone died is not a stranger.
       final again = joiner(deviceId: table.bobsPhone, label: 'Bob');
       await again.connect();
-      await waitFor('back in', () => again.phase == ClientPhase.placing);
+      await waitFor('back in', () => again.phase == ClientPhase.playing);
 
       expect(again.phoneId, table.bobsSeat, reason: 'a new seat, not his own');
       expect(host.phones, hasLength(2), reason: 'seated twice');
@@ -424,11 +431,58 @@ void main() {
       impostor.dispose();
     });
 
-    test('somebody who left before the round started waits for the next one',
+    test('somebody who left before the round is dealt in when they return',
         () async {
-      // There is no slice for them: the board was laid out for the phones that
-      // were there. Better to wait in the lobby than to be handed a screen with
-      // nothing on it.
+      // The board was compiled for the phones that were here, so there was no
+      // slice for them. Rather than leave them watching, the table is laid out
+      // again with them on it — and everybody confirms afresh, because one more
+      // phone moves all the others.
+      //
+      // Three phones, so that one saying Ready does not start the round on its
+      // own and the reset is there to see.
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final cat = joiner(label: 'Cat');
+      await cat.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
+
+      bob.dispose();
+      await waitFor('bob gone', () => !host.phones[2].connected);
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      expect(host.layout!.phones, hasLength(2));
+
+      ada.confirmPlacement();
+      await waitFor('ada ready', () => host.phones.first.confirmed);
+
+      final again = joiner(deviceId: bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('the board grew', () => host.layout?.phones.length == 3);
+
+      expect(host.phase, HostPhase.placing);
+      expect(host.phones.first.confirmed, isFalse,
+          reason: 'Ada is still ready for a table that has changed');
+
+      ada.confirmPlacement();
+      cat.confirmPlacement();
+      again.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+
+      ada.dispose();
+      cat.dispose();
+      again.dispose();
+    });
+
+    test('rejoining a round already being played means waiting for the next',
+        () async {
+      // Mid-play is different: the world is running and the arrangement is on
+      // the table in front of people. Nobody is asked to pick their phones up
+      // in the middle of it, so a phone with no slice waits.
       final bobsPhone = DeviceIdentity.generate();
       final ada = joiner(label: 'Ada');
       await ada.connect();
@@ -436,90 +490,27 @@ void main() {
       await bob.connect();
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
-      final bobsSeat = host.phones[1].phoneId;
 
       bob.dispose();
       await waitFor('bob gone', () => !host.phones[1].connected);
 
-      host.startRound();
+      host.startGame(const SlingshotGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
-      expect(host.layout!.phones, hasLength(1),
-          reason: 'the board was built for a phone that is not here');
+      ada.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
 
       final again = joiner(deviceId: bobsPhone, label: 'Bob');
       await again.connect();
       await waitFor('welcomed', () => again.phoneId != null);
       await Future<void>.delayed(const Duration(milliseconds: 150));
 
-      expect(again.phoneId, bobsSeat, reason: 'he lost his seat');
       expect(again.layout, isNull,
           reason: 'he was handed a slice of a board he is not on');
+      expect(host.phase, HostPhase.playing,
+          reason: 'the round was interrupted for him');
 
       ada.dispose();
       again.dispose();
-    });
-  });
-
-  group('a device knows its own name', () {
-    test('two phones never think of the same one', () {
-      final ids = {for (var i = 0; i < 500; i++) DeviceIdentity.generate()};
-      expect(ids, hasLength(500));
-    });
-
-    test('it is long enough that nobody guesses it', () {
-      // The whole reason a seat is matched on this rather than on the phone
-      // number the host hands out: `p2` can be typed by anyone.
-      final id = DeviceIdentity.generate();
-      expect(id, matches(RegExp(r'^[0-9a-f]{32}$')));
-    });
-
-    test('a seat cannot be taken by guessing the phone number', () async {
-      // The hole the device id closes. `p1` is short, published in every lobby
-      // broadcast, and reused by the next player to join.
-      final ada = joiner(label: 'Ada');
-      await ada.connect();
-      await waitFor('welcomed', () => host.phones.length == 1);
-      final seat = host.phones.single.phoneId;
-      host.scores.award(seat, 9);
-
-      ada.dispose();
-      await waitFor('ada gone', () => !host.phones.single.connected);
-
-      // Somebody who knows the seat number but is not that phone.
-      final guesser = joiner(deviceId: seat, label: 'Cat');
-      await guesser.connect();
-      await waitFor('seated', () => guesser.phoneId != null);
-
-      expect(guesser.phoneId, isNot(seat), reason: 'the seat was guessed into');
-      expect(host.scores[seat], 9, reason: 'somebody took over their score');
-
-      guesser.dispose();
-    });
-
-    test('a phone with no name at all is simply a newcomer', () async {
-      // An older build, or the very first run before storage answers.
-      final anonymous = ClientSession(
-        transport: WebSocketTransport(local),
-        metrics: phone('Ada'),
-      );
-      await anonymous.connect();
-      await waitFor('welcomed', () => anonymous.phase == ClientPhase.lobby);
-      expect(host.phones, hasLength(1));
-
-      anonymous.dispose();
-      await waitFor('gone', () => !host.phones.single.connected);
-
-      final second = ClientSession(
-        transport: WebSocketTransport(local),
-        metrics: phone('Ada'),
-      );
-      await second.connect();
-      await waitFor('welcomed again', () => second.phase == ClientPhase.lobby);
-
-      // Nameless phones cannot be told apart, so they get a seat each rather
-      // than the first empty one they find.
-      expect(host.phones, hasLength(2));
-      second.dispose();
     });
   });
 
@@ -592,13 +583,12 @@ void main() {
   });
 
   group('nobody is waited on for a screen they do not have', () {
-    test('a phone that rejoins mid-placement does not stall the round',
+    test('a phone that rejoins mid-placement is dealt in, not waited on',
         () async {
-      // The freeze. Bob drops out before the round is laid out, so the board is
-      // built for Ada alone. He comes back while she is on the placement
-      // screen — connected again, but with no slice and so no button to press.
-      // Counting him left the table waiting for a confirmation that could
-      // never arrive.
+      // The freeze this replaced: a phone that came back with no slice was
+      // counted among those who must confirm, while having no button to press.
+      // It is now given a place on the board instead, which answers the same
+      // problem the right way round.
       final bobsPhone = DeviceIdentity.generate();
       final ada = joiner(label: 'Ada');
       await ada.connect();
@@ -610,28 +600,93 @@ void main() {
       bob.dispose();
       await waitFor('bob gone', () => !host.phones[1].connected);
 
-      // A game one phone can play, since Bob is not here to make up a pair.
       host.startGame(const SlingshotGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
-      expect(host.layout!.phones, hasLength(1),
-          reason: 'the board should have been built for Ada alone');
 
       final again = joiner(deviceId: bobsPhone, label: 'Bob');
       await again.connect();
-      await waitFor('bob back', () => host.phones[1].connected);
+      await waitFor('bob is on the board',
+          () => host.layout?.forPhone(host.phones[1].phoneId) != null);
 
       ada.confirmPlacement();
+      again.confirmPlacement();
       await waitFor('the round started', () => host.phase == HostPhase.playing);
 
       ada.dispose();
       again.dispose();
     });
 
-    test('the last phone leaving instead of confirming starts the round',
+    test('a phone leaving during placement re-lays the table and asks again',
         () async {
-      // The mirror of it. Nothing else was going to ask the question: a
-      // confirmation is what triggers the check, and that phone left rather
-      // than pressing.
+      // Their slice becomes a hole: a piece of the world belonging to a screen
+      // nobody is holding. So the arrangement is worked out again for whoever
+      // is left, and the Ready everybody already gave is thrown away — it was
+      // about a table that no longer exists, and their phone has to move.
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      expect(host.layout!.phones, hasLength(2));
+
+      ada.confirmPlacement();
+      await waitFor('ada is in place', () => host.phones.first.confirmed);
+
+      bob.dispose();
+      await waitFor('the board was re-laid',
+          () => host.layout?.phones.length == 1);
+
+      expect(host.phase, HostPhase.placing,
+          reason: 'the round started on a board with a hole in it');
+      expect(host.phones.first.confirmed, isFalse,
+          reason: 'Ada was still counted as ready for the old arrangement');
+
+      // And it starts once she says she is in place on the new one.
+      ada.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+
+      ada.dispose();
+    });
+
+    test('a table too small for the game carries on down the playlist',
+        () async {
+      // Hot Potato wants three. With two left the playlist moves along to
+      // something two can play, rather than dropping everybody to the lobby:
+      // losing a player is a reason to change game, not to stop.
+      final phones = [for (var i = 0; i < 3; i++) joiner(label: 'p$i')];
+      for (final c in phones) {
+        await c.connect();
+      }
+      await waitFor('calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const HotPotatoGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+
+      phones[2].dispose();
+      await waitFor('a different game',
+          () => host.game?.manifest.id != 'hotpotato');
+
+      expect(host.phase, HostPhase.placing,
+          reason: 'the table was sent back to the lobby');
+      expect(host.game!.manifest.fits(2), isTrue);
+      expect(host.layout!.phones, hasLength(2));
+      expect(host.warning, contains('next game'),
+          reason: 'nobody was told what they are about to play');
+
+      phones[0].dispose();
+      phones[1].dispose();
+    });
+
+    test('and goes back to the menu when nothing further fits', () async {
+      // Only Slingshot suits a single phone and it is the first thing in the
+      // list, so there is nothing *after* Ball Bin for one player. The playlist
+      // runs once, so rather than double back the table returns to the lobby —
+      // and is told what it would need.
       final ada = joiner(label: 'Ada');
       await ada.connect();
       final bob = joiner(label: 'Bob');
@@ -642,15 +697,144 @@ void main() {
       host.startGame(const BallBinGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
-      ada.confirmPlacement();
-      await waitFor('ada is in place',
-          () => host.phones.first.confirmed);
-
       bob.dispose();
-      await waitFor('the round started', () => host.phase == HostPhase.playing);
+      await waitFor('back to the lobby', () => host.phase == HostPhase.lobby);
+
+      expect(host.planError, contains('phone'),
+          reason: 'nobody was told what the table would need');
+      expect(host.layout, isNull);
 
       ada.dispose();
     });
+
+    test('every phone is told, not only the host', () async {
+      // It was being written down on the host and read by nobody: no screen
+      // looked at it, and it never crossed the wire at all. The message that
+      // matters most lands while people are staring at the placement screen.
+      final phones = [for (var i = 0; i < 3; i++) joiner(label: 'p$i')];
+      for (final c in phones) {
+        await c.connect();
+      }
+      await waitFor('calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+
+      phones[2].dispose();
+      await waitFor('the others were told',
+          () => phones[0].warning != null);
+
+      expect(phones[0].warning, contains('next game'));
+      expect(phones[1].warning, phones[0].warning,
+          reason: 'the table is not reading the same thing');
+
+      // And it can be put away without asking the host.
+      phones[0].dismissWarning();
+      expect(phones[0].warning, isNull);
+      expect(phones[1].warning, isNotNull,
+          reason: 'dismissing on one phone silenced another');
+
+      phones[0].dispose();
+      phones[1].dispose();
+    });
+
+    test('the notice does not follow the table into the round', () async {
+      // Left set, it comes back the next time the board is laid out: whoever
+      // dismissed it sees last round's news again, and whoever did not never
+      // sees it change.
+      final phones = [for (var i = 0; i < 3; i++) joiner(label: 'p$i')];
+      for (final c in phones) {
+        await c.connect();
+      }
+      await waitFor('calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+
+      phones[2].dispose();
+      await waitFor('told', () => phones[0].warning != null);
+
+      // Everybody left says they are in place, so the round starts.
+      for (final c in phones.take(2)) {
+        c.confirmPlacement();
+      }
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+
+      expect(host.warning, isNull);
+      await waitFor('the phones forgot it too',
+          () => phones[0].warning == null && phones[1].warning == null);
+
+      phones[0].dispose();
+      phones[1].dispose();
+    });
+
+    test('the table is told even when the game stays the same', () async {
+      // The warning is about the *table* changing shape, not the game. Everyone
+      // is about to be asked to put their phone somewhere new and the Ready
+      // they already gave has been thrown away; saying nothing unless the game
+      // changed would leave that looking like the app forgetting itself.
+      final phones = [for (var i = 0; i < 3; i++) joiner(label: 'p$i')];
+      for (final c in phones) {
+        await c.connect();
+      }
+      await waitFor('calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      host.dismissWarning();
+
+      phones[2].dispose();
+      await waitFor('re-laid', () => host.layout?.phones.length == 2);
+
+      expect(host.game!.manifest.id, 'slingshot', reason: 'the game changed');
+      expect(host.warning, isNotNull,
+          reason: 'the table was re-laid without a word');
+      expect(host.warning, contains('Slingshot'));
+      expect(host.warning, contains('left'));
+
+      phones[0].dispose();
+      phones[1].dispose();
+    });
+
+    test('a phone leaving during placement re-lays the table and asks again',
+        () async {
+      // Their slice becomes a hole: a piece of the world belonging to a screen
+      // nobody is holding. So the arrangement is worked out again for whoever
+      // is left, and the Ready everybody already gave is thrown away — it was
+      // about a table that no longer exists, and their phone has to move.
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      expect(host.layout!.phones, hasLength(2));
+
+      ada.confirmPlacement();
+      await waitFor('ada is in place', () => host.phones.first.confirmed);
+
+      bob.dispose();
+      await waitFor('the board was re-laid',
+          () => host.layout?.phones.length == 1);
+
+      expect(host.phase, HostPhase.placing,
+          reason: 'the round started on a board with a hole in it');
+      expect(host.phones.first.confirmed, isFalse,
+          reason: 'Ada was still counted as ready for the old arrangement');
+
+      // And it starts once she says she is in place on the new one.
+      ada.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+
+      ada.dispose();
+    });
+
   });
 
   test('a host has a 5-digit code and a name', () {

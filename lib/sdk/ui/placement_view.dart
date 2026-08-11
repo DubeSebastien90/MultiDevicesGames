@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../platform_config.dart';
 import '../model/phone_layout.dart';
 import '../contract/sim.dart' show PhoneSlice;
 import '../layout/board_links.dart';
 import 'board_diagram.dart';
 import 'hold_to_confirm.dart';
+import 'table_notice.dart';
 import 'link_palette.dart';
 
 /// "Place yourself here" — the picture, the colours, and a ring you hold.
@@ -81,9 +83,33 @@ class PlacementView extends StatelessWidget {
             onConfirmed: client.confirmPlacement,
             content: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [diagram, legend],
+              children: [
+                // Why the table just changed under them, if it did.
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: TableNotice(controller: controller),
+                ),
+                diagram,
+                legend,
+              ],
             ),
           ),
+
+          // Debug builds only, and outside the hold target above so reaching
+          // for it cannot confirm a position on the way out. Players get out of
+          // a round by finishing it or closing the app; this is for whoever is
+          // working on the platform and needs to leave twenty times an hour.
+          if (PlatformConfig.showDevChrome)
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: SafeArea(
+                child: TextButton(
+                  onPressed: controller.leave,
+                  child: const Text('Leave'),
+                ),
+              ),
+            ),
         ],
       ),
     );
