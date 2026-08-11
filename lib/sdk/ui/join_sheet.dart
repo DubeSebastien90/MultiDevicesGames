@@ -28,7 +28,11 @@ class JoinRequest {
 /// traffic that guest networks and locked-down platforms drop, and the game has
 /// to stay playable when that happens.
 class JoinSheet extends StatefulWidget {
-  const JoinSheet({super.key});
+  const JoinSheet({super.key, this.seatFingerprint});
+
+  /// How this phone appears in a host's list of empty seats, so a game already
+  /// under way can tell whether it is still this phone's game.
+  final String? seatFingerprint;
 
   @override
   State<JoinSheet> createState() => _JoinSheetState();
@@ -105,6 +109,12 @@ class _JoinSheetState extends State<JoinSheet> {
     // Navigator.of(context).pop(JoinRequest(target.uri, code));
   }
 
+  /// Is one of the empty seats in [game] this phone's?
+  bool _hasASeatIn(GameBeacon game) {
+    final mine = widget.seatFingerprint;
+    return mine != null && game.rejoinable.contains(mine);
+  }
+
   // JOIN CODE DISABLED
   // Future<String?> _askForCode(String? gameName) => showDialog<String>(
   //   context: context,
@@ -144,12 +154,15 @@ class _JoinSheetState extends State<JoinSheet> {
                   for (final game in games)
                     _GameTile(
                       game: game,
-                      // A round in progress is worth tapping now: if this
-                      // phone was in that game before it dropped out, the host
-                      // knows the seat and gives it back. If it was not, the
-                      // host says so — which is a better answer than a row
-                      // that will not respond to a finger.
-                      onTap: () => _joinDiscovered(game),
+                      mine: _hasASeatIn(game),
+                      // A game under way is worth tapping only if this phone
+                      // left a seat in it. Letting anyone tap meant strangers
+                      // walked into a rejection screen; refusing everyone meant
+                      // somebody whose battery died could not get back to their
+                      // own game.
+                      onTap: game.open || _hasASeatIn(game)
+                          ? () => _joinDiscovered(game)
+                          : null,
                     ),
                 const SizedBox(height: 20),
                 Row(
@@ -194,7 +207,14 @@ class _JoinSheetState extends State<JoinSheet> {
 }
 
 class _GameTile extends StatelessWidget {
-  const _GameTile({required this.game, required this.onTap});
+  const _GameTile({
+    required this.game,
+    required this.onTap,
+    this.mine = false,
+  });
+
+  /// This phone left a seat in this game and can walk back into it.
+  final bool mine;
 
   final GameBeacon game;
   final VoidCallback? onTap;
@@ -209,13 +229,15 @@ class _GameTile extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: CircleAvatar(
-          backgroundColor: game.open
+          backgroundColor: onTap != null
               ? theme.colorScheme.primaryContainer
               : theme.colorScheme.surfaceContainerHighest,
           child: Icon(
-            game.open ? Icons.videogame_asset : Icons.lock_clock,
+            game.open
+                ? Icons.videogame_asset
+                : (mine ? Icons.replay : Icons.lock_clock),
             size: 20,
-            color: game.open
+            color: onTap != null
                 ? theme.colorScheme.onPrimaryContainer
                 : theme.colorScheme.onSurfaceVariant,
           ),
@@ -224,10 +246,12 @@ class _GameTile extends StatelessWidget {
         subtitle: Text(
           game.open
               ? '$players in · tap to join'
-              : '$players · under way — tap to rejoin',
+              : mine
+                  ? '$players · under way — tap to take your place back'
+                  : '$players · already started',
           style: theme.textTheme.bodySmall,
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: onTap == null ? null : const Icon(Icons.chevron_right),
       ),
     );
   }

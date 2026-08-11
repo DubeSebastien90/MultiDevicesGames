@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../platform_config.dart';
+import '../model/device_identity.dart';
 import '../model/device_metrics.dart';
 import '../model/player_color.dart';
 import '../net/discovery.dart';
@@ -517,6 +518,14 @@ class HostSession extends ChangeNotifier {
   void _updateBeacon() => _beacon?.update(
     players: _phones.where((p) => p.connected).length,
     open: _phase == HostPhase.lobby,
+    // Which seats are sitting empty, said in a way only their owner
+    // recognises. It is what lets a phone see that a game already under way is
+    // still *its* game, instead of tapping and being turned away.
+    rejoinable: [
+      for (final p in _phones)
+        if (!p.connected && p.deviceId != null)
+          DeviceIdentity.fingerprint(p.deviceId!),
+    ],
   );
 
   void _handleDisconnect(PhoneRecord record) {

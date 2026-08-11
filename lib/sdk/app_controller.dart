@@ -25,6 +25,13 @@ class AppController extends ChangeNotifier {
   /// out of battery mid-game should come back to its own seat.
   String? _deviceId;
 
+  /// How this device appears in a host's list of empty seats. Null until
+  /// [warmUp] has finished.
+  String? get seatFingerprint {
+    final id = _deviceId;
+    return id == null ? null : DeviceIdentity.fingerprint(id);
+  }
+
   /// Load it now, so joining does not have to wait on storage.
   Future<void> warmUp() async {
     _deviceId ??= await DeviceIdentity.load();

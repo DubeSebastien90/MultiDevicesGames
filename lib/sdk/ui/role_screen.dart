@@ -201,7 +201,11 @@ class _RoleScreenState extends State<RoleScreen> {
 
   Future<void> _join() async {
     final request = await Navigator.of(context).push<JoinRequest>(
-      MaterialPageRoute(builder: (_) => const JoinSheet()),
+      MaterialPageRoute(
+        builder: (_) => JoinSheet(
+          seatFingerprint: widget.controller.seatFingerprint,
+        ),
+      ),
     );
     if (request == null || !mounted) return;
     await widget.controller

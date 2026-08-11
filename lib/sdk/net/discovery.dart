@@ -53,6 +53,7 @@ class GameBeacon {
     required this.players,
     required this.open,
     required this.seenAt,
+    this.rejoinable = const [],
   });
 
   /// Stable per-host-session id. Keyed on this rather than the address so a
@@ -71,6 +72,13 @@ class GameBeacon {
   /// False once the game has left the lobby; still listed, but not joinable.
   final bool open;
 
+  /// Fingerprints of the seats sitting empty in this game.
+  ///
+  /// A phone finds its own here — see [DeviceIdentity.fingerprint] — and knows
+  /// it can walk back into a round already under way. Everyone else reads a
+  /// list of numbers that means nothing to them.
+  final List<String> rejoinable;
+
   final DateTime seenAt;
 
   Map<String, dynamic> toJson() => {
@@ -80,6 +88,7 @@ class GameBeacon {
     'ws': uri.toString(),
     'players': players,
     'open': open,
+    if (rejoinable.isNotEmpty) 'rejoin': rejoinable,
   };
 
   /// Parses a received datagram, or returns null for anything unrecognised.
@@ -116,6 +125,12 @@ class GameBeacon {
         uri: uri,
         players: ((decoded['players'] as num?)?.toInt() ?? 0).clamp(0, 99),
         open: decoded['open'] as bool? ?? true,
+        // Hostile like everything else here: a stranger's datagram, capped and
+        // filtered to plain hex so nothing odd reaches a comparison.
+        rejoinable: [
+          for (final f in (decoded['rejoin'] as List?) ?? const [])
+            if (f is String && RegExp(r'^[0-9a-f]{1,32}$').hasMatch(f)) f,
+        ].take(16).toList(),
         seenAt: now ?? DateTime.now(),
       );
     } on Object {
@@ -149,6 +164,7 @@ class DiscoveryBroadcaster {
   Timer? _timer;
   int _players = 0;
   bool _open = true;
+  List<String> _rejoinable = const [];
   int _consecutiveFailures = 0;
 
   /// Non-null when discovery could not start. Hosting is unaffected.
@@ -205,9 +221,10 @@ class DiscoveryBroadcaster {
   }
 
   /// Keeps the advertised player count and joinability current.
-  void update({int? players, bool? open}) {
+  void update({int? players, bool? open, List<String>? rejoinable}) {
     if (players != null) _players = players;
     if (open != null) _open = open;
+    if (rejoinable != null) _rejoinable = rejoinable;
   }
 
   void _send() {
@@ -218,6 +235,7 @@ class DiscoveryBroadcaster {
       name: name,
       uri: address,
       players: _players,
+      rejoinable: _rejoinable,
       open: _open,
       seenAt: DateTime.now(),
     );

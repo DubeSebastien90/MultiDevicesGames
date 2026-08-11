@@ -42,6 +42,13 @@ Future<void> waitFor(
   }
 }
 
+/// The empty seats a host is advertising, as a browsing phone would read them.
+List<String> beaconSeats(HostSession host) => [
+      for (final p in host.phones)
+        if (!p.connected && p.deviceId != null)
+          DeviceIdentity.fingerprint(p.deviceId!),
+    ];
+
 void main() {
   late HostSession host;
   late Uri local;
@@ -769,6 +776,65 @@ void main() {
     test('nonsense is rejected outright', () {
       expect(parseHostTarget(''), isNull);
       expect(parseHostTarget('http://example.com'), isNull);
+    });
+  });
+
+  group('the join list knows whose game it is', () {
+    test('a fingerprint stands in for a device id without giving it away', () {
+      // Broadcast on the network, so it must not be the id itself: reading one
+      // off the air would be enough to walk into somebody's seat.
+      final id = DeviceIdentity.generate();
+      final print = DeviceIdentity.fingerprint(id);
+
+      expect(print, isNot(contains(id)));
+      expect(id, isNot(contains(print)));
+      // Plain hex, no minus sign: Dart's ints are signed, and a 64-bit mask
+      // is -1 rather than the no-op it resembles.
+      expect(print, matches(RegExp(r'^[0-9a-f]{8}$')));
+      expect(DeviceIdentity.fingerprint(id), print, reason: 'not stable');
+
+      final others = {
+        for (var i = 0; i < 400; i++)
+          DeviceIdentity.fingerprint(DeviceIdentity.generate()),
+      };
+      expect(others, hasLength(400), reason: 'two devices looked alike');
+    });
+
+    test('a started game advertises the seats sitting empty', () async {
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      host.startGame(const BallBinGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+
+      // What a phone browsing the list would receive.
+      final seats = beaconSeats(host);
+      expect(seats, contains(DeviceIdentity.fingerprint(bobsPhone)),
+          reason: 'Bob cannot see that the game is still his');
+      expect(seats,
+          isNot(contains(DeviceIdentity.fingerprint(DeviceIdentity.generate()))),
+          reason: 'a stranger is being offered a seat');
+
+      ada.dispose();
+    });
+
+    test('a beacon carrying junk seats is not trusted', () {
+      // It arrives from an unauthenticated stranger and goes straight into a
+      // comparison, so anything that is not plain hex is dropped.
+      final parsed = GameBeacon.tryParse(
+        '{"app":"mss1","id":"x","name":"g","ws":"ws://10.0.0.1:8080",'
+                '"players":1,"open":false,'
+                '"rejoin":["abc123",42,"NOT HEX","../../etc",null]}'
+            .codeUnits,
+      );
+      expect(parsed!.rejoinable, ['abc123']);
     });
   });
 
