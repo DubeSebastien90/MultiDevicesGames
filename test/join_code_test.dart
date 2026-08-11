@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
+import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
@@ -81,7 +82,7 @@ void main() {
       // Counted from the playlist, not written out, so registering a game is
       // still one import and one list entry.
       expect(host.offers, hasLength(GameCatalog.playlist.length));
-      expect(host.offers.every((o) => !o.playable), isTrue);
+      expect(host.offers.every((o) => !o.fitsTable), isTrue);
       expect(host.blockedReason, isNotNull);
       expect(host.canStart, isFalse);
     });
@@ -93,14 +94,14 @@ void main() {
           () => host.phones.length == 1 && host.phones.single.calibrated);
 
       final byId = {for (final o in host.offers) o.manifest.id: o};
-      expect(byId['slingshot']!.playable, isTrue);
+      expect(byId['slingshot']!.fitsTable, isTrue);
       expect(byId['slingshot']!.reason, isNull);
 
       // The others stay in the list, greyed, saying what they need — a game
       // silently missing tells you nothing.
-      expect(byId['ballbin']!.playable, isFalse);
+      expect(byId['ballbin']!.fitsTable, isFalse);
       expect(byId['ballbin']!.reason, contains('2'));
-      expect(byId['hotpotato']!.playable, isFalse);
+      expect(byId['hotpotato']!.fitsTable, isFalse);
       expect(byId['hotpotato']!.reason, contains('3'));
 
       client.dispose();
@@ -188,6 +189,189 @@ void main() {
       expect(host.mode, RoundMode.playlist);
 
       client.dispose();
+    });
+
+    test('every game starts ticked', () async {
+      // The default has to be everything, or a host who never opens the list
+      // gets a shorter evening than the one before this existed.
+      expect(host.chosenGames, hasLength(GameCatalog.playlist.length));
+      expect(host.offers.every((o) => o.chosen), isTrue);
+
+      // Ticked is not the same as in the run, and with nobody connected the
+      // difference is the whole list: twelve ticks, no games.
+      expect(host.runningOrder, isEmpty);
+    });
+
+    test('a ticked game the table cannot play is not in the run', () async {
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      // One phone, everything ticked. Only Slingshot can actually be played, so
+      // only Slingshot is in the run — the other eleven are ticked and greyed,
+      // which is two facts, not one.
+      expect(host.chosenGames, hasLength(GameCatalog.playlist.length));
+      expect(host.runningOrder.map((g) => g.manifest.id), ['slingshot']);
+
+      // And it is the run that Play walks, in the run's own order.
+      host.startRound();
+      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.nextGame, isNull);
+
+      ada.dispose();
+    });
+
+    test('unticking a game takes it out of the run', () async {
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      expect(host.upcoming!.manifest.id, 'slingshot');
+
+      host.chooseGame(const SlingshotGame(), chosen: false);
+      expect(host.upcoming!.manifest.id, 'ballbin',
+          reason: 'Play started the game the host had just removed');
+      expect(host.chosenGames.map((g) => g.manifest.id), isNot(contains(
+          'slingshot')));
+
+      // And the row is still in the list, unticked rather than gone: a game you
+      // cannot see is a game you cannot put back.
+      final byId = {for (final o in host.offers) o.manifest.id: o};
+      expect(byId['slingshot']!.chosen, isFalse);
+      expect(byId['slingshot']!.fitsTable, isTrue,
+          reason: 'unticking is not the same fact as not fitting');
+
+      host.chooseGame(const SlingshotGame(), chosen: true);
+      expect(host.upcoming!.manifest.id, 'slingshot');
+
+      ada.dispose();
+      bob.dispose();
+    });
+
+    test('the run walks only the ticked games', () async {
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      // Two phones can play Slingshot and Ball Bin. Take the first out and the
+      // run is one game long — which is also what makes it end.
+      host.chooseGame(const SlingshotGame(), chosen: false);
+      for (final game in GameCatalog.playlist) {
+        if (game.manifest.id != 'ballbin') {
+          host.chooseGame(game, chosen: false);
+        }
+      }
+
+      host.startRound();
+      expect(host.game!.manifest.id, 'ballbin');
+      expect(host.nextGame, isNull, reason: 'nothing else was ticked');
+      expect(host.runIsOver, isTrue);
+
+      ada.dispose();
+      bob.dispose();
+    });
+
+    test('a game greyed out at Play stays out when the table shrinks to fit it',
+        () async {
+      // The bug, exactly as it was hit: tick Slingshot and Flood at a table of
+      // three. Flood wants two, so it is greyed and the lobby says it is not in
+      // the run. Then a phone dies mid-Slingshot — and Flood, which had just
+      // been promised as not-happening, played itself.
+      //
+      // A run is settled when Play is pressed. It may shrink after that; it may
+      // not grow.
+      final phones = [for (var i = 0; i < 3; i++) joiner(label: 'p$i')];
+      for (final c in phones) {
+        await c.connect();
+      }
+      await waitFor('calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
+
+      for (final game in GameCatalog.playlist) {
+        final id = game.manifest.id;
+        host.chooseGame(game, chosen: id == 'slingshot' || id == 'flood');
+      }
+
+      // The premise: Flood cannot be played by three, so it is not in the run,
+      // and the lobby is already saying as much.
+      expect(const FloodGame().manifest.fits(3), isFalse);
+      expect(const FloodGame().manifest.fits(2), isTrue);
+      expect(host.runningOrder.map((g) => g.manifest.id), ['slingshot']);
+
+      host.startRound();
+      expect(host.game!.manifest.id, 'slingshot');
+
+      // A phone dies. Flood now fits the table — and must still not be played.
+      phones[2].dispose();
+      await waitFor('the host noticed', () => host.phones
+          .where((p) => p.connected)
+          .length == 2);
+
+      expect(host.nextGame, isNull,
+          reason: 'a game the lobby had greyed out queued itself up');
+      expect(host.runIsOver, isTrue);
+      expect(host.runningOrder.map((g) => g.manifest.id),
+          isNot(contains('flood')),
+          reason: 'the run grew a game it never had');
+
+      // And the ticks are untouched, so the next run started from this lobby
+      // gets Flood back — the table really is the right size for it now.
+      host.returnToLobby();
+      expect(host.chosenGames.map((g) => g.manifest.id),
+          containsAll(<String>['slingshot', 'flood']));
+      expect(host.runningOrder.map((g) => g.manifest.id),
+          ['slingshot', 'flood'],
+          reason: 'a fresh run is worked out from the table it starts with');
+
+      phones[0].dispose();
+      phones[1].dispose();
+    });
+
+    test('an empty list blocks Play and says which problem it is', () async {
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+      expect(host.canStart, isTrue);
+
+      host.chooseNoGames();
+      expect(host.canStart, isFalse);
+      expect(host.chosenGames, isEmpty);
+      // Not "no game fits one phone" — the table is fine, the list is empty,
+      // and the two have different fixes.
+      expect(host.blockedReason, contains('ticked'));
+      expect(host.blockedReason, isNot(contains('fits')));
+
+      host.chooseAllGames();
+      expect(host.canStart, isTrue);
+      expect(host.upcoming!.manifest.id, 'slingshot');
+
+      ada.dispose();
+    });
+
+    test('advice never sends you after a game that was unticked', () async {
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 1 && host.phones.single.calibrated);
+
+      // Only Slingshot fits one phone, so unticking it leaves nothing playable.
+      // What the lobby then says has to be about the games still in the run:
+      // telling this table to fetch a friend for Slingshot would be sending
+      // them after the one thing they just took out.
+      host.chooseGame(const SlingshotGame(), chosen: false);
+      expect(host.canStart, isFalse);
+      expect(host.blockedReason, contains('1 phone(s)'));
+      expect(host.blockedReason, isNot(contains('Slingshot')));
+
+      ada.dispose();
     });
 
     test('a reason is only given when the game itself does not fit', () async {

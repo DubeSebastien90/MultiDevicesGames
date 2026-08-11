@@ -145,6 +145,10 @@ static const playlist = <MultiscreenGame>[
 That file exists *to be* the seam. Nothing else in `sdk/` names a game, and
 that is checked: `grep -rn "Slingshot" lib/sdk/` returns only `catalog.dart`.
 
+A game added to the list is in every run from the moment it ships — the host's
+game settings (the gear beside **Play**) store the games that have been *taken
+out*, so nothing has to be ticked to be played.
+
 If your game ships images or sounds, you also add them to `assets/games/<id>/`
 and declare the folder in `pubspec.yaml`. That is the whole list of files
 outside your own folder.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../app_controller.dart';
+import '../catalog.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
 import '../model/player_color.dart';
@@ -100,16 +101,36 @@ class LobbyView extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    // Two ways to play. The button is the whole evening: one
-                    // game rolls into the next, forever. The list below is for
-                    // when somebody wants a particular one.
-                    FilledButton.icon(
-                      onPressed: host.canStart ? host.startRound : null,
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Play'),
-                      ),
+                    // One button starts the evening; the one beside it decides
+                    // what the evening is. The list used to be spread down the
+                    // lobby, which put twelve rows of game between the host and
+                    // everything else on this screen — it is a thing you set
+                    // once and then stop looking at.
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: host.canStart ? host.startRound : null,
+                            icon: const Icon(Icons.play_arrow),
+                            label: const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Text('Play'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        IconButton.filledTonal(
+                          onPressed: () => showGamesSheet(context, host),
+                          icon: const Icon(Icons.settings),
+                          tooltip: 'Choose which games are in the run',
+                          style: IconButton.styleFrom(
+                            // Matched to the Play button beside it: two
+                            // controls on one line at two different heights
+                            // read as one control and an afterthought.
+                            minimumSize: const Size(56, 56),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -122,16 +143,9 @@ class LobbyView extends StatelessWidget {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
-                    GamePicker(
-                      offers: host.offers,
-                      // Already said above the Play button; no need twice.
-                      blockedReason: null,
-                      onPick: host.startGame,
-                    ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
-                      'Or tap one game to play just that, then come back here.',
+                      _gamesLine(host),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -146,6 +160,25 @@ class LobbyView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What Play would actually play, in one line under it.
+///
+/// Said out loud because the list is now behind a button: a run that quietly
+/// plays nine of twelve games, with nothing on screen to say so, is a host
+/// wondering where Guacamole went.
+///
+/// Counts [HostSession.runningOrder] and not the ticks. A game the table is the
+/// wrong size for is not in the run no matter how it is ticked, and "all 12
+/// games are in the run" over a table of two that can play three of them is the
+/// same lie by a longer route.
+String _gamesLine(HostSession host) {
+  final running = host.runningOrder;
+  final total = GameCatalog.playlist.length;
+  if (running.isEmpty) return 'No games are in the run.';
+  if (running.length == 1) return 'Only ${running.single.manifest.title}.';
+  if (running.length == total) return 'All $total games are in the run.';
+  return '${running.length} of $total games are in the run.';
 }
 
 /// A game whose `planBoard` produced something unusable. Shown here because

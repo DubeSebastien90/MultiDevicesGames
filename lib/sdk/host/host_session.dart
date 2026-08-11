@@ -42,7 +42,7 @@ enum RoundMode {
   oneOff,
 }
 
-/// One entry in the lobby's list of games.
+/// One entry in the host's list of games.
 ///
 /// The eligibility check is answered once, here, rather than being re-derived
 /// by whatever draws the list — so the reason a game is greyed out and the
@@ -50,18 +50,27 @@ enum RoundMode {
 class GameOffer {
   const GameOffer({
     required this.game,
-    required this.playable,
+    required this.fitsTable,
     required this.reason,
+    required this.chosen,
   });
 
   final MultiscreenGame game;
 
-  /// Whether this table can start it right now.
-  final bool playable;
+  /// Whether the phones at the table right now could play it.
+  ///
+  /// Nothing to do with whether it has been ticked: the two are separate
+  /// questions and the list shows both at once. A game that does not fit is
+  /// greyed, ticked or not, because that is a fact about the table rather than
+  /// a choice anybody made.
+  final bool fitsTable;
 
   /// Why not, when it does not fit the phone count: 'needs 3+ phones'. Null
   /// when the game itself is fine and only the lobby is not ready.
   final String? reason;
+
+  /// Whether the host has left it in the run.
+  final bool chosen;
 
   GameManifest get manifest => game.manifest;
 }
@@ -153,6 +162,42 @@ class HostSession extends ChangeNotifier {
   /// the table lands back in the lobby — the list is played through once.
   int _gameIndex = 0;
 
+  /// Games the host has unticked, by id.
+  ///
+  /// The *exclusions* rather than the selection, so that everything is in the
+  /// run until somebody says otherwise — including a game added in a later
+  /// build, which a stored list of chosen ids would have quietly left out of
+  /// every session that had ever been configured.
+  final _skipped = <String>{};
+
+  /// The games this run is playing, by id — fixed the moment **Play** was
+  /// pressed. Null between runs.
+  ///
+  /// A run is decided once, from what was ticked *and* what the table could
+  /// play at the time, and then it never grows. Asking the question again as
+  /// the evening went on let a game the host had watched sit greyed out play
+  /// itself the moment somebody's phone died: Flood needs two, so a table of
+  /// three that ticked it saw it greyed, pressed Play, lost a phone — and got
+  /// Flood, which the lobby had just finished promising was not in the run.
+  ///
+  /// Shrinking is still allowed and still happens, through the ordinary `fits`
+  /// check on every step: a run can lose a phone and skip the games that needed
+  /// it. Growing is the only thing this forbids.
+  Set<String>? _runGames;
+
+  /// What the walk leaves out right now.
+  ///
+  /// Everything outside the run once one is under way; the unticked games
+  /// before that, which is what the lobby is choosing between.
+  Set<String> get _skipping {
+    final run = _runGames;
+    if (run == null) return _skipped;
+    return {
+      for (final game in GameCatalog.playlist)
+        if (!run.contains(game.manifest.id)) game.manifest.id,
+    };
+  }
+
   /// Whether the current round chains into the next game or returns to the
   /// lobby. Set when the round starts and never guessed at afterwards.
   RoundMode _mode = RoundMode.playlist;
@@ -226,8 +271,11 @@ class HostSession extends ChangeNotifier {
   String? _planError;
 
   /// The game the playlist would start right now, or null if none fits.
-  MultiscreenGame? get upcoming =>
-      GameCatalog.playableFrom(_gameIndex, _present.length);
+  MultiscreenGame? get upcoming => GameCatalog.playableFrom(
+        _gameIndex,
+        _present.length,
+        skipping: _skipping,
+      );
 
   bool get canStart =>
       _phase == HostPhase.lobby &&
@@ -241,19 +289,106 @@ class HostSession extends ChangeNotifier {
     if (!_present.every((p) => p.calibrated)) {
       return 'Waiting for every phone to report its size…';
     }
+    if (chosenGames.isEmpty) {
+      // A different problem from "nothing fits", and it has a different fix:
+      // this table is not too small, it has simply been emptied of games.
+      return 'No games are ticked. Tap the gear to choose some.';
+    }
     if (upcoming == null) {
       // Say what would help, not just what is wrong. A parity rule in
       // particular is baffling otherwise: four phones failing when three and
       // five both work needs explaining.
-      final sizes = GameCatalog.playableTableSizes();
+      //
+      // Everything here is asked of the *ticked* games only. Advising a table
+      // of two to find a third phone for a game they took out of the run would
+      // be sending them after something they already said no to.
+      final sizes = GameCatalog.playableTableSizes(skipping: _skipping);
       final nearest = sizes.where((n) => n > _present.length).toList();
       final advice = nearest.isEmpty
           ? ''
           : ' Try ${nearest.first} phone(s).';
-      return 'No game fits ${_present.length} phone(s).$advice '
-          '${GameCatalog.requirementSummary()}.';
+      return 'No ticked game fits ${_present.length} phone(s).$advice '
+          '${GameCatalog.requirementSummary(skipping: _skipping)}.';
     }
     return null;
+  }
+
+  // --------------------------------------------------------- the tick list
+
+  /// The games the host has left ticked, in playlist order.
+  ///
+  /// Everything, until somebody unticks something: a table that never opens the
+  /// list plays the whole catalogue, which is what it did before there was a
+  /// list to open.
+  ///
+  /// A tick is a preference about the evening, not a claim about this minute —
+  /// see [runningOrder] for what would actually be played.
+  List<MultiscreenGame> get chosenGames => [
+    for (final game in GameCatalog.playlist)
+      if (!_skipped.contains(game.manifest.id)) game,
+  ];
+
+  /// What **Play** would play, in order, if it started now — and, once a run is
+  /// under way, what it is still going to play.
+  ///
+  /// Ticked *and* a size this table can be. The two are separate facts and the
+  /// list shows both, but only one of them is the run: a greyed game is not in
+  /// it, however it is ticked, and nothing on screen should say otherwise. That
+  /// is the whole reason this is not just [chosenGames].
+  List<MultiscreenGame> get runningOrder {
+    final skipping = _skipping;
+    return [
+      for (final game in GameCatalog.playlist)
+        if (!skipping.contains(game.manifest.id) &&
+            game.manifest.fits(_present.length))
+          game,
+    ];
+  }
+
+  /// Every game, with whether this table can play it and whether it is in the
+  /// run. The host's game list.
+  List<GameOffer> get offers => [
+    for (final game in GameCatalog.playlist)
+      GameOffer(
+        game: game,
+        fitsTable: game.manifest.fits(_present.length),
+        reason: game.manifest.fits(_present.length)
+            ? null
+            : game.manifest.requirement(),
+        chosen: !_skipped.contains(game.manifest.id),
+      ),
+  ];
+
+  /// Tick or untick one game.
+  ///
+  /// Takes effect from the next game the run reaches rather than the current
+  /// one, because the run walks the list by asking what comes next — so a game
+  /// unticked mid-round is simply never arrived at.
+  void chooseGame(MultiscreenGame game, {required bool chosen}) {
+    final changed = chosen
+        ? _skipped.remove(game.manifest.id)
+        : _skipped.add(game.manifest.id);
+    if (changed) notifyListeners();
+  }
+
+  /// Put the whole catalogue back in the run.
+  void chooseAllGames() {
+    if (_skipped.isEmpty) return;
+    _skipped.clear();
+    notifyListeners();
+  }
+
+  /// Take everything out, so one tick is enough to play exactly one game.
+  ///
+  /// Leaves the table unable to start, deliberately and visibly — [blockedReason]
+  /// says so — rather than refusing the tap and leaving somebody wondering which
+  /// of the twelve boxes is the one that will not come off.
+  void chooseNoGames() {
+    if (_skipped.length == GameCatalog.playlist.length) return;
+    _skipped
+      ..clear()
+      ..addAll([for (final g in GameCatalog.playlist) g.manifest.id]);
+    notifyListeners();
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -672,7 +807,11 @@ class HostSession extends ChangeNotifier {
     // answer rather than replaying something.
     final index = game != null && game.manifest.fits(_present.length)
         ? _gameIndex
-        : GameCatalog.playableIndexFrom(_gameIndex + 1, _present.length);
+        : GameCatalog.playableIndexFrom(
+            _gameIndex + 1,
+            _present.length,
+            skipping: _skipping,
+          );
 
     if (index == null) {
       // Nowhere forward to go, so the table is told to its face rather than
@@ -680,9 +819,11 @@ class HostSession extends ChangeNotifier {
       // was setting up vanished.
       _tableChange = TableChange(who: because);
       _planError = '$because — nothing left in the playlist fits '
-          '${_present.length} phone(s). ${GameCatalog.requirementSummary()}.';
+          '${_present.length} phone(s). '
+          '${GameCatalog.requirementSummary(skipping: _skipping)}.';
       _game = null;
       _layout = null;
+      _runGames = null;
       _phase = HostPhase.lobby;
       _broadcastLobby();
       notifyListeners();
@@ -824,7 +965,11 @@ class HostSession extends ChangeNotifier {
   /// fits the table.
   MultiscreenGame? get nextGame => _mode == RoundMode.oneOff
       ? null
-      : GameCatalog.playableFrom(_gameIndex + 1, _present.length);
+      : GameCatalog.playableFrom(
+          _gameIndex + 1,
+          _present.length,
+          skipping: _skipping,
+        );
 
   /// The playlist has been played out: this round was the last game that fits
   /// the table, and there is nothing after it.
@@ -834,10 +979,14 @@ class HostSession extends ChangeNotifier {
   /// started — at the list — and has no run to total up.
   bool get runIsOver => _mode == RoundMode.playlist && nextGame == null;
 
-  /// One game, then back to the lobby. The games list.
+  /// One named game, then back to the lobby.
   ///
-  /// Everything between the tap and the placement screen happens here, with no
+  /// Everything between the call and the placement screen happens here, with no
   /// screen in between: the game already knows where the phones go.
+  ///
+  /// Deliberately ignores the tick list. It names a game outright, which is a
+  /// stronger statement than a tick — and the way to play exactly one game from
+  /// the list is to be the only thing ticked in it.
   void startGame(MultiscreenGame game) {
     if (!canStart) return;
     if (!game.manifest.fits(_present.length)) return;
@@ -845,29 +994,28 @@ class HostSession extends ChangeNotifier {
         .indexWhere((g) => g.manifest.id == game.manifest.id);
     if (index < 0) return;
     _mode = RoundMode.oneOff;
+    // No run to be part of. A one-off that the table outgrows falls back to the
+    // ticked list rather than to a run it was never in.
+    _runGames = null;
     _startGame(index);
   }
 
-  /// The never-ending playlist. The **Play** button.
+  /// The run: every ticked game that fits, in order. The **Play** button.
   void startRound() {
     if (!canStart) return;
     _mode = RoundMode.playlist;
+
+    // The run is settled here, once, and not asked again for the rest of it.
+    // Read before it is stored — [runningOrder] is answered against the ticks
+    // until there is a run to answer against instead.
+    _runGames = {for (final game in runningOrder) game.manifest.id};
+
     // Always from the top: a run is the whole list, not a resumption of one
     // somebody abandoned.
-    _startGame(GameCatalog.playableIndexFrom(0, _present.length)!);
+    _startGame(
+      GameCatalog.playableIndexFrom(0, _present.length, skipping: _skipping)!,
+    );
   }
-
-  /// Every game, with whether this table can play it. The lobby's list.
-  List<GameOffer> get offers => [
-    for (final game in GameCatalog.playlist)
-      GameOffer(
-        game: game,
-        playable: canStart && game.manifest.fits(_present.length),
-        reason: game.manifest.fits(_present.length)
-            ? null
-            : game.manifest.requirement(),
-      ),
-  ];
 
   void _startGame(int index) {
     _gameIndex = index;
@@ -898,6 +1046,7 @@ class HostSession extends ChangeNotifier {
       _planError = '${game.manifest.title}: ${e.message}';
       _game = null;
       _layout = null;
+      _runGames = null;
       _phase = HostPhase.lobby;
       _broadcastLobby();
       notifyListeners();
@@ -956,6 +1105,7 @@ class HostSession extends ChangeNotifier {
       _phase = HostPhase.lobby;
       _game = null;
       _layout = null;
+      _runGames = null;
       _broadcastLobby();
       notifyListeners();
       return;
@@ -1150,8 +1300,11 @@ class HostSession extends ChangeNotifier {
     _layout = null;
     // Deliberately not dropped: a phone that has gone quiet keeps its place on
     // the roster, so its score is still there when it comes back.
-    final index =
-        GameCatalog.playableIndexFrom(_gameIndex + 1, _present.length);
+    final index = GameCatalog.playableIndexFrom(
+      _gameIndex + 1,
+      _present.length,
+      skipping: _skipping,
+    );
     if (index == null) {
       // Only reachable by somebody dropping out between the button being drawn
       // and being tapped — the button that leads here is only offered when
@@ -1187,6 +1340,10 @@ class HostSession extends ChangeNotifier {
     _tableChange = null;
     _outcome = null;
     _game = null;
+    // The run this was the end of. Cleared here as well as at the lobby, so the
+    // standings screen is already answering for the *next* run — which is the
+    // ticked list, whatever this one turned out to consist of.
+    _runGames = null;
     // Deliberately not dropped: a phone that has gone quiet keeps its place on
     // the roster, so its score is still on the board it is being totalled on.
     for (final p in _phones) {
@@ -1246,6 +1403,9 @@ class HostSession extends ChangeNotifier {
     // stopped — and after a full run, from past the end, which reads as "no
     // game fits this table".
     _gameIndex = 0;
+    // And back to the ticks. The next run is worked out from the table as it
+    // will be then, not as it was when the last one started.
+    _runGames = null;
     _broadcastLobby();
     _updateBeacon();
     notifyListeners();

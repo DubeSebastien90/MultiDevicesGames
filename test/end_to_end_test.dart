@@ -307,7 +307,7 @@ void main() {
 
     // Ball Bin is offered because two phones fit it; Hot Potato is not.
     final offered = {
-      for (final o in host.offers) o.manifest.id: o.playable,
+      for (final o in host.offers) o.manifest.id: o.fitsTable,
     };
     expect(offered['ballbin'], isTrue);
     expect(offered['hotpotato'], isFalse);
