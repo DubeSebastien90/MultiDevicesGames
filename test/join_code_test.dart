@@ -509,6 +509,82 @@ void main() {
       expect(host.phase, HostPhase.playing,
           reason: 'the round was interrupted for him');
 
+      // And told so, on a screen of its own. Waiting is not the lobby: the
+      // lobby looks like a table where nothing is happening, and something is
+      // happening — everybody else is playing.
+      expect(again.phase, ClientPhase.waiting);
+
+      ada.dispose();
+      again.dispose();
+    });
+
+    test('rejoining at the results screen also waits for the next round',
+        () async {
+      // The round is over, so there is nothing to be caught up to even though a
+      // slice still has this phone's name on it. Handing it the world would put
+      // it in a frozen game with no verdict to show.
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      // Ball Bin rather than Arena: Arena asks to hear about players leaving and
+      // carries on without them, and this test needs the round to actually end.
+      host.startGame(const BallBinGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      ada.confirmPlacement();
+      bob.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+
+      bob.dispose();
+      await waitFor('the round ended', () => host.phase == HostPhase.finished);
+
+      final again = joiner(deviceId: bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('welcomed', () => again.phoneId != null);
+      await waitFor('told to wait', () => again.phase == ClientPhase.waiting);
+
+      expect(again.result, isNull,
+          reason: 'a round he was not there for has no verdict for him');
+
+      ada.dispose();
+      again.dispose();
+    });
+
+    test('the next round deals a waiting phone back in', () async {
+      // The whole promise of the screen. Its seat was kept, so the next board is
+      // laid out including it and it goes straight to placement.
+      final bobsPhone = DeviceIdentity.generate();
+      final ada = joiner(label: 'Ada');
+      await ada.connect();
+      final bob = joiner(deviceId: bobsPhone, label: 'Bob');
+      await bob.connect();
+      await waitFor('calibrated',
+          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+
+      bob.dispose();
+      await waitFor('bob gone', () => !host.phones[1].connected);
+
+      host.startGame(const SlingshotGame());
+      await waitFor('placing', () => host.phase == HostPhase.placing);
+      ada.confirmPlacement();
+      await waitFor('playing', () => host.phase == HostPhase.playing);
+
+      final again = joiner(deviceId: bobsPhone, label: 'Bob');
+      await again.connect();
+      await waitFor('waiting', () => again.phase == ClientPhase.waiting);
+
+      host.returnToLobby();
+      await waitFor('back with everyone else',
+          () => again.phase == ClientPhase.lobby);
+
+      host.startGame(const BallBinGame());
+      await waitFor('dealt in', () => again.phase == ClientPhase.placing);
+      expect(again.layout, isNotNull);
+
       ada.dispose();
       again.dispose();
     });
@@ -675,7 +751,7 @@ void main() {
           reason: 'the table was sent back to the lobby');
       expect(host.game!.manifest.fits(2), isTrue);
       expect(host.layout!.phones, hasLength(2));
-      expect(host.warning, contains('next game'),
+      expect(host.tableChange?.nextGame, host.game!.manifest.title,
           reason: 'nobody was told what they are about to play');
 
       phones[0].dispose();
@@ -704,6 +780,32 @@ void main() {
           reason: 'nobody was told what the table would need');
       expect(host.layout, isNull);
 
+      // And said to the table's face, not only in the lobby's small print. A
+      // dead end is the one case where nothing carries on, so the screen has to
+      // be able to tell the two apart.
+      expect(host.tableChange, isNotNull,
+          reason: 'the round vanished without a word');
+      expect(host.tableChange!.who, contains('left'));
+      expect(host.tableChange!.nextGame, isNull);
+      expect(host.tableChange!.carriesOn, isFalse);
+      await waitFor('ada was told too', () => ada.tableChange != null);
+      expect(ada.tableChange!.carriesOn, isFalse);
+
+      // And the way out of it actually leads somewhere. Three separate things
+      // were wrong with tapping the button, and all three read as "it does
+      // nothing": the message survived, the joiner kept its placement screen,
+      // and the lobby it landed on could not start a thing.
+      host.returnToLobby();
+      expect(host.tableChange, isNull, reason: 'the screen would not close');
+      expect(host.canStart, isTrue,
+          reason: 'a lobby that cannot start a game is not a way out — the '
+              'playlist was left past the end, so Slingshot, which one phone '
+              'can play, was behind us');
+      expect(host.upcoming!.manifest.id, 'slingshot');
+
+      await waitFor('ada came along too',
+          () => ada.phase == ClientPhase.lobby && ada.tableChange == null);
+
       ada.dispose();
     });
 
@@ -723,17 +825,19 @@ void main() {
 
       phones[2].dispose();
       await waitFor('the others were told',
-          () => phones[0].warning != null);
+          () => phones[0].tableChange != null);
 
-      expect(phones[0].warning, contains('next game'));
-      expect(phones[1].warning, phones[0].warning,
+      expect(phones[0].tableChange!.nextGame, isNotNull);
+      expect(phones[1].tableChange!.who, phones[0].tableChange!.who,
           reason: 'the table is not reading the same thing');
 
-      // And it can be put away without asking the host.
-      phones[0].dismissWarning();
-      expect(phones[0].warning, isNull);
-      expect(phones[1].warning, isNotNull,
-          reason: 'dismissing on one phone silenced another');
+      // And the host clears it for the room. Six phones each needing their own
+      // tap is six chances for one of them to be face-down on the table while
+      // the other five wait, so there is one button and it is the host's.
+      host.dismissTableChange();
+      expect(host.tableChange, isNull);
+      await waitFor('the screen left every phone',
+          () => phones[0].tableChange == null && phones[1].tableChange == null);
 
       phones[0].dispose();
       phones[1].dispose();
@@ -754,7 +858,7 @@ void main() {
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
       phones[2].dispose();
-      await waitFor('told', () => phones[0].warning != null);
+      await waitFor('told', () => phones[0].tableChange != null);
 
       // Everybody left says they are in place, so the round starts.
       for (final c in phones.take(2)) {
@@ -762,9 +866,9 @@ void main() {
       }
       await waitFor('playing', () => host.phase == HostPhase.playing);
 
-      expect(host.warning, isNull);
+      expect(host.tableChange, isNull);
       await waitFor('the phones forgot it too',
-          () => phones[0].warning == null && phones[1].warning == null);
+          () => phones[0].tableChange == null && phones[1].tableChange == null);
 
       phones[0].dispose();
       phones[1].dispose();
@@ -784,16 +888,16 @@ void main() {
 
       host.startGame(const SlingshotGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
-      host.dismissWarning();
+      host.dismissTableChange();
 
       phones[2].dispose();
       await waitFor('re-laid', () => host.layout?.phones.length == 2);
 
       expect(host.game!.manifest.id, 'slingshot', reason: 'the game changed');
-      expect(host.warning, isNotNull,
+      expect(host.tableChange, isNotNull,
           reason: 'the table was re-laid without a word');
-      expect(host.warning, contains('Slingshot'));
-      expect(host.warning, contains('left'));
+      expect(host.tableChange!.nextGame, 'Slingshot');
+      expect(host.tableChange!.who, contains('left'));
 
       phones[0].dispose();
       phones[1].dispose();

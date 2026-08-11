@@ -52,6 +52,15 @@ class HostMsg {
   /// The round ended.
   static const outcome = 'outcome';
 
+  /// This phone has no place in the round on the table, and should wait for the
+  /// next one.
+  ///
+  /// Sent to a phone that reconnects mid-round. It is a message rather than a
+  /// phase in the lobby broadcast because it is about *one* phone: everybody
+  /// else is playing, and the lobby broadcast says the same thing to all of
+  /// them.
+  static const sitOut = 'sitOut';
+
   static const pong = 'pong';
 }
 

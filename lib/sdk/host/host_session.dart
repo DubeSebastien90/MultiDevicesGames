@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../platform_config.dart';
+import '../model/table_change.dart';
 import '../model/device_identity.dart';
 import '../model/device_metrics.dart';
 import '../model/player_color.dart';
@@ -172,6 +173,24 @@ class HostSession extends ChangeNotifier {
   String get name => _name;
   String get joinCode => _joinCode;
   String? get warning => _warning;
+
+  /// Somebody arrived or left while the table was being set up. See
+  /// [TableChange] for why this is not a `warning`.
+  TableChange? get tableChange => _tableChange;
+  TableChange? _tableChange;
+
+  /// The host has read it on everybody's behalf.
+  ///
+  /// Broadcast rather than local, unlike [dismissWarning]. Six phones each
+  /// needing their own tap is six chances for one of them to be face-down on the
+  /// table while the other five wait, and the message is about the table, not
+  /// about any one player — so one person clears it for the room, the same
+  /// person who chose the game.
+  void dismissTableChange() {
+    _tableChange = null;
+    _broadcastLobby();
+    notifyListeners();
+  }
   GameOutcome? get outcome => _outcome;
 
   /// The game being set up or played.
@@ -463,8 +482,19 @@ class HostSession extends ChangeNotifier {
     final solved = _layout;
     if (solved == null || _phase == HostPhase.lobby) return;
 
+    // No slice for them in the arrangement on the table, or a round that is
+    // already over: either way there is nothing to catch up *to*, and they are
+    // told so rather than left looking at a lobby while everyone else plays.
+    //
+    // The first case is a phone that was not part of this round — it dropped out
+    // during placement, so the board was laid out again without it. The second
+    // is somebody arriving at the results screen, who has missed the round
+    // whether or not a slice still has their name on it.
     final mine = solved.forPhone(record.phoneId);
-    if (mine == null) return;
+    if (mine == null || _phase == HostPhase.finished) {
+      record.link.send({'type': HostMsg.sitOut});
+      return;
+    }
 
     record.link.send({
       'type': HostMsg.layout,
@@ -556,13 +586,18 @@ class HostSession extends ChangeNotifier {
     // and handed a fresh phone number, and the scoreboard is keyed by that
     // number. Remembering the seat is what lets them have it back.
     if (_phase != HostPhase.lobby) {
-      // Mid-game: leave the world alone (its slice just goes dark) rather than
-      // silently rearranging a board people have physically laid out.
-      _warning = '${record.label} disconnected — re-calibrate to rebuild the '
-          'board.';
       if (_phase == HostPhase.placing) {
         _layoutAgainWithoutThem(record);
       } else {
+        // Mid-game: leave the world alone (its slice just goes dark) rather
+        // than silently rearranging a board people have physically laid out.
+        //
+        // Said only here. During placement the board *is* rebuilt, on its own,
+        // and this advice would have been both wrong and in the way — a banner
+        // telling the table to re-calibrate, over a screen already showing it
+        // the new arrangement.
+        _warning = '${record.label} disconnected — re-calibrate to rebuild the '
+            'board.';
         _tellTheGameSomebodyLeft(record);
       }
     }
@@ -628,6 +663,10 @@ class HostSession extends ChangeNotifier {
         : GameCatalog.playableIndexFrom(_gameIndex + 1, _present.length);
 
     if (index == null) {
+      // Nowhere forward to go, so the table is told to its face rather than
+      // being dropped into the lobby to work out for itself why the round it
+      // was setting up vanished.
+      _tableChange = TableChange(who: because);
       _planError = '$because — nothing left in the playlist fits '
           '${_present.length} phone(s). ${GameCatalog.requirementSummary()}.';
       _game = null;
@@ -642,8 +681,10 @@ class HostSession extends ChangeNotifier {
     // Everybody is about to be asked to put their phone somewhere new and the
     // Ready they already gave has been thrown away; being told only when the
     // *game* changed would leave that looking like the app forgetting itself.
-    _warning = '$because — next game: '
-        '${GameCatalog.playlist[index].manifest.title}.';
+    _tableChange = TableChange(
+      who: because,
+      nextGame: GameCatalog.playlist[index].manifest.title,
+    );
     _startGame(index);
   }
 
@@ -901,6 +942,7 @@ class HostSession extends ChangeNotifier {
     }
     _sim = sim;
 
+    _tableChange = null;
     // The notice has been read by now, so it stops here rather than following
     // the table into the next round. It is only ever shown on the placement
     // screen and in the lobby, and both are behind us — leaving it set means the
@@ -1103,6 +1145,7 @@ class HostSession extends ChangeNotifier {
     _sim?.dispose();
     _sim = null;
     _warning = null;
+    _tableChange = null;
     // Deliberately not dropped: a phone that has gone quiet keeps its place on
     // the roster, so its score is still there when it comes back.
     for (final p in _phones) {
@@ -1119,6 +1162,10 @@ class HostSession extends ChangeNotifier {
     _sim = null;
     _layout = null;
     _warning = null;
+    // Read, and acted on by getting here — so it goes, on every phone, via the
+    // broadcast at the bottom. Left set it would survive the very button that
+    // exists to clear it.
+    _tableChange = null;
     _outcome = null;
     _game = null;
     // Deliberately not dropped: a phone that has gone quiet keeps its place on
@@ -1181,6 +1228,7 @@ class HostSession extends ChangeNotifier {
       // The table changing shape is news for every phone, not only the one
       // running the session — everybody is about to be asked to move.
       if (_warning != null) 'warning': _warning,
+      if (_tableChange != null) 'tableChange': _tableChange!.toJson(),
       ..._gameFields,
       'phones': [
         for (final (i, p) in _phones.indexed)

@@ -7,7 +7,6 @@ import '../contract/sim.dart' show PhoneSlice;
 import '../layout/board_links.dart';
 import 'board_diagram.dart';
 import 'hold_to_confirm.dart';
-import 'table_notice.dart';
 import 'link_palette.dart';
 
 /// "Place yourself here" — the picture, the colours, and a ring you hold.
@@ -83,15 +82,7 @@ class PlacementView extends StatelessWidget {
             onConfirmed: client.confirmPlacement,
             content: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                // Why the table just changed under them, if it did.
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: TableNotice(controller: controller),
-                ),
-                diagram,
-                legend,
-              ],
+              children: [diagram, legend],
             ),
           ),
 

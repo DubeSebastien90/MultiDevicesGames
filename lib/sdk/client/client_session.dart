@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../layout/board_links.dart';
+import '../model/table_change.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
 import '../model/phone_layout.dart';
@@ -24,6 +25,10 @@ enum ClientPhase {
   placing,
   playing,
   finished,
+
+  /// Connected, but with no place in the round the table is playing — a phone
+  /// that came back mid-game. It waits for the next one.
+  waiting,
   rejected,
   disconnected,
 }
@@ -234,6 +239,14 @@ class ClientSession extends ChangeNotifier {
 
   /// Something the table should know: a player arriving or leaving while the
   /// board was being laid out, and what is being played now.
+  /// Somebody arrived or left while the table was being set up.
+  TableChange? get tableChange => _tableChange;
+  ///
+  /// Cleared by the host, through the lobby broadcast — there is deliberately no
+  /// local dismiss. A joiner putting this away on its own would leave it looking
+  /// like the table had moved on when it had not.
+  TableChange? _tableChange;
+
   String? get warning => _warning;
   String? _warning;
 
@@ -446,17 +459,42 @@ class ClientSession extends ChangeNotifier {
 
       case HostMsg.lobby:
         _warning = msg['warning'] as String?;
+        _tableChange = TableChange.fromJson(msg['tableChange']);
         _lobbyPhones = [
           for (final p in msg['phones'] as List) p as Map<String, dynamic>,
         ];
         _hostPhase = msg['phase'] as String?;
         _adoptGame(msg['game'] as String?);
-        // The host went back to setting up: follow it out of the results
-        // screen rather than stranding this phone on a stale one.
-        if (_phase == ClientPhase.finished && _hostPhase != 'finished') {
+        // The host went back to setting up: follow it out of whatever screen
+        // this phone is on rather than stranding it on a stale one.
+        //
+        // Any screen, not only the results one. A phone left on the placement
+        // screen for a round the host has abandoned is holding a diagram of a
+        // board that no longer exists, waiting to be told where to stand by
+        // nobody — which is what the dead end looked like from a joiner: the
+        // host returned to the lobby and everybody else kept the old screen.
+        //
+        // `rejected` and `disconnected` are deliberately not in the set: those
+        // are this phone's own state and the host does not get to talk it out
+        // of them.
+        const stale = {
+          ClientPhase.placing,
+          ClientPhase.playing,
+          ClientPhase.finished,
+          // Whatever it was waiting for is not happening, so it waits in the
+          // lobby with everybody else.
+          ClientPhase.waiting,
+        };
+        if (_hostPhase == 'lobby' && stale.contains(_phase)) {
           _phase = ClientPhase.lobby;
           _result = null;
         }
+        notifyListeners();
+
+      case HostMsg.sitOut:
+        _phase = ClientPhase.waiting;
+        // Nothing of the last round is theirs to show: no board, no verdict.
+        _result = null;
         notifyListeners();
 
       case HostMsg.layout:
@@ -504,6 +542,7 @@ class ClientSession extends ChangeNotifier {
         // Forgotten at the same moment the host forgets it, rather than waiting
         // for a lobby broadcast that does not come until the round is over.
         _warning = null;
+        _tableChange = null;
         buffer.clear();
         notifyListeners();
 

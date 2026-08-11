@@ -6,6 +6,9 @@ import 'game_view.dart';
 import 'lobby_view.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
+import 'standings_card.dart';
+import 'table_change_screen.dart';
+import 'waiting_room_view.dart';
 
 /// Routes on the *client* phase, even on the host.
 ///
@@ -24,6 +27,28 @@ class SessionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final client = controller.client!;
+
+    // Ahead of the phase, not inside one. The table changing shape is a thing
+    // that happens *to* whichever screen this phone is on: the placement screen
+    // usually, the lobby when the playlist has run out. Routing it here means
+    // neither screen has to know about it, and neither can end up showing a
+    // stale board behind a message saying the board has changed.
+    final change = controller.host?.tableChange ?? client.tableChange;
+    if (change != null) {
+      final host = controller.host;
+      return TableChangeScreen(
+        change: change,
+        // Two different endings need two different buttons. Carrying on is only
+        // an acknowledgement — the next round is already laid out and waiting.
+        // A dead end is not: the playlist has to be wound back to the top,
+        // otherwise the lobby it lands on is one where nothing can be started.
+        // Dismissing the message would have left exactly that, which is what
+        // "the button does not work" looked like.
+        onDismiss: host == null
+            ? null
+            : (change.carriesOn ? host.dismissTableChange : host.returnToLobby),
+      );
+    }
 
     switch (client.phase) {
       case ClientPhase.connecting:
@@ -57,6 +82,14 @@ class SessionScreen extends StatelessWidget {
             '${client.layout?.total}',
           ),
           controller: controller,
+        );
+
+      case ClientPhase.waiting:
+        return WaitingRoomView(
+          scores: client.scores,
+          meId: client.phoneId,
+          playing: client.manifest?.title,
+          offline: awayPhoneIds(controller),
         );
 
       case ClientPhase.finished:
