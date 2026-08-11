@@ -82,6 +82,15 @@ class _RoleScreenState extends State<RoleScreen> {
     });
   }
 
+  /// Another name from the hat, saved and shown as if it had been typed.
+  void _rollName() {
+    final name = PlayerNames.random();
+    _nameController
+      ..text = name
+      ..selection = TextSelection.collapsed(offset: name.length);
+    _onNameChanged(name);
+  }
+
   void _onNameChanged(String name) {
     SharedPreferences.getInstance().then((p) => p.setString(_kNameKey, name));
     final label = name.trim().isEmpty ? 'phone' : name.trim();
@@ -235,10 +244,17 @@ class _RoleScreenState extends State<RoleScreen> {
                     onChanged: _onNameChanged,
                     textCapitalization: TextCapitalization.words,
                     maxLength: 30,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Your name',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.person_outline),
+                      // Rolling for another is quicker than thinking of one,
+                      // and quicker still than typing it on a phone.
+                      suffixIcon: IconButton(
+                        tooltip: 'Roll another name',
+                        onPressed: _rollName,
+                        icon: const Icon(Icons.casino_outlined),
+                      ),
+                      border: const OutlineInputBorder(),
                       counterText: '',
                     ),
                   ),
