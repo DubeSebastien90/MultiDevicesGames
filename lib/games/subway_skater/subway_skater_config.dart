@@ -39,20 +39,39 @@ class SubwaySkaterConfig {
   /// second.
   ///
   /// This sets the reaction window together with the phone size and
-  /// [standFraction]: three fifths of a 15cm phone at this speed is about
-  /// three quarters of a second between an obstacle appearing at the top of
-  /// your screen and reaching you. From [peakWithSecondsLeft] onward it is
-  /// nearer four tenths — see [endSpeed].
-  static const double obstacleSpeed = 12;
+  /// [standFraction]: three fifths of a 15cm phone at this speed is about two
+  /// thirds of a second between an obstacle appearing at the top of your screen
+  /// and reaching you. From [peakWithSecondsLeft] onward it is nearer a half —
+  /// see [endSpeed].
+  static const double obstacleSpeed = 14;
 
   /// The fastest the corridor ever runs.
   ///
-  /// Nearly twice the opening speed. It applies to everything in flight at once
-  /// rather than fixing each block's speed when it spawns: the corridor is one
-  /// moving thing, and blocks travelling at different speeds would slide
-  /// through each other and turn a wave with a gap in it into a wall without
-  /// one.
-  static const double endSpeed = 22;
+  /// It applies to everything in flight at once rather than fixing each block's
+  /// speed when it spawns: the corridor is one moving thing, and blocks
+  /// travelling at different speeds would slide through each other and turn a
+  /// wave with a gap in it into a wall without one.
+  ///
+  /// ## Why the band is narrow
+  ///
+  /// This used to run 12 → 22, nearly double, and on a real table the closing
+  /// stretch was not hard so much as arbitrary. The arithmetic says why: at 22
+  /// the reaction window is about four tenths of a second, and by the time a
+  /// person has seen a block, decided a lane and got a thumb moving, most of
+  /// that is gone. Everyone died at roughly the same rate whatever they did,
+  /// which reads as the game stopping rather than as a climax.
+  ///
+  /// So the two ends were brought toward each other — the top down, and the
+  /// opening up to keep the first twenty seconds from feeling slack next to it.
+  /// Half a second at the peak is still fast, and it is enough to act on.
+  ///
+  /// The round does not lose its build for this. Most of the pressure was never
+  /// in the speed: [firstSpawnGap] to [lastSpawnGap] more than halves the room
+  /// between waves, and [firstDoubleChance] to [lastDoubleChance] takes
+  /// two-lane waves from rare to better than even. Those keep tightening
+  /// through the plateau, and they tighten what a player has to *decide* rather
+  /// than how fast they have to twitch.
+  static const double endSpeed = 18;
 
   /// The corridor hits [endSpeed] with this long still to run, and holds it
   /// there to the finish.
