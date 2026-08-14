@@ -1,5 +1,6 @@
 import '../games/arena/arena_game.dart';
 import '../games/ball_bin/ball_bin_game.dart';
+import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
 import '../games/flood_closing/flood_closing_game.dart';
@@ -32,6 +33,7 @@ class GameCatalog {
     DodgeballGame(),
     GuacamoleGame(),
     ReactionGame(),
+    ChronometerGame(),
     RandomPathGame(),
   ];
 

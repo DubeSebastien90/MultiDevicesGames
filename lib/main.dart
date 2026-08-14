@@ -21,9 +21,19 @@ Future<void> main() async {
   // the board it was put into. Chasing the accelerometer instead was the source
   // of a whole class of bug — locks that iPadOS quietly ignores, and metrics
   // measured mid-rotation.
+  // `portraitUp` alone, deliberately. Allowing `portraitDown` as well undid the
+  // paragraph above: a 180° flip *is* the OS re-laying-out the surface, and the
+  // board it is a viewport onto is compiled once in the lobby and never
+  // recomputed. Turning a phone therefore swapped the screen under a world that
+  // had not moved — the camera kept aiming at the old slot, and the game looked
+  // frozen or half off the edge until the round ended.
+  //
+  // A phone that is genuinely upside down in the arrangement is told so by its
+  // placement's `quarterTurns`, which rotates the *world* to meet it. That is
+  // the supported way to be upside down, and it survives being laid flat where
+  // the accelerometer has nothing to say.
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
   ]);
 
   // Edge to edge with no system bars. A status or navigation bar would eat the
