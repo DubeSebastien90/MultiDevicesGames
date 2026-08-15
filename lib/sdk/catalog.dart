@@ -6,7 +6,6 @@ import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
 import '../games/hungry_hippos/hungry_hippos_game.dart';
-import '../games/random_path/random_path_game.dart';
 import '../games/reaction/reaction_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
 import 'contract/game.dart';
@@ -32,7 +31,6 @@ class GameCatalog {
     PitchCarsGame(),
     ReactionGame(),
     ChronometerGame(),
-    RandomPathGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
   ];

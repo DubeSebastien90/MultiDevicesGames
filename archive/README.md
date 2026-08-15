@@ -20,6 +20,7 @@ understand how the platform works will teach you things that have since changed.
 | `games/slingshot/` | the first game the platform ever ran |
 | `games/ball_bin/` | the only game that laid phones out in a column |
 | `games/flood_closing/` | the shrinking-field variant of Flood, with its design notes |
+| `games/random_path/` | a `Layouts.path` board with no game on it — a demo of the arrangement and its connector stripes, which Pitch Cars now plays on for real |
 
 Alongside them sit `_removed_*.dart.txt` files: tests lifted out of the live
 suite when these games went. They are kept as text rather than as Dart so that

@@ -52,10 +52,12 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 | --- | --- | --- | --- |
 | **Hot Potato** | `Layouts.circle`, join order | a ring | not holding it at the end |
 | **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
+| **Arena** | `Layouts.row`, sideways, casings touching — `Layouts.grid`, 2 rows, at even counts above three | one long strip, or two rows facing | eliminating everyone else |
+| **Dodgeball** | the same: `Layouts.row` sideways, or `Layouts.grid`, 2 rows, at even counts above three | one long strip, or two rows facing | being the last one not hit |
 | **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
+| **Pitch Cars** | `Layouts.path` — a different shape every round | a winding track, phone to phone | first past the finish line |
 | **Reaction Time** | `Layouts.circle`, or a row for two | a ring | the fastest average over thirty seconds |
 | **Chronometer** | `Layouts.circle`, or a row for two | a ring | guessing when the shown number of seconds has elapsed |
-| **Random Path** | `Layouts.path` — a different shape every round | a winding path | nothing: five seconds and everybody wins |
 | **Hungry Hippos** | a row for two, `Layouts.grid` for four and six | a block around a dish | swallowing marbles — every player for themselves |
 | **Subway Skater** | `Layouts.row`, join order, centred | one long three-lane corridor | nothing: a minute of dodging, scored by how far up the line you spent it |
 
