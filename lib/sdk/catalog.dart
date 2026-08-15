@@ -2,6 +2,7 @@ import '../games/arena/arena_game.dart';
 import '../games/ball_bin/ball_bin_game.dart';
 import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
+import '../games/echo/echo_game.dart';
 import '../games/flood/flood_game.dart';
 import '../games/flood_closing/flood_closing_game.dart';
 import '../games/guacamole/guacamole_game.dart';
@@ -34,6 +35,7 @@ class GameCatalog {
     FloodClosingGame(),
     ArenaGame(),
     DodgeballGame(),
+    EchoGame(),
     GuacamoleGame(),
     PitchCarsGame(),
     ReactionGame(),
