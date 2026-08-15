@@ -25,6 +25,17 @@ import '../score/scoreboard.dart';
 import 'interruption_watcher.dart';
 import 'snapshot_buffer.dart';
 
+/// The end-of-round wipe, as this phone sees it.
+enum WipePhase {
+  none,
+
+  /// Balls are covering the finished game. Inputs are dead.
+  covering,
+
+  /// The score is underneath and the balls are leaving.
+  revealing,
+}
+
 enum ClientPhase {
   connecting,
   lobby,
@@ -334,6 +345,65 @@ class ClientSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether this phone is the one running the session.
+  ///
+  /// Read from the roster rather than from how this session was built, so it is
+  /// the same fact the rest of the SDK uses.
+  bool get isHost => _hostPhoneId != null && _hostPhoneId == _phoneId;
+
+  /// How far through the end-of-round wipe this phone is.
+  ///
+  /// The balls cover the finished game, the screen underneath is swapped, and
+  /// then they fall away onto the score. Held here rather than in a widget
+  /// because it outlives the screen it started on: the thing being covered and
+  /// the thing being revealed are two different phases.
+  WipePhase get wipe => _wipe;
+  WipePhase _wipe = WipePhase.none;
+
+  /// Whether the round is over but its result is not on screen yet.
+  ///
+  /// **Inputs are dead for this stretch.** A tap landing on a round that has
+  /// already been decided is exactly what the pause is for, and blocking it
+  /// here means no game has to remember to.
+  bool get inputsFrozen => _wipe == WipePhase.covering;
+
+  Timer? _wipeGuard;
+
+  void _beginWipe() {
+    _wipe = WipePhase.covering;
+    // The wipe is driven by an animation on this device, so it always finishes
+    // — unless the widget never mounts at all, which is what this is for. A
+    // result nobody can see is worse than a swap nobody watched.
+    _wipeGuard?.cancel();
+    _wipeGuard = Timer(const Duration(seconds: 4), () {
+      if (_wipe != WipePhase.none) revealResult();
+    });
+  }
+
+  /// The balls have the screen. Put the result underneath them.
+  void revealResult() {
+    if (_wipe == WipePhase.revealing) return;
+    _wipeGuard?.cancel();
+    _wipe = WipePhase.revealing;
+    _phase = ClientPhase.finished;
+    notifyListeners();
+  }
+
+  /// The last ball has gone.
+  void wipeFinished() {
+    if (_wipe == WipePhase.none) return;
+    _wipe = WipePhase.none;
+    notifyListeners();
+  }
+
+  /// Called wherever the host moves this phone somewhere the wipe has no
+  /// business following it to.
+  void _cancelWipe() {
+    if (_wipe == WipePhase.none) return;
+    _wipeGuard?.cancel();
+    _wipe = WipePhase.none;
+  }
+
   /// This phone's player: colour, character, art and voice.
   ///
   /// Null before the board is compiled — the roster is built from the slices,
@@ -484,6 +554,11 @@ class ClientSession extends ChangeNotifier {
   /// host converts to world coordinates, since only it knows where this screen
   /// sits.
   void sendTouch(double logicalX, double logicalY, String phase) {
+    // The round is decided and the screen is being covered. Dropping the touch
+    // here rather than in the widget layer means it is dead for every game and
+    // every input path, including one that finds its own way to this method.
+    if (inputsFrozen) return;
+
     final dpr = _metrics.devicePixelRatio;
     _transport.send({
       'type': ClientMsg.touch,
@@ -593,6 +668,7 @@ class ClientSession extends ChangeNotifier {
           ClientPhase.scoreboard,
         };
         if (_hostPhase == 'lobby' && stale.contains(_phase)) {
+          _cancelWipe();
           _phase = ClientPhase.lobby;
           _result = null;
         }
@@ -613,12 +689,14 @@ class ClientSession extends ChangeNotifier {
         notifyListeners();
 
       case HostMsg.sitOut:
+        _cancelWipe();
         _phase = ClientPhase.waiting;
         // Nothing of the last round is theirs to show: no board, no verdict.
         _result = null;
         notifyListeners();
 
       case HostMsg.layout:
+        _cancelWipe();
         _layout = PhoneLayout.fromJson(msg);
         _coverage =
             CoverageMap.fromJson(msg['coverage'] as Map<String, dynamic>);
@@ -694,7 +772,14 @@ class ClientSession extends ChangeNotifier {
 
       case HostMsg.outcome:
         _result = RoundResult.fromJson(msg);
-        _phase = ClientPhase.finished;
+        // The phase does *not* change here. The round is over, but the game
+        // stays on screen while the wipe covers it — see [wipe]. Swapping now
+        // would make the game vanish mid-frame, which is the thing the wipe
+        // exists to prevent. Every phone gets this, the host's included: the
+        // table should look like one thing, and a host that jumps to the score
+        // while everyone else is still watching balls fall is six phones doing
+        // five different things.
+        _beginWipe();
         _playVerdict(_result!);
         notifyListeners();
 
@@ -827,6 +912,7 @@ class ClientSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    _wipeGuard?.cancel();
     _pingTimer?.cancel();
     _interruptions.stop();
     _sub?.cancel();

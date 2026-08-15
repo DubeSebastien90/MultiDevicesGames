@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'ball_drop.dart';
-
 import '../app_controller.dart';
 import '../client/client_session.dart' show RoundVerdict;
 import 'standings_card.dart';
@@ -61,121 +59,119 @@ class ResultsView extends StatelessWidget {
         ? host.runIsOver
         : (result?.runIsOver ?? false);
 
-    return BallDrop(
-      child: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Whose result this is, before what the result was. The
-                    // portrait is the same character this phone has been all
-                    // round, so the screen is recognisably *yours* at a glance
-                    // across a table — which is the same job the colour does
-                    // everywhere else.
-                    if (me != null) ...[
-                      Center(child: me.face.widget(size: 72)),
-                      const SizedBox(height: 12),
-                    ],
-                    Icon(
-                      verdict.celebrate ? Icons.emoji_events : Icons.replay,
-                      size: 44,
-                      color: verdict.celebrate
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 10),
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Whose result this is, before what the result was. The
+                  // portrait is the same character this phone has been all
+                  // round, so the screen is recognisably *yours* at a glance
+                  // across a table — which is the same job the colour does
+                  // everywhere else.
+                  if (me != null) ...[
+                    Center(child: me.face.widget(size: 72)),
+                    const SizedBox(height: 12),
+                  ],
+                  Icon(
+                    verdict.celebrate ? Icons.emoji_events : Icons.replay,
+                    size: 44,
+                    color: verdict.celebrate
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    verdict.headline,
+                    style: theme.textTheme.headlineMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  if (title != null) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      verdict.headline,
-                      style: theme.textTheme.headlineMedium,
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                       textAlign: TextAlign.center,
                     ),
-                    if (title != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        title,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    // The game's line for this phone in particular, above the
-                    // line everyone gets — "You made 320 points" matters more to
-                    // the person holding the phone than "time ran out" does.
-                    if (verdict.line != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        verdict.line!,
-                        style: theme.textTheme.titleSmall,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    if (summary != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        summary,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    const SizedBox(height: 18),
-                    StandingsCard(
-                      scores: host?.scores.view ?? client.scores,
-                      meId: client.phoneId,
-                      showDeltas: true,
-                      offline: awayPhoneIds(controller),
-                    ),
-                    const SizedBox(height: 20),
-                    // The host drives what happens next, and the button no longer
-                    // names the game — announcing it here was the same spoiler the
-                    // "Up next" card was.
-                    if (host != null)
-                      FilledButton.icon(
-                        onPressed: hasNext
-                            ? host.advanceToNextGame
-                            : runIsOver
-                            ? host.showScoreboard
-                            : host.returnToLobby,
-                        icon: Icon(
-                          hasNext
-                              ? Icons.arrow_forward
-                              : runIsOver
-                              ? Icons.emoji_events
-                              : Icons.list,
-                        ),
-                        label: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            hasNext
-                                ? 'Next game'
-                                : runIsOver
-                                ? 'Score board'
-                                : 'Back to the games',
-                          ),
-                        ),
-                      )
-                    else
-                      Text(
-                        hasNext
-                            ? 'Waiting for the host to start the next one…'
-                            : runIsOver
-                            ? 'Waiting for the host to show the score board…'
-                            : 'Waiting for the host to pick the next game…',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
                   ],
-                ),
+                  // The game's line for this phone in particular, above the
+                  // line everyone gets — "You made 320 points" matters more to
+                  // the person holding the phone than "time ran out" does.
+                  if (verdict.line != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      verdict.line!,
+                      style: theme.textTheme.titleSmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  if (summary != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      summary,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  StandingsCard(
+                    scores: host?.scores.view ?? client.scores,
+                    meId: client.phoneId,
+                    showDeltas: true,
+                    offline: awayPhoneIds(controller),
+                  ),
+                  const SizedBox(height: 20),
+                  // The host drives what happens next, and the button no longer
+                  // names the game — announcing it here was the same spoiler the
+                  // "Up next" card was.
+                  if (host != null)
+                    FilledButton.icon(
+                      onPressed: hasNext
+                          ? host.advanceToNextGame
+                          : runIsOver
+                          ? host.showScoreboard
+                          : host.returnToLobby,
+                      icon: Icon(
+                        hasNext
+                            ? Icons.arrow_forward
+                            : runIsOver
+                            ? Icons.emoji_events
+                            : Icons.list,
+                      ),
+                      label: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          hasNext
+                              ? 'Next game'
+                              : runIsOver
+                              ? 'Score board'
+                              : 'Back to the games',
+                        ),
+                      ),
+                    )
+                  else
+                    Text(
+                      hasNext
+                          ? 'Waiting for the host to start the next one…'
+                          : runIsOver
+                          ? 'Waiting for the host to show the score board…'
+                          : 'Waiting for the host to pick the next game…',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                ],
               ),
             ),
           ),

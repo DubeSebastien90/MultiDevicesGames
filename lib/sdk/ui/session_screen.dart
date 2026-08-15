@@ -6,6 +6,7 @@ import 'game_view.dart';
 import 'lobby_view.dart';
 import 'name_drop_notice.dart';
 import 'intro_animation.dart';
+import 'ball_wipe.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
 import 'scoreboard_view.dart';
@@ -56,6 +57,24 @@ class SessionScreen extends StatelessWidget {
       );
     }
 
+    final screen = _screenFor(context, client);
+
+    // Above the phase, not inside one. The wipe covers the finished game and
+    // uncovers the score, and those are two different phases — so it has to
+    // outlive the switch below rather than live in a branch of it. The key
+    // keeps one wipe running across the swap instead of restarting it.
+    if (client.wipe != WipePhase.none) {
+      return BallWipe(
+        key: const ValueKey('round-wipe'),
+        onCovered: client.revealResult,
+        onDone: client.wipeFinished,
+        child: screen,
+      );
+    }
+    return screen;
+  }
+
+  Widget _screenFor(BuildContext context, ClientSession client) {
     switch (client.phase) {
       case ClientPhase.connecting:
         return const _Waiting(message: 'Connecting…');

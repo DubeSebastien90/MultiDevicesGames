@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'sdk/app_controller.dart';
+import 'sdk/ui/ball_wipe.dart';
 import 'sdk/ui/intro_animation.dart';
 import 'sdk/ui/role_screen.dart';
 import 'sdk/ui/session_screen.dart';
@@ -33,9 +36,7 @@ Future<void> main() async {
   // placement's `quarterTurns`, which rotates the *world* to meet it. That is
   // the supported way to be upside down, and it survives being laid flat where
   // the accelerometer has nothing to say.
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   // Edge to edge with no system bars. A status or navigation bar would eat the
   // millimetres right at the screen edge — exactly where the seam is.
@@ -44,6 +45,11 @@ Future<void> main() async {
   // Before the first frame, because the first thing a run does is play one.
   // Failure here is not fatal — intros are skipped and the games still run.
   await IntroAnimation.initRuntime();
+
+  // Rasterise the end-of-round balls now rather than when the first round
+  // ends. Not awaited: they are wanted minutes from now, and a launch should
+  // not wait on artwork.
+  unawaited(BallWipe.preload());
 
   runApp(const MultiscreenApp());
 }
