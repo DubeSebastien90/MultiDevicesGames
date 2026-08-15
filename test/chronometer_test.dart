@@ -621,10 +621,11 @@ void main() {
       // so what is pinned is the pairing, which is the part the view reads.
       final seating = (sim.sharedState['seating'] as List).cast<String>();
       expect(seating, hasLength(3));
+      // Read off the palette rather than written out, so re-ordering the
+      // hand-out order is not a test to fix.
       expect(seating.toSet(), {
-        'p1:${PlayerPalette.green.id}',
-        'p2:${PlayerPalette.orange.id}',
-        'p3:${PlayerPalette.blue.id}',
+        for (final (i, color) in PlayerPalette.all.take(3).indexed)
+          'p${i + 1}:${color.id}',
       });
     });
 

@@ -2,12 +2,14 @@ import 'dart:math' as math;
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
+import '../../sdk/physics/play_area.dart';
 import 'dodgeball_config.dart';
 
 /// Dodge bouncing balls — last one standing wins.
 ///
-/// Movement is the same as Arena (drag to move, clamp to board). Instead of
-/// combat, balls spawn from walls and bounce diagonally, accelerating over time.
+/// Movement is the same as Arena (drag to move, held inside the [PlayArea]).
+/// Instead of combat, balls spawn from its edges and bounce diagonally,
+/// accelerating over time.
 /// Players can tap to dash with a short cooldown.
 class DodgeballSim implements GameSim {
   DodgeballSim(this.context) {
@@ -17,6 +19,11 @@ class DodgeballSim implements GameSim {
 
   final BoardContext context;
   late final math.Random _rng;
+
+  /// Where a player may stand and a ball may travel: the screens themselves
+  /// plus the seams between them, rather than the rectangle drawn around the
+  /// lot. Built once — the table does not change shape mid-round.
+  late final _area = PlayArea.of(context.coverage);
 
   // -- game phase -------------------------------------------------------------
   String _phase = 'countdown'; // 'countdown' | 'playing' | 'finished'
@@ -95,10 +102,14 @@ class DodgeballSim implements GameSim {
         p.facingAngle = p.moveAngle!;
       }
 
-      // Clamp to board bounds.
+      // Kept on a real screen rather than inside a rectangle drawn around
+      // them — see [PlayArea]. The board is only as deep as the shallowest
+      // phone, which shaded off half of the biggest screen and fenced players
+      // out of it.
       final r = DodgeballConfig.characterRadius;
-      p.x = p.x.clamp(context.board.left + r, context.board.right - r);
-      p.y = p.y.clamp(context.board.top + r, context.board.bottom - r);
+      final held = _area.clamp(p.x, p.y, r);
+      p.x = held.x;
+      p.y = held.y;
     }
 
     // Spawn balls.
@@ -121,22 +132,17 @@ class DodgeballSim implements GameSim {
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
 
-      // Bounce off walls.
+      // Bounce off the edge of the *screens*, which steps where a tall phone
+      // meets a short one. The seams between phones are part of the area, so a
+      // ball still crosses the bezel gap unseen and arrives on the next screen
+      // with its momentum intact.
       final br = DodgeballConfig.ballRadius;
-      if (ball.x - br <= context.board.left) {
-        ball.x = context.board.left + br;
-        ball.vx = ball.vx.abs();
-      } else if (ball.x + br >= context.board.right) {
-        ball.x = context.board.right - br;
-        ball.vx = -ball.vx.abs();
-      }
-      if (ball.y - br <= context.board.top) {
-        ball.y = context.board.top + br;
-        ball.vy = ball.vy.abs();
-      } else if (ball.y + br >= context.board.bottom) {
-        ball.y = context.board.bottom - br;
-        ball.vy = -ball.vy.abs();
-      }
+      final hit = _area.bounce(ball.x, ball.y, ball.vx, ball.vy, br);
+      ball
+        ..x = hit.x
+        ..y = hit.y
+        ..vx = hit.vx
+        ..vy = hit.vy;
     }
 
     // Collision: ball vs player.
@@ -160,60 +166,35 @@ class DodgeballSim implements GameSim {
   }
 
   void _spawnBall() {
-    // Pick a random wall (0=top, 1=right, 2=bottom, 3=left).
-    final wall = _rng.nextInt(4);
-    double x, y;
+    // Off a real edge of the screens rather than off one of four sides of a
+    // rectangle. On a mismatched table that rectangle's top and bottom ran
+    // across the middle of the biggest phone, so balls appeared out of the
+    // shaded band instead of arriving from the edge of the board.
     final br = DodgeballConfig.ballRadius;
+    final spawn = _area.edgeSpawn(_rng, br);
 
-    switch (wall) {
-      case 0: // top
-        x = context.board.left +
-            br +
-            _rng.nextDouble() * (context.board.width - 2 * br);
-        y = context.board.top + br;
-      case 1: // right
-        x = context.board.right - br;
-        y = context.board.top +
-            br +
-            _rng.nextDouble() * (context.board.height - 2 * br);
-      case 2: // bottom
-        x = context.board.left +
-            br +
-            _rng.nextDouble() * (context.board.width - 2 * br);
-        y = context.board.bottom - br;
-      default: // left
-        x = context.board.left + br;
-        y = context.board.top +
-            br +
-            _rng.nextDouble() * (context.board.height - 2 * br);
-    }
-
-    // Random diagonal angle (avoid near-axis angles for interesting bounces).
-    // Pick an angle in one of 4 diagonal quadrants.
+    // A diagonal, so the ball crosses the board rather than skimming an edge.
     final quadrant = _rng.nextInt(4);
     final baseAngle = math.pi / 4 + quadrant * math.pi / 2;
     final jitter = (_rng.nextDouble() - 0.5) * (math.pi / 6);
     final angle = baseAngle + jitter;
 
-    // Ensure the ball moves inward from its spawn wall.
     var vx = math.cos(angle) * _currentBallSpeed;
     var vy = math.sin(angle) * _currentBallSpeed;
 
-    switch (wall) {
-      case 0: // top → must go down
-        if (vy < 0) vy = -vy;
-      case 1: // right → must go left
-        if (vx > 0) vx = -vx;
-      case 2: // bottom → must go up
-        if (vy > 0) vy = -vy;
-      default: // left → must go right
-        if (vx < 0) vx = -vx;
+    // Turn it inward if the diagonal picked points back out through the wall
+    // it just came from. The normal already faces the playable side, so the
+    // test is the same whichever edge this is — including the stepped ones,
+    // where "top / right / bottom / left" no longer means anything.
+    if (vx * spawn.nx + vy * spawn.ny < 0) {
+      vx = -vx;
+      vy = -vy;
     }
 
     _balls.add(_Ball(
       id: _nextBallId++,
-      x: x,
-      y: y,
+      x: spawn.x,
+      y: spawn.y,
       vx: vx,
       vy: vy,
       speed: _currentBallSpeed,

@@ -20,7 +20,6 @@ class ArenaView extends GameView {
 
   final String phoneId;
 
-  static const _bgColor = Color(0xFF1A1A2E);
   static const _floorColor = Color(0xFF16213E);
 
   // Reusable paint objects.
@@ -29,25 +28,19 @@ class ArenaView extends GameView {
 
   @override
   void render(Canvas canvas, Frame frame) {
-    // Background.
-    _fill.color = _bgColor;
-    canvas.drawRect(
-      Rect.fromLTWH(
-        frame.board.left,
-        frame.board.top,
-        frame.board.width,
-        frame.board.height,
-      ),
-      _fill,
-    );
+    // Floor, over the whole panel.
+    //
+    // It used to be painted over `frame.board` alone, and on a table of
+    // mismatched phones that rectangle stops short of the biggest screen — so
+    // the rest of that screen was left showing through as a differently
+    // coloured band nobody could walk into. The sim now keeps fighters inside
+    // the screens themselves (see [PlayArea]), which means every point this
+    // phone can draw is a point somebody can stand on, and the floor can
+    // simply cover it.
     _fill.color = _floorColor;
+    final view = frame.visible;
     canvas.drawRect(
-      Rect.fromLTWH(
-        frame.board.left,
-        frame.board.top,
-        frame.board.width,
-        frame.board.height,
-      ),
+      Rect.fromLTWH(view.left, view.top, view.width, view.height),
       _fill,
     );
 

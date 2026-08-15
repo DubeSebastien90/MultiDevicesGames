@@ -13,7 +13,6 @@ class DodgeballView extends GameView {
 
   final String phoneId;
 
-  static const _bgColor = Color(0xFF0D1117);
   static const _floorColor = Color(0xFF161B22);
   static const _ballColor = Color(0xFFFF4444);
   static const _ballGlowColor = Color(0x44FF4444);
@@ -23,25 +22,15 @@ class DodgeballView extends GameView {
 
   @override
   void render(Canvas canvas, Frame frame) {
-    // Background.
-    _fill.color = _bgColor;
-    canvas.drawRect(
-      Rect.fromLTWH(
-        frame.board.left,
-        frame.board.top,
-        frame.board.width,
-        frame.board.height,
-      ),
-      _fill,
-    );
+    // Floor, over the whole panel — see the note in `ArenaView`. Painting it
+    // over `frame.board` left the far end of the biggest screen showing as a
+    // differently coloured band that players were fenced out of; the sim keeps
+    // them inside the screens themselves now, so every point this phone can
+    // draw is playable.
     _fill.color = _floorColor;
+    final view = frame.visible;
     canvas.drawRect(
-      Rect.fromLTWH(
-        frame.board.left,
-        frame.board.top,
-        frame.board.width,
-        frame.board.height,
-      ),
+      Rect.fromLTWH(view.left, view.top, view.width, view.height),
       _fill,
     );
 

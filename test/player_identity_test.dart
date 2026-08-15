@@ -103,7 +103,7 @@ void main() {
     });
 
     testWidgets('draws the picture once it has one', (tester) async {
-      final art = PlayerArt.of(PlayerPalette.cyan, PlayerArtSlot.topdown);
+      final art = PlayerArt.of(PlayerPalette.brown, PlayerArtSlot.topdown);
       art.beginLoading();
       await tester.runAsync(() async {
         for (var i = 0; i < 50 && !art.isLoaded; i++) {

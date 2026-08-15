@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
+import '../../sdk/physics/play_area.dart';
 import 'arena_config.dart';
 
 /// Last-fighter-standing arena brawler.
@@ -15,6 +16,11 @@ class ArenaSim implements GameSim, PlayerPresence {
   }
 
   final BoardContext context;
+
+  /// Where a fighter is allowed to stand: the screens themselves, not the
+  /// rectangle drawn around them. Built once — the table does not change shape
+  /// mid-round.
+  late final _area = PlayArea.of(context.coverage);
 
   // -- game phase -------------------------------------------------------------
   String _phase = 'countdown'; // 'countdown' | 'playing' | 'finished'
@@ -108,10 +114,17 @@ class ArenaSim implements GameSim, PlayerPresence {
         f.facingAngle = f.moveAngle!;
       }
 
-      // Clamp to board bounds.
+      // Kept on a real screen, not inside a rectangle drawn around them.
+      //
+      // The board rectangle is only as deep as the *shallowest* phone, so on a
+      // table of mismatched sizes it shaded off half of the biggest screen and
+      // refused to let anybody walk there. The area follows the screens
+      // themselves, so every phone is playable to its own edges and the wall
+      // steps where a tall screen meets a short one.
       final r = ArenaConfig.characterRadius;
-      f.x = f.x.clamp(context.board.left + r, context.board.right - r);
-      f.y = f.y.clamp(context.board.top + r, context.board.bottom - r);
+      final held = _area.clamp(f.x, f.y, r);
+      f.x = held.x;
+      f.y = held.y;
     }
 
     _checkWinCondition();
