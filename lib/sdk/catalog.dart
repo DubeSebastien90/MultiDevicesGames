@@ -1,5 +1,6 @@
 import '../games/arena/arena_game.dart';
 import '../games/ball_bin/ball_bin_game.dart';
+import '../games/beach_ball/beach_ball_game.dart';
 import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
@@ -29,6 +30,7 @@ class GameCatalog {
   static const playlist = <MultiscreenGame>[
     SlingshotGame(),
     BallBinGame(),
+    BeachBallGame(),
     HotPotatoGame(),
     FloodGame(),
     FloodClosingGame(),
