@@ -31,4 +31,11 @@ class PlatformConfig {
   /// Snapshots per second. Matching [simHz] keeps clients from ever having to
   /// extrapolate far, which matters most exactly at the seam.
   static const int broadcastHz = 60;
+
+  /// How long a sound takes to go quiet when its round ends.
+  ///
+  /// Not zero: a round ending cuts every sound the round started, and a music
+  /// bed stopping dead is heard as a fault. Short enough that the results
+  /// screen is not waiting for it.
+  static const Duration roundEndFade = Duration(milliseconds: 250);
 }

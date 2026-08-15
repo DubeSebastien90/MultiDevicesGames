@@ -4,6 +4,7 @@ import 'client/client_session.dart';
 import 'host/host_session.dart';
 import 'model/device_identity.dart';
 import 'model/device_metrics.dart';
+import 'audio/audioplayers_output.dart';
 import 'net/loopback_transport.dart';
 import 'net/websocket_transport.dart';
 
@@ -57,8 +58,11 @@ class AppController extends ChangeNotifier {
       await host.start();
 
       final loopback = LoopbackPair();
-      final client =
-          ClientSession(transport: loopback.transport, metrics: metrics);
+      final client = ClientSession(
+        transport: loopback.transport,
+        metrics: metrics,
+        audioOutput: AudioPlayersOutput(),
+      );
 
       // Connect (and therefore subscribe) before handing the peer to the host,
       // so the `welcome` it sends immediately has somewhere to land.
@@ -92,6 +96,7 @@ class AppController extends ChangeNotifier {
         // Who this device is, so a session it drops out of and comes back to
         // gives it its own row in the standings rather than a second one.
         deviceId: _deviceId,
+        audioOutput: AudioPlayersOutput(),
       );
       await client.connect();
       _client = client..addListener(notifyListeners);

@@ -393,25 +393,10 @@ class GuacamoleSim implements GameSim {
     }
     return {
       'moles': phases,
-      'colors': _colorsByPhone,
       'secondsLeft': secondsLeft.ceil(),
       'roundSeconds': GuacamoleConfig.roundSeconds.round(),
     };
   }
-
-  /// Who is what colour, by phone id.
-  ///
-  /// Slices carry this already, but only the host has them as objects — a view
-  /// is handed a [Frame], not a [BoardContext]. Publishing the mapping is how
-  /// each phone works out which of these colours is *its own*, which is the one
-  /// thing every player must never get wrong.
-  ///
-  /// Constant for the whole round, so the platform sends it once and then stops
-  /// noticing it.
-  Map<String, String> get _colorsByPhone => {
-    for (final s in context.slices)
-      if (s.color != null) s.phoneId: s.color!.id,
-  };
 
   /// Built once: `outcome` is polled several times a tick and this one carries
   /// a line per phone.

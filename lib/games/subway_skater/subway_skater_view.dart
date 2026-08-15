@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
-import '../../sdk/model/player_color.dart';
 import 'subway_skater_config.dart';
 
 /// The corridor, drawn the same on every phone because every phone is drawing
@@ -252,8 +251,8 @@ class SubwaySkaterView extends GameView {
     final down = phoneId != null && _tumbling.contains(phoneId);
     final charged = phoneId != null && _charging.contains(phoneId);
 
-    final color = PlayerPalette.byId(s.props['color'] as String?)?.value ??
-        const Color(0xFFF2F4F8);
+    final player = phoneId == null ? null : context.roster.byPhone(phoneId);
+    final color = player?.color.value ?? const Color(0xFFF2F4F8);
     final center = Offset(s.x, s.y);
 
     // Fresh off a promotion: a halo, because for the next second this circle
@@ -266,8 +265,25 @@ class SubwaySkaterView extends GameView {
       canvas.drawCircle(center, r * 1.5, _paint);
     }
 
-    _paint.color = down ? color.withValues(alpha: 0.55) : color;
-    canvas.drawCircle(center, r, _paint);
+    // The skater is whoever is riding it, drawn by the SDK. Today that is a
+    // circle in their colour — the same picture this game drew by hand until
+    // the roster arrived — and the day the characters are illustrated, this
+    // line starts drawing a fox without being touched.
+    if (player != null) {
+      player.topdown.draw(
+        canvas,
+        center,
+        worldSize: r * 2,
+        angle: s.angle,
+        // Carried away: still theirs, and visibly not in control of it.
+        opacity: down ? 0.55 : 1,
+      );
+    } else {
+      // A skater with no seat on the roster. Should not happen — the sim builds
+      // them from the same slices — so this is the belt to that braces.
+      _paint.color = down ? color.withValues(alpha: 0.55) : color;
+      canvas.drawCircle(center, r, _paint);
+    }
 
     // Spokes, turned by the entity's own angle. Still on a skater standing up,
     // spinning on one being carried away — which is how a tumble reads from the

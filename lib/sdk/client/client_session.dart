@@ -2,16 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../audio/audio_engine.dart';
+import '../audio/audio_output.dart';
 import '../layout/board_links.dart';
 import '../model/name_drop_status.dart';
 import '../model/table_change.dart';
 import '../model/coverage_map.dart';
 import '../model/device_metrics.dart';
 import '../model/phone_layout.dart';
+import '../model/player.dart';
 import '../model/player_color.dart';
 import '../model/world_rect.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
+import '../render/player_art.dart';
 import '../catalog.dart';
 import '../contract/entity.dart';
 import '../contract/game.dart';
@@ -183,10 +187,12 @@ class ClientSession extends ChangeNotifier {
     required DeviceMetrics metrics,
     String? joinCode,
     String? deviceId,
+    AudioOutput? audioOutput,
   }) : _transport = transport,
        _metrics = metrics,
        _joinCode = joinCode,
-       _deviceId = deviceId;
+       _deviceId = deviceId,
+       audio = AudioEngine(output: audioOutput);
 
   final Transport _transport;
   DeviceMetrics _metrics;
@@ -284,6 +290,40 @@ class ClientSession extends ChangeNotifier {
   /// `planBoard` decided it. What the placement diagram draws.
   List<PhoneSlice> get slices => _slices;
   List<PhoneSlice> _slices = const [];
+
+  /// This phone's ear.
+  ///
+  /// One per device, the host's included — the host's own screen is a viewport
+  /// like any other and its speaker is reached the same way, which is what
+  /// keeps the sim from ever having to know it is running beside one.
+  ///
+  /// Silent unless a real [AudioOutput] was passed in. The app passes one; a
+  /// test does not, and so a suite on a machine with no audio device stays
+  /// quiet without anybody having to remember to mute it.
+  final AudioEngine audio;
+
+  /// Everyone in the round, assembled from the slices the host already sends.
+  ///
+  /// Colour crosses the wire on [PhoneSlice] and always has, so a roster costs
+  /// nothing: no new message, no new field, no protocol version. This is only
+  /// the assembly the games were each doing for themselves.
+  Roster get roster => Roster(
+    [
+      for (final s in _slices)
+        if (s.color != null)
+          Player(phoneId: s.phoneId, color: s.color!, label: s.label),
+    ],
+    hostPhoneId: _hostPhoneId,
+  );
+
+  /// Whose phone is running the session, as the lobby broadcast said.
+  String? _hostPhoneId;
+
+  /// This phone's player: colour, character, art and voice.
+  ///
+  /// Null before the board is compiled — the roster is built from the slices,
+  /// which arrive with the layout.
+  Player? get me => _phoneId == null ? null : roster.byPhone(_phoneId!);
 
   /// The edge stripes for *this* phone — where its screen meets its neighbours.
   /// Match the colours up and the board is right.
@@ -407,8 +447,18 @@ class ClientSession extends ChangeNotifier {
     });
   }
 
-  void confirmPlacement() =>
-      _transport.send({'type': ClientMsg.confirmPlacement, 'phoneId': _phoneId});
+  /// 'I am in place.'
+  ///
+  /// Answered in this player's own voice, on this phone, immediately. It is
+  /// local feedback for a local tap — there is no shared instant to agree with,
+  /// and waiting eighty milliseconds to acknowledge a finger is the one thing
+  /// local sound exists to avoid. It is also the first time most people hear
+  /// which character they are.
+  void confirmPlacement() {
+    final player = me;
+    if (player != null) audio.play(player.soundHappy);
+    _transport.send({'type': ClientMsg.confirmPlacement, 'phoneId': _phoneId});
+  }
 
   void sendReset() => _transport.send({'type': ClientMsg.reset});
 
@@ -438,6 +488,9 @@ class ClientSession extends ChangeNotifier {
     if (layout == null) return null;
 
     buffer.advance(dtMs);
+    // The same instant the entities are sampled at, so a sound and the picture
+    // that caused it arrive together rather than eighty milliseconds apart.
+    audio.pump(buffer.renderTimeMs);
     final sampled = buffer.sampleAll();
 
     final entities = <String, RenderEntity>{};
@@ -500,6 +553,7 @@ class ClientSession extends ChangeNotifier {
           for (final p in msg['phones'] as List) p as Map<String, dynamic>,
         ];
         _hostPhase = msg['phase'] as String?;
+        _hostPhoneId = (msg['host'] as String?) ?? _hostPhoneId;
         _adoptGame(msg['game'] as String?);
         // The host went back to setting up: follow it out of whatever screen
         // this phone is on rather than stranding it on a stale one.
@@ -571,6 +625,9 @@ class ClientSession extends ChangeNotifier {
         _result = null;
         _descriptors.clear();
         buffer.clear();
+        // Started, not awaited, during the one stretch of dead time there is:
+        // people are pushing phones together. Only the colours at this table.
+        PlayerArt.preload([for (final p in roster.players) p.color]);
         _prepareView();
         notifyListeners();
 
@@ -622,7 +679,13 @@ class ClientSession extends ChangeNotifier {
       case HostMsg.outcome:
         _result = RoundResult.fromJson(msg);
         _phase = ClientPhase.finished;
+        _playVerdict(_result!);
         notifyListeners();
+
+      case HostMsg.sound:
+        // Queued, not played. It fires when this phone's delayed clock reaches
+        // the instant the host stamped on it — see [AudioEngine].
+        audio.receive(msg);
 
       case HostMsg.pong:
         final sent = (msg['t'] as num).toDouble();
@@ -639,6 +702,25 @@ class ClientSession extends ChangeNotifier {
         // depends on it.
         NameDropPref.save(NameDropStatus.waiting);
     }
+  }
+
+  /// The round's verdict, in this player's own voice, on this phone.
+  ///
+  /// Decided locally rather than sent, because every phone already has the
+  /// outcome and already works out its own headline from it — see
+  /// [RoundResult.verdictFor]. Routing it through the host would be a second
+  /// implementation of a question that must have exactly one answer, which is
+  /// the mistake this codebase has made before.
+  ///
+  /// A draw is **silence**. Nobody won and nobody lost, and a sad voice on
+  /// every phone would be telling eight people they lost a round that nothing
+  /// lost — the same reason [OutcomeKind.draw] exists rather than being
+  /// inferred from a missing winner.
+  void _playVerdict(RoundResult result) {
+    final player = me;
+    if (player == null || result.kind == OutcomeKind.draw) return;
+    final verdict = result.verdictFor(_phoneId);
+    audio.play(verdict.celebrate ? player.soundHappy : player.soundSad);
   }
 
   void _addDescriptors(List<dynamic>? entities) {
@@ -687,7 +769,15 @@ class ClientSession extends ChangeNotifier {
     _viewLoading = true;
     try {
       final view = game.createView(
-        ViewContext(phoneId: layout.phoneId, board: layout.board),
+        ViewContext(
+          phoneId: layout.phoneId,
+          board: layout.board,
+          // Built here rather than passed per frame: the roster is fixed for
+          // the round, and the slices it comes from arrived with the layout
+          // that triggered this build.
+          roster: roster,
+          audio: audio,
+        ),
       );
       await view.load();
 
@@ -725,6 +815,7 @@ class ClientSession extends ChangeNotifier {
     _interruptions.stop();
     _sub?.cancel();
     _disposeView();
+    audio.dispose();
     _transport.dispose();
     super.dispose();
   }

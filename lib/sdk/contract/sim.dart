@@ -1,4 +1,6 @@
+import '../audio/game_audio.dart';
 import '../model/coverage_map.dart';
+import '../model/player.dart';
 import '../model/player_color.dart';
 import '../model/world_rect.dart';
 import '../score/scoreboard.dart';
@@ -172,6 +174,8 @@ class BoardContext {
     required this.coverage,
     required this.scores,
     required this.slices,
+    this.roster = Roster.empty,
+    this.audio = const SilentGameAudio(),
   });
 
   /// The playfield, in world units.
@@ -185,6 +189,22 @@ class BoardContext {
 
   /// Every phone in the round, in board order.
   final List<PhoneSlice> slices;
+
+  /// Everyone playing, with their colour, character, art and sounds.
+  ///
+  /// Built from the same slices, so a sim and a view can never disagree about
+  /// who is at the table. Prefer this to [players] for anything that needs to
+  /// name somebody or make a noise at them; [players] is still the shortest way
+  /// to deal by colour.
+  final Roster roster;
+
+  /// What the table and its phones can be made to say.
+  ///
+  /// On [BoardContext] rather than as a member of [GameSim] on purpose: every
+  /// game says `implements GameSim`, Dart makes an `implements` clause carry
+  /// every member of the interface, and adding a method there would break all
+  /// of them at once — the same trap [PlayerPresence] documents.
+  final GameAudio audio;
 
   List<String> get phoneIds => [for (final s in slices) s.phoneId];
 

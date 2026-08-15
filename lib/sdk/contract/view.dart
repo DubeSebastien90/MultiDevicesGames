@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 
+import '../audio/game_audio.dart';
 import '../model/coverage_map.dart';
 import '../model/phone_layout.dart';
+import '../model/player.dart';
 import '../model/world_rect.dart';
 import '../score/scoreboard.dart';
 import 'entity.dart';
@@ -54,10 +56,32 @@ class Frame {
 
 /// What a view is handed when it is built.
 class ViewContext {
-  const ViewContext({required this.phoneId, required this.board});
+  const ViewContext({
+    required this.phoneId,
+    required this.board,
+    this.roster = Roster.empty,
+    this.audio = const SilentLocalAudio(),
+  });
 
   final String phoneId;
   final WorldRect board;
+
+  /// Everyone in the round, in board order, with their colour, character, art
+  /// and sounds.
+  ///
+  /// Here rather than on [Frame] because the roster is fixed for the round and
+  /// a list that never changes has no business being rebuilt sixty times a
+  /// second. A view that wants a player's picture reads it once, at build time.
+  final Roster roster;
+
+  /// A sound on this phone alone. Nothing the table should hear goes through
+  /// here — that is the sim's to decide.
+  final LocalAudio audio;
+
+  /// This phone's own player.
+  ///
+  /// Null only before anybody has been seated, which a running round cannot be.
+  Player? get me => roster.byPhone(phoneId);
 }
 
 /// The slow-changing half of a frame, for a HUD.

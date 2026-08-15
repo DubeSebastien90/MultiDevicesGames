@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
+import '../audio/game_audio.dart';
 import '../contract/sim.dart';
 import '../model/coverage_map.dart';
+import '../model/player.dart';
 import '../model/phone_layout.dart';
 import '../model/world_rect.dart';
 import '../platform_config.dart';
@@ -46,13 +48,41 @@ class BoardLayout {
     return null;
   }
 
-  /// Everything a [GameSim] needs to be built against this board.
-  BoardContext contextFor(Scoreboard scores) => BoardContext(
-    board: board,
-    coverage: coverage,
-    scores: scores,
-    slices: slices,
+  /// Everyone at the table, in board order.
+  ///
+  /// Only seated phones: a slice with no colour is one the lobby has not
+  /// finished with, and putting it in the roster would hand a game a player
+  /// with no identity — the same reason [BoardContext.players] skips them.
+  Roster rosterFor({String? hostPhoneId}) => Roster(
+    [
+      for (final s in slices)
+        if (s.color != null)
+          Player(phoneId: s.phoneId, color: s.color!, label: s.label),
+    ],
+    hostPhoneId: hostPhoneId,
   );
+
+  /// The table without the platform's own knowledge of who is hosting — what a
+  /// test wants, and what a diagram needs.
+  Roster get roster => rosterFor();
+
+  /// Everything a [GameSim] needs to be built against this board.
+  ///
+  /// [audio] is the round's emitter, or nothing — a sim built for a test gets a
+  /// context that accepts every cue and makes no sound.
+  BoardContext contextFor(
+    Scoreboard scores, {
+    GameAudio? audio,
+    String? hostPhoneId,
+  }) =>
+      BoardContext(
+        board: board,
+        coverage: coverage,
+        scores: scores,
+        slices: slices,
+        roster: rosterFor(hostPhoneId: hostPhoneId),
+        audio: audio ?? const SilentGameAudio(),
+      );
 }
 
 /// Turns a game's [BoardPlan] into a [BoardLayout], or refuses.

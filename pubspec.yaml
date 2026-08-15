@@ -38,8 +38,8 @@ dependencies:
   forge2d: ^0.14.2+1
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.0
-  lottie: ^3.3.1
   shared_preferences: ^2.3.0
+  audioplayers: ^6.7.1
 
 dev_dependencies:
   flutter_test:
@@ -64,7 +64,12 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/animations/
+    # The SDK's own art, kept apart from any game's so that extracting
+    # `lib/sdk/` into a real package one day is a `git mv` and not an audit.
+    # Flat rather than a folder per colour: an asset directory is not scanned
+    # recursively, so eight subfolders would be eight lines here.
+    - assets/sdk/players/
+    - assets/sdk/sfx/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

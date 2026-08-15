@@ -85,6 +85,22 @@ class HostMsg {
   /// does is set the state back to waiting.
   static const nameDropSuspected = 'nameDropSuspected';
 
+  /// Play, stop, or drop everything the round started.
+  ///
+  /// Sent to one phone for a targeted sound and to all of them for the table's,
+  /// which needs no new transport primitive — the host already does both.
+  ///
+  /// A discrete message rather than a field riding every snapshot, and that is
+  /// what makes exactly-once free: the transport is ordered and reliable, so a
+  /// cue arrives once and there is no fired-once guard to write. Carried in the
+  /// snapshot it would be re-sent sixty times a second and every phone would
+  /// need to remember which ones it had already heard.
+  ///
+  /// Carries `at`: the sim time of the step that raised it, so a phone can fire
+  /// it at that instant of the shared timeline rather than the moment the
+  /// packet happened to land.
+  static const sound = 'sound';
+
   static const pong = 'pong';
 }
 

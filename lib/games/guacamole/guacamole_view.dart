@@ -27,10 +27,14 @@ class GuacamoleView extends GameView {
     ..isAntiAlias = true
     ..style = PaintingStyle.stroke;
 
-  /// This phone's own colour, learned from the HUD frame and remembered for the
-  /// renderer. Null until the first HUD build, which is harmless: the border is
-  /// the only thing that needs it.
-  PlayerColor? _myColor;
+  /// This phone's own player, and so its own colour.
+  ///
+  /// Known at build time now that the roster comes with the [ViewContext]: it
+  /// is assembled from the slices the host already sends, which arrive with the
+  /// layout. This used to be learned from the first HUD build, via a map the
+  /// sim published into `sharedState` — a round trip through the wire for a
+  /// fact the platform had all along.
+  PlayerColor? get _myColor => context.me?.color;
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -328,9 +332,6 @@ class GuacamoleView extends GameView {
     final me = frame.scores.entryFor(frame.phoneId);
     final secondsLeft = frame.sharedState['secondsLeft'];
 
-    // The renderer needs this too, and the HUD is where it arrives.
-    _myColor = _colorFromScores(frame);
-
     final color = _myColor;
 
     return Padding(
@@ -396,18 +397,5 @@ class GuacamoleView extends GameView {
         ],
       ),
     );
-  }
-
-  /// This phone's colour.
-  ///
-  /// The scoreboard knows every phone, and the slices know every colour, but
-  /// only the *view* context knows which phone is this one — so the answer is
-  /// assembled here rather than shipped as another wire field.
-  PlayerColor? _colorFromScores(HudFrame frame) {
-    final raw = frame.sharedState['colors'];
-    if (raw is Map) {
-      return PlayerPalette.byId(raw[frame.phoneId] as String?);
-    }
-    return null;
   }
 }

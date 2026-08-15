@@ -64,3 +64,7 @@ superpowers/
 .superpowers/
 
 .vscode/
+# Audacity writes these beside a project while it is open: transient SQLite
+# journals, not the project itself.
+*.aup3-shm
+*.aup3-wal
