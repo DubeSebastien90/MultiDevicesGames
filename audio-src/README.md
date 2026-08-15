@@ -1,0 +1,43 @@
+# Audio source
+
+Where the sounds come from, as opposed to what the app ships.
+
+**Nothing in here is bundled.** Only paths listed under `flutter: assets:` in
+`pubspec.yaml` end up in a build, and this folder is not one of them — so the
+39 MB project below costs the app nothing.
+
+| | |
+| --- | --- |
+| `projetAudio.aup3` | the Audacity project the voices were recorded and cut in |
+| `originals/` | the raw exports, before processing |
+
+## What was done to the originals
+
+The clips in `originals/` are the untouched exports. What sits in
+`assets/sdk/players/` and `assets/sdk/sfx/` has been through one pass:
+
+- **Downmixed to mono.** A phone speaker is mono, and the same clip plays on
+  eight devices around a table. Stereo was bytes nobody could hear.
+- **Loudness matched** to −18 dBFS RMS with a −1 dBFS ceiling. The originals
+  ranged from −0.1 to −16.4 dBFS peak, which at a table means one character
+  shouting and another inaudible. RMS rather than peak: peak-matching leaves a
+  clip with a single sharp transient quiet for its whole length.
+- **Leading silence trimmed to zero.** Anything before the sound starts is
+  latency, and these carried 4–36 ms of it. That is felt on a cue that answers
+  a finger.
+- **Tails trimmed** at a gentler threshold, with an 8 ms fade, so a natural
+  decay is not chopped and the cut does not click.
+
+`pop.wav` was handled separately: at 53 ms it is a click, not a voice, and RMS
+over something that short reads quiet however loud it sounds. It is peak
+normalised to −3 dBFS and kept out of the voices' loudness pool.
+
+## Re-exporting
+
+Export from Audacity into `originals/`, then re-run the processing pass — the
+`assets/` copies are derived, and editing them by hand loses that.
+
+Filenames follow the colour, not the recording order: `player1`..`player8`
+became `green`..`red` in `PlayerPalette` hand-out order. A voice belongs to a
+character, so the Frog keeps its own if the palette is ever reordered. The
+mapping is written down in `player-assets-spec.md`.

@@ -40,5 +40,5 @@ class SlingshotGame implements MultiscreenGame {
   GameSim createSim(BoardContext context) => SlingshotSim(context);
 
   @override
-  GameView createView(ViewContext context) => SlingshotView();
+  GameView createView(ViewContext context) => SlingshotView(context);
 }

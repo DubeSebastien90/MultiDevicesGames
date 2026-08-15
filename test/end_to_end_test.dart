@@ -388,6 +388,38 @@ void main() {
         reason: 'the descriptor arrived with the spawn, not just a transform');
   });
 
+  test('every phone assembles the same roster, without a new message', () async {
+    await _startPlaying(host, phone1, phone2);
+
+    // Colour has always ridden on the slices, and every phone has always
+    // received them — so a roster of people, with their characters, art and
+    // sounds, costs nothing on the wire. This is the assembly each game used to
+    // do for itself.
+    for (final phone in [phone1, phone2]) {
+      expect(phone.roster.length, 2);
+      expect(
+        phone.roster.players.map((p) => p.phoneId).toList(),
+        phone1.roster.players.map((p) => p.phoneId).toList(),
+        reason: 'two phones disagreed about who is playing',
+      );
+    }
+
+    // Everyone is somebody different, which is the host's promise and the
+    // reason one character per colour needs no second allocator.
+    final colors = phone2.roster.players.map((p) => p.color.id).toSet();
+    expect(colors, hasLength(2));
+    expect(
+      phone2.roster.players.map((p) => p.character.name).toSet(),
+      hasLength(2),
+    );
+
+    // And each phone can find itself, which is the one thing a player must
+    // never get wrong.
+    final me = phone2.roster.byPhone(phone2.phoneId!);
+    expect(me, isNotNull);
+    expect(me!.color.id, phone2.myColor?.id);
+    expect(me.title, contains(me.character.name));
+  });
 }
 
 /// Drives the handshake to the point where both phones are rendering.

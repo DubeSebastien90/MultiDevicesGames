@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../platform_config.dart';
+import '../audio/game_audio.dart';
 import '../model/table_change.dart';
 import '../model/device_identity.dart';
 import '../model/device_metrics.dart';
@@ -158,6 +159,10 @@ class HostSession extends ChangeNotifier {
   BoardLayout? _layout;
   Timer? _loop;
   String? _warning;
+
+  /// The round's audio queue. Made with the sim and thrown away with it, which
+  /// is what makes handles round-scoped without anything having to expire them.
+  RoundAudio? _audio;
 
   /// Position in the playlist. Only ever goes up within a run, and resets when
   /// the table lands back in the lobby — the list is played through once.
@@ -426,9 +431,23 @@ class HostSession extends ChangeNotifier {
 
   /// Adds the host's own screen as a peer. Trusted: this peer is a function
   /// call away, not a socket, so there is nobody to prove anything to.
-  void addLocalPeer(PeerLink peer) => _attachPeer(peer, trusted: true);
+  /// The host's own phone, attached over loopback.
+  ///
+  /// Remembered because it is the table's speaker: a general sound plays here
+  /// and nowhere else. Working it out from the roster instead — "the first
+  /// seat" — would be wrong the first time the host's own phone reconnects and
+  /// takes a different one.
+  PhoneRecord? _localRecord;
 
-  void _attachPeer(PeerLink link, {bool trusted = false}) {
+  /// Which phone is the host's, or null when nothing is attached locally — a
+  /// headless host in a test has no speaker, and general sounds go nowhere.
+  String? get hostPhoneId => _localRecord?.phoneId;
+
+  void addLocalPeer(PeerLink peer) {
+    _localRecord = _attachPeer(peer, trusted: true);
+  }
+
+  PhoneRecord _attachPeer(PeerLink link, {bool trusted = false}) {
     // A round in progress is no longer a closed door here.
     //
     // It used to be turned away the moment a socket opened, which was too
@@ -451,7 +470,7 @@ class HostSession extends ChangeNotifier {
 
     if (trusted) {
       _admit(record);
-      return;
+      return record;
     }
 
     // Still worth waiting on with the code gate open: the join message is also
@@ -463,6 +482,7 @@ class HostSession extends ChangeNotifier {
         _reject(link, 'That phone never finished joining.');
       }
     });
+    return record;
   }
 
   void _handleJoin(PhoneRecord record, Map<String, dynamic> msg) {
@@ -1150,9 +1170,12 @@ class HostSession extends ChangeNotifier {
     // Without this the exception escapes mid-transition, the phase never
     // advances, and every phone sits on the placement screen forever with
     // nothing on any screen to say why.
+    final audio = RoundAudio();
     final GameSim sim;
     try {
-      sim = game.createSim(solved.contextFor(scores));
+      sim = game.createSim(
+        solved.contextFor(scores, audio: audio, hostPhoneId: hostPhoneId),
+      );
     } catch (e) {
       _planError = '${game.manifest.title}: $e';
       _phase = HostPhase.lobby;
@@ -1164,6 +1187,7 @@ class HostSession extends ChangeNotifier {
       return;
     }
     _sim = sim;
+    _audio = audio;
 
     _tableChange = null;
     // The notice has been read by now, so it stops here rather than following
@@ -1193,6 +1217,11 @@ class HostSession extends ChangeNotifier {
     _broadcastShared(force: true);
     _broadcastScores(force: true);
     _broadcast({'type': HostMsg.start});
+    // A game is allowed to ask for a sound while it is being built — a theme,
+    // a whistle — and those cues are queued before the first step. Sent after
+    // `start`, so no phone is told to play something for a round it has not
+    // been told has begun.
+    _flushAudio();
 
     const period = Duration(microseconds: 1000000 ~/ PlatformConfig.simHz);
     _loop = Timer.periodic(period, (_) => _tick());
@@ -1245,9 +1274,68 @@ class HostSession extends ChangeNotifier {
 
     _broadcastShared();
     _broadcastScores();
+    // After the state, so a cue and the picture that caused it carry the same
+    // timestamp and land together on every phone.
+    _flushAudio();
 
     final outcome = sim.outcome;
     if (outcome != null) _finishRound(outcome);
+  }
+
+  /// Send whatever the sim asked to be heard.
+  ///
+  /// Stamped here rather than at the call site, with the sim time of the step
+  /// that raised it — which is the timestamp of the snapshot broadcast in the
+  /// same tick. That is what lets a phone fire the sound at the instant of the
+  /// shared timeline the picture arrives at, instead of the moment the packet
+  /// happened to land.
+  ///
+  /// A general cue goes to the host's phone **only**. Broadcasting it would
+  /// have eight phones playing one clip at eight distances, which is the flam
+  /// the two verbs exist to avoid.
+  void _flushAudio() {
+    final audio = _audio;
+    if (audio == null || !audio.hasPending) return;
+
+    final at = simTimeMs;
+    for (final command in audio.drain()) {
+      final msg = {'type': HostMsg.sound, ...command.toJson(at)};
+      if (command.isBroadcast) {
+        // The end of the round. Every phone may be holding a sound of its own,
+        // and each of them already knows which ones it was told to keep.
+        _broadcast(msg);
+        continue;
+      }
+      final phoneId = command.phoneId;
+      if (phoneId == null) {
+        // The table's speaker, or nothing at all when the host is headless.
+        // Not a broadcast, and not a fallback to somebody else's phone.
+        _localRecord?.link.send(msg);
+      } else {
+        // A phone that has gone is silence: no fallback, because a sound from
+        // the wrong side of the table is worse information than none.
+        _phoneById(phoneId)?.link.send(msg);
+      }
+    }
+  }
+
+  /// Everything this round started goes quiet, and the queue goes with it.
+  ///
+  /// Called from every teardown — the next game, a re-calibrate, the lobby, the
+  /// end of the run — so a game never has to remember, and a round abandoned
+  /// halfway still stops making noise. Anything a game marked `persist` was
+  /// handed to the session and plays on.
+  ///
+  /// **Not from [_finishRound].** A round ending is the moment a game plays its
+  /// win sting, and silencing there would cancel the cue raised by the very
+  /// step that ended the round. The results screen is still part of the round
+  /// as far as sound is concerned; it goes quiet on the way out of it.
+  void _silenceRound() {
+    final audio = _audio;
+    if (audio == null) return;
+    audio.stopRoundSounds();
+    _flushAudio();
+    _audio = null;
   }
 
   /// Diff the entity set so a game can spawn and despawn freely without ever
@@ -1348,6 +1436,7 @@ class HostSession extends ChangeNotifier {
   /// fresh trip through placement.
   void advanceToNextGame() {
     if (_phase != HostPhase.finished) return;
+    _silenceRound();
     _sim?.dispose();
     _sim = null;
     _layout = null;
@@ -1384,6 +1473,7 @@ class HostSession extends ChangeNotifier {
     if (_phase == HostPhase.scoreboard) return;
     _loop?.cancel();
     _loop = null;
+    _silenceRound();
     _sim?.dispose();
     _sim = null;
     _layout = null;
@@ -1411,13 +1501,23 @@ class HostSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void resetRound() => _sim?.reset();
+  /// Put the round back to its opening position.
+  ///
+  /// A reset counts as a round boundary for sound: a loop still running from
+  /// the previous attempt is not the opening position. The emitter survives —
+  /// unlike a teardown, the same round carries on and its handles stay valid.
+  void resetRound() {
+    _sim?.reset();
+    _audio?.stopRoundSounds();
+    _flushAudio();
+  }
 
   /// Back to the arrangement for the *same* game — the debug panel's
   /// "re-calibrate", for when a measurement was wrong.
   void recalibrate() {
     _loop?.cancel();
     _loop = null;
+    _silenceRound();
     _sim?.dispose();
     _sim = null;
     _warning = null;
@@ -1434,6 +1534,7 @@ class HostSession extends ChangeNotifier {
   void returnToLobby() {
     _loop?.cancel();
     _loop = null;
+    _silenceRound();
     _sim?.dispose();
     _sim = null;
     _layout = null;
@@ -1504,6 +1605,10 @@ class HostSession extends ChangeNotifier {
     _broadcast({
       'type': HostMsg.lobby,
       'phase': _phase.name,
+      // Which seat is running the session. Nothing can derive it: board order
+      // is not join order, and a host that reconnects does not take the first
+      // seat back. Games ask — Slingshot fires the host's face at a tower.
+      if (hostPhoneId != null) 'host': hostPhoneId,
       // The table changing shape is news for every phone, not only the one
       // running the session — everybody is about to be asked to move.
       if (_warning != null) 'warning': _warning,

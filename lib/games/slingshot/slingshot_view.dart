@@ -4,30 +4,34 @@ import 'slingshot_config.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/model/world_rect.dart';
-import '../../sdk/render/lottie_sprite.dart';
+import '../../sdk/render/player_art.dart';
 import '../../sdk/render/shape_view.dart';
 
+/// Slingshot's pixels: a band, a tower, and the host being fired at it.
+///
+/// The ammunition is the **host's own face**, which is the joke and also the
+/// clearest possible answer to "whose game is this". It comes from the SDK, so
+/// this game ships no artwork of its own and gains a real character the day one
+/// is drawn.
 class SlingshotView extends ShapeView {
-  SlingshotView();
+  SlingshotView(this.context);
+
+  final ViewContext context;
 
   final _band = Paint()..style = PaintingStyle.stroke;
-  final _character = LottieSprite();
 
-  /// Whether the character has finished rasterising. The bird is drawn as a
-  /// plain circle until it has. Exposed so a test can prove the round does not
-  /// wait for it.
-  bool get artworkReady => _character.isLoaded;
+  /// The host's portrait, or null at a table where nobody is seated yet — in
+  /// which case the bird is the plain circle [ShapeView] would have drawn.
+  PlayerArt? get _ammo => context.roster.host?.face;
 
   @override
   Future<void> load() async {
-    // Started, not awaited. The round begins on time and the bird is a circle
-    // until the character has rasterised — a second of plain artwork beats a
-    // screen that never arrives.
-    _character.beginLoading(
-      'assets/animations/character_test.json',
-      width: 256,
-      height: 256,
-    );
+    // Started, not awaited. A round begins on time and the bird is a circle
+    // until the picture has decoded — a second of plain artwork beats a screen
+    // that never arrives, which is what awaiting artwork here once caused.
+    PlayerArt.preload([
+      if (context.roster.host != null) context.roster.host!.color,
+    ]);
   }
 
   @override
@@ -36,17 +40,16 @@ class SlingshotView extends ShapeView {
 
     for (final e in frame.entities.values) {
       if (e.kind == 'bird') {
-        // The Lottie character when it is ready, the default circle until then.
         final size = SlingshotConfig.birdRadius * 2.5;
         if (_isOffScreen(e, size, view)) continue;
-        final drawn = _character.draw(
-          canvas,
-          Offset(e.x, e.y),
-          frame.timeMs,
-          worldSize: size,
-          angle: e.angle,
-        );
-        if (!drawn) _drawShape(canvas, e, view, frame.onePixel);
+        final ammo = _ammo;
+        if (ammo != null) {
+          // Always paints: the portrait if it has decoded, the placeholder
+          // square in the host's colour until then. No fallback to write.
+          ammo.draw(canvas, Offset(e.x, e.y), worldSize: size, angle: e.angle);
+        } else {
+          _drawShape(canvas, e, view, frame.onePixel);
+        }
       } else {
         // Everything else uses the default shape renderer.
         _drawShape(canvas, e, view, frame.onePixel);
@@ -124,9 +127,4 @@ class SlingshotView extends ShapeView {
     canvas.drawLine(anchor, pull, _band);
   }
 
-  @override
-  void dispose() {
-    _character.dispose();
-    super.dispose();
-  }
 }

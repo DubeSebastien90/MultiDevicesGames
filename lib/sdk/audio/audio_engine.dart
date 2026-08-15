@@ -1,0 +1,228 @@
+/// One phone's ear: what it has been told to play, and when to play it.
+///
+/// Every device runs one of these, the host included — the host's own screen is
+/// a viewport receiving snapshots like any other, and its speaker is reached
+/// the same way. A sim never touches an audio device; it emits a cue, the host
+/// sends it, and the phone that should hear it decides when.
+///
+/// **When** is the interesting part. A cue is not played on arrival. It carries
+/// the sim time of the step that raised it, and it fires when *this* phone's
+/// delayed render clock passes that instant — the same clock, and the same
+/// delay, that makes two screens agree about where the ball is.
+///
+/// Playing on arrival is the tempting shortcut and it is wrong. A player dying
+/// at time T appears on every screen at T + 80ms, host included, because that
+/// is what the interpolation buffer is for. A sound played the moment the
+/// packet lands arrives *before* the picture that explains it — and
+/// sound-before-picture is by far the more noticeable direction of error.
+/// Scheduling also makes a general cue and a targeted one land together for
+/// free, which matters the first time a game does both for one event.
+library;
+
+import '../platform_config.dart';
+import 'audio_output.dart';
+import 'game_audio.dart';
+import 'sound_cue.dart';
+
+/// A cue waiting for the timeline to reach it.
+class _Scheduled {
+  _Scheduled({
+    required this.handleId,
+    required this.asset,
+    required this.atMs,
+    required this.loop,
+    required this.volume,
+    required this.persist,
+  });
+
+  final int handleId;
+  final String asset;
+  final double atMs;
+  final bool loop;
+  final double volume;
+  final bool persist;
+}
+
+/// A sound that has started, and the two facts that decide when it ends.
+class _Live {
+  const _Live({required this.persist, required this.loop});
+
+  /// Survives the round that started it.
+  final bool persist;
+
+  /// Exempt from the voice cap: music is never what should be culled.
+  final bool loop;
+}
+
+class AudioEngine implements LocalAudio {
+  AudioEngine({AudioOutput? output, this.muted = false})
+      : _output = output ?? SilentAudioOutput();
+
+  final AudioOutput _output;
+
+  /// Silence, honoured centrally so no game has to check it.
+  ///
+  /// Muting does not remember what it suppressed: unmuting starts the *next*
+  /// sound, not the one that was playing when the switch was thrown. A loop
+  /// resuming from nowhere thirty seconds later is a worse surprise than a
+  /// silence that simply ends.
+  bool muted;
+
+  AudioOutput get output => _output;
+
+  /// Cues whose instant has not arrived, oldest first.
+  final _pending = <_Scheduled>[];
+
+  /// Handles started and not yet stopped.
+  final _live = <int, _Live>{};
+
+  /// How far past its instant a cue may be fired.
+  ///
+  /// A phone that reconnects, or one whose app was suspended, receives a burst
+  /// of cues whose moments are all in the past. Firing them would replay a
+  /// minute of the round into somebody's ear at once. A sound played late is
+  /// worse than a sound not played, so they are dropped.
+  static const staleMs = 400.0;
+
+  /// A ceiling on simultaneous one-shots. Eight players and one scoring event
+  /// is eight clips in the same tick; past this the newest is dropped rather
+  /// than stealing a voice from something already audible. Loops are exempt —
+  /// music is never the thing that should be culled.
+  static const maxVoices = 8;
+
+  /// Local ids, kept negative so they can never collide with the host's, which
+  /// count up from one. `-1` is [SoundHandle.none].
+  int _nextLocalHandle = -2;
+
+  /// A message from the host: `HostMsg.sound`.
+  void receive(Map<String, dynamic> msg) {
+    switch (msg['op'] as String?) {
+      case AudioOp.play:
+        final asset = msg['asset'] as String?;
+        // No asset means the cue exists but the file does not yet. The host
+        // sends it anyway so the routing is exercised; there is nothing to
+        // play.
+        if (asset == null) return;
+        _pending.add(_Scheduled(
+          handleId: (msg['h'] as num).toInt(),
+          asset: asset,
+          atMs: (msg['at'] as num?)?.toDouble() ?? 0,
+          loop: msg['loop'] == true,
+          volume: (msg['vol'] as num?)?.toDouble() ?? 1.0,
+          persist: msg['persist'] == true,
+        ));
+        // Bounded, for the phone that stops rendering while the host keeps
+        // talking. Dropping the oldest matches the staleness rule: the ones
+        // furthest in the past are the ones least worth hearing.
+        while (_pending.length > 64) {
+          _pending.removeAt(0);
+        }
+
+      case AudioOp.stop:
+        _stop((msg['h'] as num).toInt(),
+            fade: Duration(milliseconds: (msg['fade'] as num?)?.toInt() ?? 0));
+
+      case AudioOp.stopRound:
+        stopAll(includingPersistent: false);
+    }
+  }
+
+  /// Walk the timeline forward. Called once per rendered frame, from the same
+  /// place the interpolator is advanced, with the same instant.
+  void pump(double renderTimeMs) {
+    if (_pending.isEmpty) return;
+
+    var i = 0;
+    while (i < _pending.length) {
+      final cue = _pending[i];
+      if (renderTimeMs < cue.atMs) {
+        i++;
+        continue;
+      }
+      _pending.removeAt(i);
+      if (renderTimeMs - cue.atMs > staleMs) continue;
+      _start(cue.handleId, cue.asset,
+          loop: cue.loop, volume: cue.volume, persist: cue.persist);
+    }
+  }
+
+  /// A view's own sound, on this device, now.
+  ///
+  /// No scheduling: a tap tick on this phone's own glass has no shared instant
+  /// to agree with, and waiting eighty milliseconds to acknowledge a finger is
+  /// the one thing local feedback exists to avoid.
+  @override
+  SoundHandle play(SoundCue cue, {bool loop = false, double volume = 1.0}) {
+    if (!cue.exists) return SoundHandle.none;
+    final id = _nextLocalHandle--;
+    _start(id, cue.asset!, loop: loop, volume: volume, persist: false);
+    return SoundHandle(id);
+  }
+
+  @override
+  void stopSound(SoundHandle handle, {Duration fade = Duration.zero}) =>
+      _stop(handle.id, fade: fade);
+
+  void _start(
+    int handleId,
+    String asset, {
+    required bool loop,
+    required double volume,
+    required bool persist,
+  }) {
+    if (muted) return;
+    if (!loop && _oneShotCount >= maxVoices) return;
+    _live[handleId] = _Live(persist: persist, loop: loop);
+    // Not awaited: a decode that takes a moment must not stall a render frame,
+    // and there is nothing to do with the answer. Failures are the output's to
+    // swallow — a missing file is a silence, never a crashed round.
+    _output.play(handleId, asset, loop: loop, volume: volume);
+  }
+
+  int get _oneShotCount {
+    var n = 0;
+    for (final live in _live.values) {
+      if (!live.loop) n++;
+    }
+    return n;
+  }
+
+  void _stop(int handleId, {Duration fade = Duration.zero}) {
+    // A cue can be stopped before its instant arrives: with cues scheduled on
+    // the delayed timeline, a play at T and a stop at T+200ms are both in this
+    // queue while the clock is still short of T. Cancelling is the same
+    // operation as stopping, from the game's point of view.
+    _pending.removeWhere((c) => c.handleId == handleId);
+    if (_live.remove(handleId) == null) return;
+    _output.stop(handleId, fade: fade);
+  }
+
+  /// End of round, or leaving the game entirely.
+  ///
+  /// [includingPersistent] false is the round boundary: everything the round
+  /// started goes quiet and anything handed to the session — the lobby bed —
+  /// plays on.
+  void stopAll({bool includingPersistent = true}) {
+    if (includingPersistent) {
+      _pending.clear();
+      _live.clear();
+      _output.stopAll();
+      return;
+    }
+    _pending.removeWhere((c) => !c.persist);
+    final ending = [
+      for (final e in _live.entries)
+        if (!e.value.persist) e.key,
+    ];
+    for (final id in ending) {
+      _live.remove(id);
+      _output.stop(id, fade: PlatformConfig.roundEndFade);
+    }
+  }
+
+  Future<void> dispose() async {
+    _pending.clear();
+    _live.clear();
+    await _output.dispose();
+  }
+}

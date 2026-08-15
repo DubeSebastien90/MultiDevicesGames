@@ -424,14 +424,21 @@ void main() {
       );
     });
 
-    test('every phone is told which colour it is', () {
+    test('every phone knows which colour it is, without being told', () {
       final started = start(4);
       started.sim.step(1 / 60);
 
-      final colors = started.sim.sharedState['colors'] as Map<String, String>;
-      expect(colors, hasLength(4));
+      // The colours used to be published into `sharedState` so a view could
+      // find its own — a round trip through the wire for something the
+      // platform had all along. The roster is assembled from the same slices
+      // on both sides now, so the state carries moles and a clock and nothing
+      // about identity.
+      expect(started.sim.sharedState.containsKey('colors'), isFalse);
+
+      final roster = started.board.roster;
+      expect(roster.length, 4);
       for (final slice in started.board.slices) {
-        expect(colors[slice.phoneId], slice.color!.id);
+        expect(roster.byPhone(slice.phoneId)?.color.id, slice.color!.id);
       }
     });
   });
