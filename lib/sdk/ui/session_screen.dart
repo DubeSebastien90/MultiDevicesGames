@@ -76,7 +76,13 @@ class SessionScreen extends StatelessWidget {
         // this, so the seconds it takes are the same dead seconds placement
         // was always going to spend.
         if (client.showIntro) {
-          return IntroAnimation(onDone: client.introFinished);
+          return IntroAnimation(
+            // This phone's own colour, so the table plays one character in six
+            // colours. Known already: the roster arrives with the layout that
+            // raised the curtain.
+            playerColor: client.me?.color.value,
+            onDone: client.introFinished,
+          );
         }
 
         // Keyed per round for the same reason the game below is: Flutter reuses

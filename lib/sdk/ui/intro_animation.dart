@@ -30,12 +30,20 @@ class IntroAnimation extends StatefulWidget {
   const IntroAnimation({
     super.key,
     required this.onDone,
+    this.playerColor,
     this.duration = fallbackAfter,
   });
 
   /// Called once, when the curtain should lift. Always called — on the event,
   /// on a failed load, and on a file that never says it finished.
   final VoidCallback onDone;
+
+  /// The colour of the person holding *this* phone.
+  ///
+  /// Written into the artboard before the animation starts, so six phones play
+  /// the same character in six different colours — which is the whole point of
+  /// the moment. Null leaves whatever the artist drew.
+  final Color? playerColor;
 
   /// How long to wait for `EyesOpenDone` before giving up and carrying on.
   ///
@@ -45,7 +53,7 @@ class IntroAnimation extends StatefulWidget {
 
   static const fallbackAfter = Duration(seconds: 6);
 
-  static const asset = 'assets/sdk/animations/startanimation.riv';
+  static const asset = 'assets/sdk/animations/startanimationColors.riv';
 
   /// The state machine that holds the two states, and the input that starts it.
   static const stateMachine = 'SM1';
@@ -53,6 +61,10 @@ class IntroAnimation extends StatefulWidget {
 
   /// Signalled by the state machine at the end of `Lock_In`.
   static const doneEvent = 'EyesOpenDone';
+
+  /// The view model the artboard exposes, and the colour property on it.
+  static const viewModel = 'PersoVM';
+  static const colorProperty = 'skinColor';
 
   /// Whether the Rive runtime came up at launch.
   ///
@@ -201,6 +213,7 @@ class _IntroAnimationState extends State<IntroAnimation> {
         ),
       )..onSettled = _finish;
       controller.stateMachine.addEventListener(_onRiveEvent);
+      _paint(controller);
 
       // The state machine owns the transition; this only says 'now'. Fired
       // once, here, because nothing on this screen can ask for it twice — the
@@ -225,6 +238,33 @@ class _IntroAnimationState extends State<IntroAnimation> {
       // will not have it. All of them are 'carry on', never a stuck phone.
       debugPrint('[intro] ${IntroAnimation.asset} did not start: $e');
       if (mounted) _finish();
+    }
+  }
+
+  /// Put this phone's colour on the character.
+  ///
+  /// Done before the trigger fires, so the eyes open on a character that is
+  /// already the right colour rather than one that changes a frame in.
+  ///
+  /// Never fatal. A file exported without its view model, or with the property
+  /// renamed, means the animation plays in whatever colour it was drawn — which
+  /// is a worse intro, not a broken round. The failure is worth a line in the
+  /// log because nothing else about it is visible: everyone would simply be the
+  /// same colour, and nobody would know why.
+  void _paint(rive.RiveWidgetController controller) {
+    final color = widget.playerColor;
+    if (color == null) return;
+    try {
+      final instance = controller.dataBind(rive.DataBind.auto());
+      final property = instance.color(IntroAnimation.colorProperty);
+      if (property == null) {
+        debugPrint('[intro] no "${IntroAnimation.colorProperty}" on '
+            '${IntroAnimation.viewModel} — the character keeps its own colour');
+        return;
+      }
+      property.value = color;
+    } on Object catch (e) {
+      debugPrint('[intro] could not colour the character: $e');
     }
   }
 

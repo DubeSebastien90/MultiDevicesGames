@@ -71,12 +71,21 @@ class CornerWalls {
 
   /// How far past each end of a bend the wall keeps going, in track widths.
   ///
-  /// Not optional. A wall that starts exactly where the curvature threshold is
-  /// crossed presents its leading *end* to a car arriving fast, and the car
-  /// goes round it into the dead space the wall was there to prevent. Starting
-  /// a width early means the car meets the side of the wall, which is what a
-  /// wall is for.
-  static const double defaultPadWidths = 1.0;
+  /// Not optional, and this is the reason: a wall that starts exactly where the
+  /// curvature threshold is crossed presents its leading *end* to a car
+  /// arriving fast, and the car goes round it into the dead space the wall was
+  /// there to prevent. Starting early means the car meets the side of the wall,
+  /// which is what a wall is for.
+  ///
+  /// Half a width rather than a whole one, because a whole one was overrunning
+  /// visibly — it is applied at *both* ends, so it added two full track widths
+  /// of kerb to every bend and the barriers read as longer than the corners
+  /// they belonged to. Half still puts the car's first contact on the flank.
+  ///
+  /// This is the knob for "the walls are too long". The threshold is not: raise
+  /// that and gentle bends stop being walled at all, which is a different
+  /// complaint entirely — see [defaultTurnPerWidth].
+  static const double defaultPadWidths = 0.5;
 
   /// Bends shorter than this — in track widths of arc — are left open.
   ///

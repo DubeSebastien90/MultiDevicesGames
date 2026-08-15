@@ -163,14 +163,35 @@ void main() {
   });
 
   test('the names in the code are the names in the file', () {
-    // Three strings have to match what the artist typed in the Rive editor,
-    // and none of them fails loudly: a wrong state machine name throws where
-    // it is caught, and a wrong event name simply never arrives. Pinned here
-    // so a rename shows up as a failed test rather than as a curtain that
-    // hangs for six seconds.
+    // Five strings have to match what the artist typed in the Rive editor, and
+    // not one of them fails loudly: a wrong state machine name throws where it
+    // is caught, a wrong event name simply never arrives, and a wrong property
+    // name leaves every player the same colour. Pinned here so a rename shows
+    // up as a failed test rather than as a curtain nobody can explain.
     expect(IntroAnimation.stateMachine, 'SM1');
     expect(IntroAnimation.startTrigger, 'startGame');
     expect(IntroAnimation.doneEvent, 'EyesOpenDone');
-    expect(IntroAnimation.asset, endsWith('startanimation.riv'));
+    expect(IntroAnimation.viewModel, 'PersoVM');
+    expect(IntroAnimation.colorProperty, 'skinColor');
+    expect(IntroAnimation.asset, endsWith('startanimationColors.riv'));
+  });
+
+  testWidgets('a colour it cannot apply is not a round it cannot play', (
+    tester,
+  ) async {
+    // There is no Rive runtime here, so nothing can be coloured. The curtain
+    // still has to lift — the colour is the flourish, not the mechanism.
+    var done = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: IntroAnimation(
+          playerColor: PlayerPalette.purple.value,
+          onDone: () => done = true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(done, isTrue);
   });
 }
