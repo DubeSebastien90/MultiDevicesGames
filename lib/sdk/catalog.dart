@@ -8,6 +8,7 @@ import '../games/pitch_cars/pitch_cars_game.dart';
 import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/reaction/reaction_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
+import '../games/tandem/tandem_game.dart';
 import 'contract/game.dart';
 
 /// Every game, and the order they are played in.
@@ -33,6 +34,7 @@ class GameCatalog {
     ChronometerGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
+    TandemGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds
