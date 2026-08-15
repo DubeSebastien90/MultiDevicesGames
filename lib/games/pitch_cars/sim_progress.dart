@@ -51,13 +51,17 @@ extension _Progress on PitchCarsSim {
   }
 
   void _beginFall(String id, {required bool ownFault}) {
-    final pos = carOf(id).position;
-
     final Vector2 target;
     if (ownFault) {
       target = _preTurnPosition.clone();
     } else {
-      final fell = track.progressAt(pos.x, pos.y);
+      // Measured from the last progress recorded while the car was still *on*
+      // the road, not from projecting where it is now. Projection is only
+      // meaningful for a point near the centerline: a car that has flown into
+      // the void can sit nearest some entirely different stretch of a track
+      // that wanders back past itself, and taking the knockback from there
+      // sent it most of a lap backwards instead of a road's width.
+      final fell = _rawProgress[id] ?? 0.0;
       final back = math.max(0.0, fell - scale.knockBackWorld);
       final point = track.pointAtArclength(back);
       target = Vector2(point.x, point.y);

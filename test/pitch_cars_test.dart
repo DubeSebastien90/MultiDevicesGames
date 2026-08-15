@@ -48,6 +48,21 @@ PhoneSpec phone(String id, {PlayerColor? color}) => PhoneSpec(
   return (sim: sim, board: board, scores: scores);
 }
 
+/// Runs the sim on until anything that has gone over the edge has finished
+/// falling and been put back.
+///
+/// Leaving the track is no longer resolved in the tick it happens: a car sails
+/// on for [PitchCarsConfig.fallSeconds] so the table can see it go, and only
+/// then reappears. A single step after pushing a car off now catches it
+/// mid-air, which is why every one of these scenarios ends with this.
+void _settleFall(PitchCarsSim sim) {
+  const dt = 1 / PlatformConfig.simHz;
+  final ticks = (PitchCarsConfig.fallSeconds / dt).ceil() + 2;
+  for (var i = 0; i < ticks; i++) {
+    sim.step(dt);
+  }
+}
+
 /// Result of [_runGraceWindowScenario]: where the current-turn car ended up
 /// after being pushed off the track, plus the two candidate reset
 /// destinations so the test can tell which one the sim actually chose.
@@ -103,11 +118,17 @@ _GraceWindowResult _runGraceWindowScenario({required int holdTicks}) {
   final tangent = sim.track.tangentAt(holdArc);
   final hold = Vector2(holdWp.x, holdWp.y);
   final normal = Vector2(-tangent.y, tangent.x);
-  // p2 sits beside p1 along the tangent for the hit, overlapping it (0.4
-  // world units apart, less than their combined physics radius of 0.5 —
-  // 2 * PitchCarsConfig.carRadius — so the hit step's physics registers a
-  // real Forge2D contact between them.
-  final p2Touching = Vector2(hold.x + tangent.x * 0.4, hold.y + tangent.y * 0.4);
+  // p2 sits beside p1 along the tangent for the hit, close enough to overlap
+  // so the hit step's physics registers a real Forge2D contact between them.
+  //
+  // Derived from the sim's own car, not a constant: cars are sized by the
+  // table now, and the 0.4 this used to be — chosen against a combined radius
+  // of 0.5 — is *wider* than the 0.375 two phones give them. The cars sailed
+  // past each other, no contact was recorded, and every assertion about being
+  // bumped was silently testing the self-fault path instead.
+  final overlap = sim.scale.carRadius * 1.5;
+  final p2Touching =
+      Vector2(hold.x + tangent.x * overlap, hold.y + tangent.y * overlap);
   // Once the hit is recorded, p2 is moved well clear of p1 so it does not
   // keep pushing p1 around every subsequent step through overlap
   // resolution — everything from here on should be p1 sitting still.
@@ -146,9 +167,11 @@ _GraceWindowResult _runGraceWindowScenario({required int holdTicks}) {
     sim.step(dt);
   }
 
-  // Now push p1 off the track and let the sim resolve it.
+  // Now push p1 off the track and let the sim resolve it — over the edge,
+  // through the fall, and back onto the road.
   place(offTrack, Vector2.zero(), p2Clear);
   sim.step(dt);
+  _settleFall(sim);
 
   final settled = sim.entities.firstWhere((e) => e.id == p1);
   return _GraceWindowResult(
@@ -215,11 +238,12 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
 
   // The idle-window hit: nothing has been launched, `_moving` is false, and
   // the since-launch clock is frozen at the previous turn's final value. Park
-  // the other car overlapping this one (0.4 world units apart, less than
-  // their combined physics radius of 0.5 — 2 * PitchCarsConfig.carRadius)
-  // and step once so Forge2D reports a real contact.
+  // the other car overlapping this one — see the note in
+  // [_runGraceWindowScenario] on why the gap comes from the sim's own car
+  // rather than a constant — and step once so Forge2D reports a real contact.
   other
-    ..setTransform(Vector2(preTurn.x + 0.4, preTurn.y), 0)
+    ..setTransform(
+        Vector2(preTurn.x + sim.scale.carRadius * 1.5, preTurn.y), 0)
     ..linearVelocity = Vector2.zero()
     ..setAwake(true);
   sim.step(dt);
@@ -270,6 +294,7 @@ _CrossTurnResult _runCrossTurnGraceScenario() {
     ..linearVelocity = Vector2.zero()
     ..setAwake(true);
   sim.step(dt);
+  _settleFall(sim);
 
   final settled = sim.carOf(second).position;
   return _CrossTurnResult(
@@ -520,6 +545,7 @@ void main() {
           ..setAwake(true);
       }
       sim.step(1 / PlatformConfig.simHz);
+      _settleFall(sim);
 
       final settledA = sim.carOf(ids[0]).position;
       final settledB = sim.carOf(ids[1]).position;
@@ -527,7 +553,10 @@ void main() {
       expect(sim.track.isOnTrack(settledB.x, settledB.y), isTrue);
       expect(
         settledA.distanceTo(settledB),
-        greaterThan(PitchCarsConfig.carRadius * 2),
+        // The car is sized by the table now, so the gap they must keep is
+        // too — a fixed `PitchCarsConfig.carRadius` here would be asserting
+        // against a two-phone board using an eight-phone board's car.
+        greaterThan(sim.scale.carRadius * 2),
         reason: 'both cars reset from the same arclength must not overlap',
       );
     });
@@ -546,15 +575,26 @@ void main() {
       // 11 ticks (~183ms) between the hit and the exit — well inside the
       // 15-tick (250ms) hitGraceWindow.
       final result = _runGraceWindowScenario(holdTicks: 10);
+      final track = result.sim.track;
 
-      expect(result.settled.x, closeTo(result.hold.x, 1e-3));
-      expect(result.settled.y, closeTo(result.hold.y, 1e-3));
+      // Being shoved off costs road, and that is the point of it. A bumped car
+      // used to come back to the exact spot it was standing on, which made a
+      // hit worth nothing to whoever landed it; it now reappears
+      // `knockBackWorld` further back down the centerline.
+      final landedArc = track.progressAt(result.settled.x, result.settled.y);
+      final heldArc = track.progressAt(result.hold.x, result.hold.y);
+      final lost = heldArc - landedArc;
+
+      expect(track.isOnTrack(result.settled.x, result.settled.y), isTrue);
+      expect(lost, closeTo(result.sim.scale.knockBackWorld, 0.2),
+          reason: 'a bumped car goes back down the road by the knockback, '
+              'no more and no less');
       expect(
         (result.settled.x - result.preTurn.x).abs() > 1e-2 ||
             (result.settled.y - result.preTurn.y).abs() > 1e-2,
         isTrue,
         reason: 'a bumped car must not be reset all the way back to its '
-            'pre-turn position',
+            'pre-turn position — that is the self-fault penalty',
       );
     });
 
