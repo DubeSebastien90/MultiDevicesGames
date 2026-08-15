@@ -1,4 +1,5 @@
 import '../games/arena/arena_game.dart';
+import '../games/carousel/carousel_game.dart';
 import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
@@ -33,6 +34,7 @@ class GameCatalog {
     ChronometerGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
+    CarouselGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds
