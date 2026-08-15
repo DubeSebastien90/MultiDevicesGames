@@ -31,7 +31,7 @@ class SubwaySkaterGame implements MultiscreenGame {
   );
 
   /// One long corridor, phones on their sides, short edges touching — the same
-  /// runway Slingshot uses, for the same reason: the action travels the length
+  /// runway a launch game uses, for the same reason: the action travels the length
   /// of the table and wants every centimetre of it.
   ///
   /// Joined in the order people connected rather than by size. Every place in

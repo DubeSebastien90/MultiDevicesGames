@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
@@ -43,7 +43,7 @@ void main() {
     for (final p in lobby.phones) {
       scores.register(p.phoneId, p.label);
     }
-    const game = SlingshotGame();
+    const game = ArenaGame();
     final board = const BoardCompiler().compile(game.planBoard(lobby), lobby);
     final sim = game.createSim(board.contextFor(scores));
     scores.beginRound();

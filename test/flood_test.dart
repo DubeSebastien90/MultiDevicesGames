@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_growing_sim.dart';
-import 'package:multiscreen_slingshot/games/flood_closing/flood_closing_game.dart';
-import 'package:multiscreen_slingshot/games/flood_closing/flood_shrinking_sim.dart';
 import 'package:multiscreen_slingshot/games/flood_common/flood_config.dart';
 import 'package:multiscreen_slingshot/games/flood_common/flood_sim.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_growing_view.dart';
@@ -144,17 +142,6 @@ void main() {
       }
     });
 
-    test('both variants plan the same board', () {
-      final lobby = LobbyInfo([for (var i = 0; i < 4; i++) phone('p${i + 1}')]);
-      final a = const FloodGame().planBoard(lobby);
-      final b = const FloodClosingGame().planBoard(lobby);
-
-      for (final placement in a.placements) {
-        final other = b.forPhone(placement.phoneId)!;
-        expect(other.xMm, placement.xMm);
-        expect(other.yMm, placement.yMm);
-      }
-    });
 
     test('phones stand upright, so the push axis gets the long edge', () {
       final lobby = LobbyInfo([phone('p1'), phone('p2')]);
@@ -380,67 +367,10 @@ void main() {
     });
   });
 
-  group('Flood: Closing In — shrinking field', () {
-    test('every tap is worth the same, whenever it lands', () {
-      final sim = start(const FloodClosingGame(), 2).sim;
-      goLive(sim);
-
-      final blue = phonesOn(sim, FloodConfig.blue).first;
-      tap(sim, blue);
-      final firstTap = sim.boundary.abs();
-
-      advance(sim, FloodShrinkingConfig.shrinkWindow / 2);
-      tap(sim, blue);
-      final laterTap = sim.boundary.abs() - firstTap;
-
-      expect(laterTap, closeTo(firstTap, 1e-9));
-    });
-
-    test('the same lead reads as a bigger swing as the field closes', () {
-      final sim = start(const FloodClosingGame(), 2).sim as FloodShrinkingSim;
-      goLive(sim);
-
-      mash(sim, phonesOn(sim, FloodConfig.red).first, 3);
-      final raw = sim.boundary;
-      final early = sim.effectiveBoundary;
-
-      advance(sim, FloodShrinkingConfig.shrinkWindow / 2);
-      expect(sim.boundary, raw, reason: 'the raw tug-of-war has not moved');
-      expect(sim.effectiveBoundary, greaterThan(early));
-    });
-
-    test('the field shrinks to its floor and stops', () {
-      final sim = start(const FloodClosingGame(), 2).sim as FloodShrinkingSim;
-      goLive(sim);
-      expect(sim.rangeScale, closeTo(1.0, 0.02));
-
-      advance(sim, FloodShrinkingConfig.shrinkWindow + 5);
-      expect(sim.rangeScale, FloodShrinkingConfig.minScale);
-    });
-
-    test('a small stable lead eventually wins on its own', () {
-      final started = start(const FloodClosingGame(), 2);
-      final sim = started.sim;
-      goLive(sim);
-
-      // Three taps and then nobody touches anything again.
-      final red = phonesOn(sim, FloodConfig.red).first;
-      mash(sim, red, 3);
-      expect(sim.outcome, isNull, reason: 'not decisive yet');
-
-      advance(sim, FloodShrinkingConfig.shrinkWindow);
-      expect(
-        sim.outcome,
-        isNotNull,
-        reason: 'the closing field must resolve it without another tap',
-      );
-      expect(started.scores[red], 1);
-    });
-  });
 
   group('the backstop', () {
     test('a dead-level round is resolved as a draw, not left running', () {
-      for (final game in [const FloodGame(), const FloodClosingGame()]) {
+      for (final game in [const FloodGame()]) {
         final sim = start(game, 2).sim;
         goLive(sim);
         advance(sim, FloodConfig.maxRoundLength + 1);
@@ -454,7 +384,7 @@ void main() {
     });
 
     test('no round outlives the cap', () {
-      for (final game in [const FloodGame(), const FloodClosingGame()]) {
+      for (final game in [const FloodGame()]) {
         final started = start(game, 2);
         final sim = started.sim;
         goLive(sim);
@@ -511,7 +441,7 @@ void main() {
         return true;
       }
 
-      for (final game in [const FloodGame(), const FloodClosingGame()]) {
+      for (final game in [const FloodGame()]) {
         final sim = start(game, 2).sim;
         goLive(sim);
 
@@ -547,7 +477,7 @@ void main() {
     });
 
     test('the boundary is always drawable, in [-1, +1]', () {
-      final started = start(const FloodClosingGame(), 2);
+      final started = start(const FloodGame(), 2);
       final sim = started.sim;
       goLive(sim);
 
@@ -594,7 +524,7 @@ void main() {
     });
 
     test('every phone is told which side it is on', () {
-      final sim = start(const FloodClosingGame(), 4).sim;
+      final sim = start(const FloodGame(), 4).sim;
       final teams = sim.sharedState[FloodState.teams] as Map;
       expect(teams, hasLength(4));
       expect(

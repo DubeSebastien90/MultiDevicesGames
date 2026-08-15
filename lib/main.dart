@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'sdk/app_controller.dart';
+import 'sdk/ui/intro_animation.dart';
 import 'sdk/ui/role_screen.dart';
 import 'sdk/ui/session_screen.dart';
 
@@ -39,6 +40,10 @@ Future<void> main() async {
   // Edge to edge with no system bars. A status or navigation bar would eat the
   // millimetres right at the screen edge — exactly where the seam is.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+  // Before the first frame, because the first thing a run does is play one.
+  // Failure here is not fatal — intros are skipped and the games still run.
+  await IntroAnimation.initRuntime();
 
   runApp(const MultiscreenApp());
 }

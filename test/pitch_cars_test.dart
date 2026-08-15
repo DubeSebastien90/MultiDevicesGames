@@ -6,6 +6,7 @@ import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_config.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_game.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_sim.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_view.dart';
+import 'package:multiscreen_slingshot/sdk/contract/entity.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/contract/view.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
@@ -667,6 +668,80 @@ void main() {
         }
       });
     }
+  });
+
+  group('the road that is drawn is the road that is driven on', () {
+    /// The one entity carrying the centerline.
+    Entity ribbonOf(PitchCarsSim sim) {
+      final ribbons = [
+        for (final e in sim.entities)
+          if (e.kind == PitchCarsConfig.ribbonKind) e,
+      ];
+      expect(ribbons, hasLength(1),
+          reason: 'the road is one stroked polyline, not a chain of pieces');
+      return ribbons.single;
+    }
+
+    for (final count in [2, 3, 4]) {
+      test('its points are the centerline collisions walk, at $count phones',
+          () {
+        final sim = start(count).sim;
+        final ribbon = ribbonOf(sim);
+        final flat =
+            (ribbon.props[PitchCarsConfig.ribbonPoints] as List).cast<double>();
+        final outline = sim.track.collisionOutline;
+
+        expect(flat, hasLength(outline.length * 2),
+            reason: 'every centerline point, and nothing else, gets drawn');
+
+        // Points ride local to the entity, so putting its position back is
+        // what recovers the world centerline. If these ever drift apart, the
+        // picture is describing a road the physics does not have — which is
+        // exactly the bug the boxes-per-segment version shipped.
+        for (var i = 0; i < outline.length; i++) {
+          expect(flat[i * 2] + ribbon.x, closeTo(outline[i].x, 1e-9));
+          expect(flat[i * 2 + 1] + ribbon.y, closeTo(outline[i].y, 1e-9));
+        }
+      });
+    }
+
+    test('it is stroked at the width isOnTrack allows', () {
+      final sim = start(3).sim;
+      final ribbon = ribbonOf(sim);
+
+      // A stroke straddles its path, so the full width here reaches exactly
+      // `widthWorld / 2` either side — the number `lateralDistance` is
+      // compared against. Half of it would draw a road half as wide as the
+      // one cars are allowed to sit on.
+      expect(
+        ribbon.props[PitchCarsConfig.ribbonWidth] as double,
+        closeTo(sim.track.widthWorld, 1e-9),
+      );
+    });
+
+    // The two ends and the bends are where rectangles disagreed with the
+    // physics, and both are places a car can legitimately be. A round cap
+    // reaches half a width past the last waypoint; nothing but the tarmac
+    // being drawn there makes that legible.
+    test('the ends of the drawn road are on the track', () {
+      final sim = start(3).sim;
+      final outline = sim.track.collisionOutline;
+      final half = sim.track.widthWorld / 2;
+
+      for (final end in [outline.first, outline.last]) {
+        expect(sim.track.isOnTrack(end.x, end.y), isTrue);
+        // Just inside the cap the stroke paints, and just outside it.
+        expect(sim.track.lateralDistance(end.x, end.y),
+            lessThan(half * 0.999));
+      }
+    });
+
+    test('no leftover box segments', () {
+      final sim = start(4).sim;
+      for (final e in sim.entities) {
+        expect(e.kind, isNot('trackSegment'));
+      }
+    });
   });
 
   group('PitchCarsGame — board planning', () {

@@ -39,7 +39,7 @@ class TouchEvent {
 /// field happens to be null — a draw is a decision a game makes, not an absence
 /// of information.
 enum OutcomeKind {
-  /// The table succeeded or failed together. Ball Bin caught its ten.
+  /// The table succeeded or failed together — a co-operative target met.
   shared,
 
   /// Some phones won and the rest did not.

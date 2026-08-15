@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/client/viewport_game.dart';
-import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
 import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
 import 'package:multiscreen_slingshot/sdk/net/protocol.dart';
@@ -33,7 +33,7 @@ void main() {
     WidgetTester tester, {
     required int phoneIndex,
   }) async {
-    const game = SlingshotGame();
+    const game = ArenaGame();
     final lobby = LobbyInfo([
       PhoneSpec.fromMetrics('p1', portraitPhone('p1')),
       PhoneSpec.fromMetrics('p2', portraitPhone('p2')),
@@ -145,22 +145,21 @@ void main() {
     // The client resolved the game id against its own catalog and built that
     // game's renderer — this is the half of the contract that runs on clients.
     expect(session.game, isNotNull);
-    expect(session.manifest!.id, 'slingshot');
+    expect(session.manifest!.id, 'arena');
     expect(session.view, isNotNull);
 
     final frame = session.frameAt(16);
     expect(frame, isNotNull);
     expect(frame!.entities, isNotEmpty);
-    expect(frame.entities.containsKey('bird'), isTrue);
 
     // Descriptors arrived with worldInit, so the view knows what each
-    // transform *is* and not merely where it is.
-    expect(frame.entities['bird']!.kind, 'bird');
-    expect(frame.ofKind('target'), isNotEmpty);
-
-    // The pouch is an ordinary entity on the same interpolated clock.
-    expect(frame.byId('pouch'), isNotNull);
-    expect(frame.sharedState['anchorX'], isNotNull);
+    // transform *is* and not merely where it is. Asserted against the kind the
+    // game actually spawned rather than a hardcoded name, so this keeps testing
+    // the contract rather than one game's vocabulary.
+    expect(frame.ofKind('fighter'), isNotEmpty);
+    final first = frame.entities.values.first;
+    expect(first.kind, isNotEmpty);
+    expect(frame.byId(first.id), isNotNull);
 
     expect(tester.takeException(), isNull);
     await _teardown(tester, session, loopback);
@@ -191,7 +190,7 @@ void main() {
 
   test('the catalog fingerprint is what the handshake compares', () {
     expect(GameCatalog.fingerprint, isNotEmpty);
-    expect(GameCatalog.byId('slingshot'), isNotNull);
+    expect(GameCatalog.byId('arena'), isNotNull);
   });
 }
 

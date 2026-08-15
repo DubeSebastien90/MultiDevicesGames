@@ -96,7 +96,7 @@ class Roster {
   ///
   /// Platform knowledge that no game can work out for itself: board order is
   /// not join order, and the host's seat is not reliably the first of either
-  /// once somebody reconnects. It is here because games *ask* — Slingshot fires
+  /// once somebody reconnects. It is here because games *ask*: one may want to
   /// the host's face at a tower — and the alternative is each of them guessing.
   final String? hostPhoneId;
 

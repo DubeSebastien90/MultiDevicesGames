@@ -2,10 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
-import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
+import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
-import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/contract/game.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
@@ -87,78 +86,92 @@ void main() {
       expect(host.canStart, isFalse);
     });
 
-    test('one phone unlocks the one-phone game and no other', () async {
+    test('one phone unlocks nothing at all', () async {
       final client = joiner(code: host.joinCode);
       await client.connect();
       await waitFor('calibrated',
           () => host.phones.length == 1 && host.phones.single.calibrated);
 
+      // Every game needs two phones or more, so a lone phone can play none of
+      // them. The list still shows all of them, greyed, each saying what it
+      // needs — a game silently missing tells you nothing.
       final byId = {for (final o in host.offers) o.manifest.id: o};
-      expect(byId['slingshot']!.fitsTable, isTrue);
-      expect(byId['slingshot']!.reason, isNull);
-
-      // The others stay in the list, greyed, saying what they need — a game
-      // silently missing tells you nothing.
-      expect(byId['ballbin']!.fitsTable, isFalse);
-      expect(byId['ballbin']!.reason, contains('2'));
-      expect(byId['hotpotato']!.fitsTable, isFalse);
+      expect(host.offers.every((o) => !o.fitsTable), isTrue);
+      expect(byId['arena']!.reason, contains('2'));
       expect(byId['hotpotato']!.reason, contains('3'));
+      expect(host.canStart, isFalse);
 
       client.dispose();
     });
 
     test('picking an ineligible game does nothing', () async {
       final client = joiner(code: host.joinCode);
+      final second = joiner(code: host.joinCode);
       await client.connect();
+      await second.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
       // Hot Potato needs three. The tap is refused rather than starting a
       // round the board could not be laid out for.
       host.startGame(const HotPotatoGame());
       expect(host.phase, HostPhase.lobby);
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       expect(host.phase, HostPhase.placing);
-      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.game!.manifest.id, 'arena');
 
       client.dispose();
+      second.dispose();
     });
 
     test('the two ways to play end in different places', () async {
       final client = joiner(code: host.joinCode);
+      final second = joiner(code: host.joinCode);
       await client.connect();
+      await second.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
       // Play: the never-ending playlist, so a round knows what follows it.
       host.startRound();
       expect(host.mode, RoundMode.playlist);
-      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.game!.manifest.id, 'flood');
 
       host.returnToLobby();
       await waitFor('back', () => client.phase == ClientPhase.lobby);
 
       // The games list: one round, and nothing queued behind it.
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       expect(host.mode, RoundMode.oneOff);
       expect(host.nextGame, isNull,
           reason: 'a one-off has nothing after it, by construction');
 
       client.dispose();
+      second.dispose();
     });
 
     test('the playlist ends at the lobby instead of starting over', () async {
       final client = joiner(code: host.joinCode);
+      final second = joiner(code: host.joinCode);
       await client.connect();
+      await second.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
-      // One phone plays exactly one game: Slingshot, first in the list.
+      // Cut the list to one game, so the end of the run arrives immediately
+      // and there is something to test about what follows it.
+      for (final game in GameCatalog.playlist) {
+        host.chooseGame(game, chosen: game.manifest.id == 'flood');
+      }
+
       host.startRound();
-      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.game!.manifest.id, 'flood');
 
-      // And nothing follows it. This used to wrap round to Slingshot again and
+      // And nothing follows it. This used to wrap round to the top again and
       // keep going for as long as anyone kept winning.
       expect(host.nextGame, isNull);
 
@@ -167,20 +180,24 @@ void main() {
       // A second Play starts the run from the top rather than from where the
       // last one stopped — which, after a full run, would be past the end.
       expect(host.canStart, isTrue);
-      expect(host.upcoming!.manifest.id, 'slingshot');
+      expect(host.upcoming!.manifest.id, 'flood');
       host.startRound();
-      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.game!.manifest.id, 'flood');
 
       client.dispose();
+      second.dispose();
     });
 
     test('returning to the lobby forgets the one-off mode', () async {
       final client = joiner(code: host.joinCode);
+      final second = joiner(code: host.joinCode);
       await client.connect();
+      await second.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       expect(host.mode, RoundMode.oneOff);
 
       // Otherwise a later Play would inherit the one-off ending and stop after
@@ -189,6 +206,7 @@ void main() {
       expect(host.mode, RoundMode.playlist);
 
       client.dispose();
+      second.dispose();
     });
 
     test('every game starts ticked', () async {
@@ -204,22 +222,31 @@ void main() {
 
     test('a ticked game the table cannot play is not in the run', () async {
       final ada = joiner(label: 'Ada');
+      final bob = joiner(label: 'Bob');
       await ada.connect();
+      await bob.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
-      // One phone, everything ticked. Only Slingshot can actually be played, so
-      // only Slingshot is in the run — the other eleven are ticked and greyed,
-      // which is two facts, not one.
+      // Everything ticked, at a table of two. Ticked is not the same as in the
+      // run: Hot Potato needs three, so it stays ticked *and* greyed *and* out
+      // of the walk — which is two facts, not one.
       expect(host.chosenGames, hasLength(GameCatalog.playlist.length));
-      expect(host.runningOrder.map((g) => g.manifest.id), ['slingshot']);
+      expect(host.runningOrder.map((g) => g.manifest.id),
+          isNot(contains('hotpotato')));
+      expect(host.runningOrder, isNotEmpty);
 
       // And it is the run that Play walks, in the run's own order.
+      for (final game in GameCatalog.playlist) {
+        host.chooseGame(game, chosen: game.manifest.id == 'flood');
+      }
       host.startRound();
-      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.game!.manifest.id, 'flood');
       expect(host.nextGame, isNull);
 
       ada.dispose();
+      bob.dispose();
     });
 
     test('unticking a game takes it out of the run', () async {
@@ -230,23 +257,23 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      expect(host.upcoming!.manifest.id, 'slingshot');
+      expect(host.upcoming!.manifest.id, 'flood');
 
-      host.chooseGame(const SlingshotGame(), chosen: false);
-      expect(host.upcoming!.manifest.id, 'ballbin',
+      host.chooseGame(const FloodGame(), chosen: false);
+      expect(host.upcoming!.manifest.id, 'arena',
           reason: 'Play started the game the host had just removed');
       expect(host.chosenGames.map((g) => g.manifest.id), isNot(contains(
-          'slingshot')));
+          'flood')));
 
       // And the row is still in the list, unticked rather than gone: a game you
       // cannot see is a game you cannot put back.
       final byId = {for (final o in host.offers) o.manifest.id: o};
-      expect(byId['slingshot']!.chosen, isFalse);
-      expect(byId['slingshot']!.fitsTable, isTrue,
+      expect(byId['flood']!.chosen, isFalse);
+      expect(byId['flood']!.fitsTable, isTrue,
           reason: 'unticking is not the same fact as not fitting');
 
-      host.chooseGame(const SlingshotGame(), chosen: true);
-      expect(host.upcoming!.manifest.id, 'slingshot');
+      host.chooseGame(const FloodGame(), chosen: true);
+      expect(host.upcoming!.manifest.id, 'flood');
 
       ada.dispose();
       bob.dispose();
@@ -260,17 +287,14 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      // Two phones can play Slingshot and Ball Bin. Take the first out and the
-      // run is one game long — which is also what makes it end.
-      host.chooseGame(const SlingshotGame(), chosen: false);
+      // Leave one game ticked and the run is one game long — which is also
+      // what makes it end.
       for (final game in GameCatalog.playlist) {
-        if (game.manifest.id != 'ballbin') {
-          host.chooseGame(game, chosen: false);
-        }
+        host.chooseGame(game, chosen: game.manifest.id == 'arena');
       }
 
       host.startRound();
-      expect(host.game!.manifest.id, 'ballbin');
+      expect(host.game!.manifest.id, 'arena');
       expect(host.nextGame, isNull, reason: 'nothing else was ticked');
       expect(host.runIsOver, isTrue);
 
@@ -280,10 +304,10 @@ void main() {
 
     test('a game greyed out at Play stays out when the table shrinks to fit it',
         () async {
-      // The bug, exactly as it was hit: tick Slingshot and Flood at a table of
-      // three. Flood wants two, so it is greyed and the lobby says it is not in
-      // the run. Then a phone dies mid-Slingshot — and Flood, which had just
-      // been promised as not-happening, played itself.
+      // The bug, exactly as it was hit: tick Arena and Flood at a table of
+      // three. Flood wants exactly two, so it is greyed and the lobby says it
+      // is not in the run. Then a phone dies mid-Arena — and Flood, which had
+      // just been promised as not-happening, played itself.
       //
       // A run is settled when Play is pressed. It may shrink after that; it may
       // not grow.
@@ -296,17 +320,17 @@ void main() {
 
       for (final game in GameCatalog.playlist) {
         final id = game.manifest.id;
-        host.chooseGame(game, chosen: id == 'slingshot' || id == 'flood');
+        host.chooseGame(game, chosen: id == 'arena' || id == 'flood');
       }
 
       // The premise: Flood cannot be played by three, so it is not in the run,
       // and the lobby is already saying as much.
       expect(const FloodGame().manifest.fits(3), isFalse);
       expect(const FloodGame().manifest.fits(2), isTrue);
-      expect(host.runningOrder.map((g) => g.manifest.id), ['slingshot']);
+      expect(host.runningOrder.map((g) => g.manifest.id), ['arena']);
 
       host.startRound();
-      expect(host.game!.manifest.id, 'slingshot');
+      expect(host.game!.manifest.id, 'arena');
 
       // A phone dies. Flood now fits the table — and must still not be played.
       phones[2].dispose();
@@ -325,9 +349,9 @@ void main() {
       // gets Flood back — the table really is the right size for it now.
       host.returnToLobby();
       expect(host.chosenGames.map((g) => g.manifest.id),
-          containsAll(<String>['slingshot', 'flood']));
+          containsAll(<String>['arena', 'flood']));
       expect(host.runningOrder.map((g) => g.manifest.id),
-          ['slingshot', 'flood'],
+          ['flood', 'arena'],
           reason: 'a fresh run is worked out from the table it starts with');
 
       phones[0].dispose();
@@ -336,9 +360,12 @@ void main() {
 
     test('an empty list blocks Play and says which problem it is', () async {
       final ada = joiner(label: 'Ada');
+      final bert = joiner(label: 'Bert');
       await ada.connect();
+      await bert.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
       expect(host.canStart, isTrue);
 
       host.chooseNoGames();
@@ -351,40 +378,51 @@ void main() {
 
       host.chooseAllGames();
       expect(host.canStart, isTrue);
-      expect(host.upcoming!.manifest.id, 'slingshot');
+      expect(host.upcoming!.manifest.id, 'flood');
 
       ada.dispose();
+      bert.dispose();
     });
 
     test('advice never sends you after a game that was unticked', () async {
       final ada = joiner(label: 'Ada');
+      final bea = joiner(label: 'Bea');
       await ada.connect();
+      await bea.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
-      // Only Slingshot fits one phone, so unticking it leaves nothing playable.
-      // What the lobby then says has to be about the games still in the run:
-      // telling this table to fetch a friend for Slingshot would be sending
-      // them after the one thing they just took out.
-      host.chooseGame(const SlingshotGame(), chosen: false);
+      // Leave only games that need more phones than are here, so nothing is
+      // playable. What the lobby then says has to be about the games still in
+      // the run: telling this table to fetch a friend for a game they have
+      // just unticked would be sending them after the one thing they removed.
+      for (final game in GameCatalog.playlist) {
+        host.chooseGame(game, chosen: !game.manifest.fits(2));
+      }
       expect(host.canStart, isFalse);
-      expect(host.blockedReason, contains('1 phone(s)'));
-      expect(host.blockedReason, isNot(contains('Slingshot')));
+      expect(host.blockedReason, contains('2 phone(s)'));
+      expect(host.blockedReason, isNot(contains('Flood')));
 
       ada.dispose();
+      bea.dispose();
     });
 
     test('a reason is only given when the game itself does not fit', () async {
       final client = joiner(code: host.joinCode);
+      final second = joiner(code: host.joinCode);
       await client.connect();
+      await second.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 1 && host.phones.single.calibrated);
+          () => host.phones.length == 2 &&
+              host.phones.every((p) => p.calibrated));
 
       for (final offer in host.offers) {
         // Either it fits and has no complaint, or it does not and says so.
-        expect(offer.reason == null, offer.manifest.fits(1));
+        expect(offer.reason == null, offer.manifest.fits(2));
       }
       client.dispose();
+      second.dispose();
     });
   });
 
@@ -505,22 +543,26 @@ void main() {
 
       final bob = joiner(label: 'Bob');
       await bob.connect();
-      await waitFor('both calibrated',
-          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+      final cara = joiner(label: 'Cara');
+      await cara.connect();
+      await waitFor('all calibrated',
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
       bob.dispose();
       await waitFor('bob gone',
-          () => host.phones.where((p) => p.connected).length == 1);
+          () => host.phones.where((p) => p.connected).length == 2);
 
-      // One phone left, so the one-phone game is what fits — and the host is
-      // not blocked by a seat nobody is sitting in.
+      // Two phones left, which is a table — and the host is not blocked by a
+      // seat nobody is sitting in.
       expect(host.canStart, isTrue,
           reason: 'an empty seat should not stop the table playing');
       host.startRound();
       expect(host.phase, HostPhase.placing);
-      expect(host.layout!.phones, hasLength(1));
+      expect(host.layout!.phones, hasLength(2),
+          reason: 'the empty seat asked for a slice of the board');
 
       ada.dispose();
+      cara.dispose();
     });
   });
 
@@ -637,7 +679,7 @@ void main() {
       bob.dispose();
       await waitFor('bob gone', () => !host.phones[2].connected);
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       expect(host.layout!.phones, hasLength(2));
 
@@ -670,17 +712,20 @@ void main() {
       final bobsPhone = DeviceIdentity.generate();
       final ada = joiner(label: 'Ada');
       await ada.connect();
+      final cara = joiner(label: 'Cara');
+      await cara.connect();
       final bob = joiner(deviceId: bobsPhone, label: 'Bob');
       await bob.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
       bob.dispose();
-      await waitFor('bob gone', () => !host.phones[1].connected);
+      await waitFor('bob gone', () => !host.phones[2].connected);
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       ada.confirmPlacement();
+      cara.confirmPlacement();
       await waitFor('playing', () => host.phase == HostPhase.playing);
 
       final again = joiner(deviceId: bobsPhone, label: 'Bob');
@@ -699,6 +744,7 @@ void main() {
       expect(again.phase, ClientPhase.waiting);
 
       ada.dispose();
+      cara.dispose();
       again.dispose();
     });
 
@@ -717,7 +763,7 @@ void main() {
 
       // Ball Bin rather than Arena: Arena asks to hear about players leaving and
       // carries on without them, and this test needs the round to actually end.
-      host.startGame(const BallBinGame());
+      host.startGame(const DodgeballGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       ada.confirmPlacement();
       bob.confirmPlacement();
@@ -744,17 +790,20 @@ void main() {
       final bobsPhone = DeviceIdentity.generate();
       final ada = joiner(label: 'Ada');
       await ada.connect();
+      final cara = joiner(label: 'Cara');
+      await cara.connect();
       final bob = joiner(deviceId: bobsPhone, label: 'Bob');
       await bob.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
       bob.dispose();
-      await waitFor('bob gone', () => !host.phones[1].connected);
+      await waitFor('bob gone', () => !host.phones[2].connected);
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       ada.confirmPlacement();
+      cara.confirmPlacement();
       await waitFor('playing', () => host.phase == HostPhase.playing);
 
       final again = joiner(deviceId: bobsPhone, label: 'Bob');
@@ -765,7 +814,7 @@ void main() {
       await waitFor('back with everyone else',
           () => again.phase == ClientPhase.lobby);
 
-      host.startGame(const BallBinGame());
+      host.startGame(const DodgeballGame());
       await waitFor('dealt in', () => again.phase == ClientPhase.placing);
       expect(again.layout, isNotNull);
 
@@ -799,7 +848,7 @@ void main() {
       // Carrying on is a claim only the game can make. Ball Bin has not made
       // it, so rather than let one player finish a round the other was dropped
       // out of, the platform calls it even.
-      final table = await aRoundOf(const BallBinGame());
+      final table = await aRoundOf(const DodgeballGame());
       table.bob.dispose();
       await waitFor('round called', () => host.phase == HostPhase.finished);
 
@@ -852,15 +901,17 @@ void main() {
       final bobsPhone = DeviceIdentity.generate();
       final ada = joiner(label: 'Ada');
       await ada.connect();
+      final cara = joiner(label: 'Cara');
+      await cara.connect();
       final bob = joiner(deviceId: bobsPhone, label: 'Bob');
       await bob.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
       bob.dispose();
-      await waitFor('bob gone', () => !host.phones[1].connected);
+      await waitFor('bob gone', () => !host.phones[2].connected);
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
       final again = joiner(deviceId: bobsPhone, label: 'Bob');
@@ -869,10 +920,12 @@ void main() {
           () => host.layout?.forPhone(host.phones[1].phoneId) != null);
 
       ada.confirmPlacement();
+      cara.confirmPlacement();
       again.confirmPlacement();
       await waitFor('the round started', () => host.phase == HostPhase.playing);
 
       ada.dispose();
+      cara.dispose();
       again.dispose();
     });
 
@@ -886,27 +939,30 @@ void main() {
       await ada.connect();
       final bob = joiner(label: 'Bob');
       await bob.connect();
+      final cara = joiner(label: 'Cara');
+      await cara.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
-      expect(host.layout!.phones, hasLength(2));
+      expect(host.layout!.phones, hasLength(3));
 
       ada.confirmPlacement();
       await waitFor('ada is in place', () => host.phones.first.confirmed);
 
       bob.dispose();
       await waitFor('the board was re-laid',
-          () => host.layout?.phones.length == 1);
+          () => host.layout?.phones.length == 2);
 
       expect(host.phase, HostPhase.placing,
           reason: 'the round started on a board with a hole in it');
       expect(host.phones.first.confirmed, isFalse,
           reason: 'Ada was still counted as ready for the old arrangement');
 
-      // And it starts once she says she is in place on the new one.
+      // And it starts once everyone left says they are in place on the new one.
       ada.confirmPlacement();
+      cara.confirmPlacement();
       await waitFor('playing', () => host.phase == HostPhase.playing);
 
       ada.dispose();
@@ -943,10 +999,10 @@ void main() {
     });
 
     test('and goes back to the menu when nothing further fits', () async {
-      // Only Slingshot suits a single phone and it is the first thing in the
-      // list, so there is nothing *after* Ball Bin for one player. The playlist
-      // runs once, so rather than double back the table returns to the lobby —
-      // and is told what it would need.
+      // One phone fits nothing at all, so when the table drops to one there is
+      // no game left to carry on with. The playlist runs once, so rather than
+      // double back the table returns to the lobby — and is told what it would
+      // need.
       final ada = joiner(label: 'Ada');
       await ada.connect();
       final bob = joiner(label: 'Bob');
@@ -954,7 +1010,7 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const BallBinGame());
+      host.startGame(const DodgeballGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
       bob.dispose();
@@ -991,16 +1047,28 @@ void main() {
           () => ada.phase == ClientPhase.scoreboard && ada.tableChange == null);
 
       host.returnToLobby();
-      expect(host.canStart, isTrue,
-          reason: 'a lobby that cannot start a game is not a way out — the '
-              'playlist was left past the end, so Slingshot, which one phone '
-              'can play, was behind us');
-      expect(host.upcoming!.manifest.id, 'slingshot');
+
+      // One phone fits nothing, so the lobby is honest about it rather than
+      // offering a Play that could not work.
+      expect(host.canStart, isFalse);
+      expect(host.blockedReason, isNotNull);
 
       await waitFor('ada came along too',
           () => ada.phase == ClientPhase.lobby && ada.tableChange == null);
 
+      // And the way out really does lead somewhere: the playlist was left past
+      // its end, so the moment the table is a table again Play works — from the
+      // top, rather than from where the last run stopped.
+      final dave = joiner(label: 'Dave');
+      await dave.connect();
+      await waitFor('a table again',
+          () => host.phones.where((p) => p.connected).length == 2 &&
+              host.phones.every((p) => p.calibrated));
+      expect(host.canStart, isTrue);
+      expect(host.upcoming, isNotNull);
+
       ada.dispose();
+      dave.dispose();
     });
 
     test('every phone is told, not only the host', () async {
@@ -1014,7 +1082,7 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
       phones[2].dispose();
@@ -1053,7 +1121,7 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
 
       phones[2].dispose();
@@ -1085,17 +1153,17 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       host.dismissTableChange();
 
       phones[2].dispose();
       await waitFor('re-laid', () => host.layout?.phones.length == 2);
 
-      expect(host.game!.manifest.id, 'slingshot', reason: 'the game changed');
+      expect(host.game!.manifest.id, 'arena', reason: 'the game changed');
       expect(host.tableChange, isNotNull,
           reason: 'the table was re-laid without a word');
-      expect(host.tableChange!.nextGame, 'Slingshot');
+      expect(host.tableChange!.nextGame, 'Arena');
       expect(host.tableChange!.who, contains('left'));
 
       phones[0].dispose();
@@ -1112,27 +1180,30 @@ void main() {
       await ada.connect();
       final bob = joiner(label: 'Bob');
       await bob.connect();
+      final cara = joiner(label: 'Cara');
+      await cara.connect();
       await waitFor('calibrated',
-          () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
+          () => host.phones.length == 3 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const SlingshotGame());
+      host.startGame(const ArenaGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
-      expect(host.layout!.phones, hasLength(2));
+      expect(host.layout!.phones, hasLength(3));
 
       ada.confirmPlacement();
       await waitFor('ada is in place', () => host.phones.first.confirmed);
 
       bob.dispose();
       await waitFor('the board was re-laid',
-          () => host.layout?.phones.length == 1);
+          () => host.layout?.phones.length == 2);
 
       expect(host.phase, HostPhase.placing,
           reason: 'the round started on a board with a hole in it');
       expect(host.phones.first.confirmed, isFalse,
           reason: 'Ada was still counted as ready for the old arrangement');
 
-      // And it starts once she says she is in place on the new one.
+      // And it starts once everyone left says they are in place on the new one.
       ada.confirmPlacement();
+      cara.confirmPlacement();
       await waitFor('playing', () => host.phase == HostPhase.playing);
 
       ada.dispose();
@@ -1296,7 +1367,7 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      host.startGame(const BallBinGame());
+      host.startGame(const DodgeballGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       bob.dispose();
       await waitFor('bob gone', () => !host.phones[1].connected);

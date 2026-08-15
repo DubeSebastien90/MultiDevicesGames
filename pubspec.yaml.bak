@@ -40,12 +40,9 @@ dependencies:
   mobile_scanner: ^7.4.0
   shared_preferences: ^2.3.0
   audioplayers: ^6.7.1
-  rive: ^0.14.11
 
 dev_dependencies:
   flutter_test:
-    sdk: flutter
-  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
@@ -73,7 +70,6 @@ flutter:
     # recursively, so eight subfolders would be eight lines here.
     - assets/sdk/players/
     - assets/sdk/sfx/
-    - assets/sdk/animations/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

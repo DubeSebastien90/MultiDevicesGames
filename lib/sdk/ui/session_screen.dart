@@ -5,6 +5,7 @@ import '../client/client_session.dart';
 import 'game_view.dart';
 import 'lobby_view.dart';
 import 'name_drop_notice.dart';
+import 'intro_animation.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
 import 'scoreboard_view.dart';
@@ -69,6 +70,15 @@ class SessionScreen extends StatelessWidget {
         return NameDropGate(child: LobbyView(controller: controller));
 
       case ClientPhase.placing:
+        // The curtain between the lobby and the first board of a run. It sits
+        // in front of the placement screen rather than instead of it: the
+        // layout has already arrived and the game's view is loading behind
+        // this, so the seconds it takes are the same dead seconds placement
+        // was always going to spend.
+        if (client.showIntro) {
+          return IntroAnimation(onDone: client.introFinished);
+        }
+
         // Keyed per round for the same reason the game below is: Flutter reuses
         // a State across rounds, and this screen's state is "have I confirmed
         // yet". Carried into the next round that answer is both wrong and

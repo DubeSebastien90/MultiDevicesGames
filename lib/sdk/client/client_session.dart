@@ -319,6 +319,21 @@ class ClientSession extends ChangeNotifier {
   /// Whose phone is running the session, as the lobby broadcast said.
   String? _hostPhoneId;
 
+  /// Whether this phone still owes the table the opening animation.
+  ///
+  /// True from the layout that starts a run until the curtain lifts. The board
+  /// arrives underneath it and the view loads behind it, so the seconds are
+  /// spent on something rather than waited out.
+  bool get showIntro => _showIntro;
+  bool _showIntro = false;
+
+  /// The curtain is up. Local — nobody else is waiting on this phone.
+  void introFinished() {
+    if (!_showIntro) return;
+    _showIntro = false;
+    notifyListeners();
+  }
+
   /// This phone's player: colour, character, art and voice.
   ///
   /// Null before the board is compiled — the roster is built from the slices,
@@ -609,6 +624,7 @@ class ClientSession extends ChangeNotifier {
             CoverageMap.fromJson(msg['coverage'] as Map<String, dynamic>);
         _board = _layout!.board;
         _instruction = msg['instruction'] as String?;
+        _showIntro = msg['intro'] == true;
         _slices = [
           for (final s in (msg['slices'] as List?) ?? const [])
             PhoneSlice.fromJson(s as Map<String, dynamic>),

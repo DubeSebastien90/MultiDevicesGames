@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
+import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
-import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/contract/game.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
@@ -53,12 +53,12 @@ void main() {
 
   testWidgets('every game is listed with its tick', (tester) async {
     await show(tester, [
-      offer(const SlingshotGame()),
-      offer(const BallBinGame(), chosen: false),
+      offer(const ArenaGame()),
+      offer(const DodgeballGame(), chosen: false),
     ]);
 
-    expect(find.text('Slingshot'), findsOneWidget);
-    expect(find.text('Ball Bin'), findsOneWidget);
+    expect(find.text('Arena'), findsOneWidget);
+    expect(find.text('Dodgeball'), findsOneWidget);
 
     final boxes = tester
         .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
@@ -73,7 +73,7 @@ void main() {
     // played, and a footer that counts it is telling the host they are about to
     // play a game they are not.
     await show(tester, [
-      offer(const SlingshotGame()),
+      offer(const ArenaGame()),
       offer(const HotPotatoGame(), fits: false),
     ]);
 
@@ -87,17 +87,17 @@ void main() {
   });
 
   testWidgets('tapping a row takes it out of the run', (tester) async {
-    await show(tester, [offer(const SlingshotGame())]);
+    await show(tester, [offer(const ArenaGame())]);
 
-    await tester.tap(find.text('Slingshot'));
-    expect(toggles, [('slingshot', false)]);
+    await tester.tap(find.text('Arena'));
+    expect(toggles, [('arena', false)]);
   });
 
   testWidgets('tapping an unticked row puts it back', (tester) async {
-    await show(tester, [offer(const SlingshotGame(), chosen: false)]);
+    await show(tester, [offer(const ArenaGame(), chosen: false)]);
 
-    await tester.tap(find.text('Slingshot'));
-    expect(toggles, [('slingshot', true)]);
+    await tester.tap(find.text('Arena'));
+    expect(toggles, [('arena', true)]);
   });
 
   testWidgets('a game the table cannot play is greyed but still tickable', (
@@ -108,11 +108,11 @@ void main() {
     // before anyone has calibrated, *every* row is the wrong size, and a
     // settings screen where nothing can be set is not a settings screen.
     await show(tester, [
-      offer(const SlingshotGame()),
+      offer(const ArenaGame()),
       offer(const HotPotatoGame(), fits: false),
     ]);
 
-    final playable = tester.widget<Text>(find.text('Slingshot'));
+    final playable = tester.widget<Text>(find.text('Arena'));
     final greyed = tester.widget<Text>(find.text('Hot Potato'));
     expect(greyed.style!.color, isNot(playable.style?.color),
         reason: 'a game this table cannot play looked like one it can');
@@ -134,7 +134,7 @@ void main() {
 
   testWidgets('both ends of the list are one tap each', (tester) async {
     // Twelve taps to play one game is not a choice anybody makes twice.
-    await show(tester, [offer(const SlingshotGame())]);
+    await show(tester, [offer(const ArenaGame())]);
 
     await tester.tap(find.text('None'));
     await tester.tap(find.text('All'));
@@ -171,7 +171,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.settings));
     await tester.pumpAndSettle();
     expect(find.text('Games in the run'), findsOneWidget);
-    expect(find.text('Slingshot'), findsOneWidget);
+    expect(find.text('Arena'), findsOneWidget);
     // Nobody has connected, so nothing fits and nothing is in the run — and it
     // says so rather than counting every tick as a game.
     expect(
@@ -182,10 +182,10 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Slingshot'));
+    await tester.tap(find.text('Arena'));
     await tester.pumpAndSettle();
     expect(host.chosenGames.map((g) => g.manifest.id),
-        isNot(contains('slingshot')));
+        isNot(contains('arena')));
     expect(
       find.text(
         '0 of $total in the run · ${total - 1} ticked but the wrong size for '
