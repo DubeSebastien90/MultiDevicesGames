@@ -1,4 +1,5 @@
 import '../games/arena/arena_game.dart';
+import '../games/cargo_run/cargo_run_game.dart';
 import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
@@ -26,6 +27,7 @@ class GameCatalog {
     HotPotatoGame(),
     FloodGame(),
     ArenaGame(),
+    CargoRunGame(),
     DodgeballGame(),
     GuacamoleGame(),
     PitchCarsGame(),
