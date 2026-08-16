@@ -28,6 +28,7 @@ class HungryHipposGame implements MultiscreenGame {
     // range with an even parity would also allow eight, which would put the
     // far phones out of anyone's reach.
     players: PlayerCount.anyOf([2, 4, 6]),
+    tier: GameTier.premium,
   );
 
   /// One rule per table size, because a dish needs a squarish board.

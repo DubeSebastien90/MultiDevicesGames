@@ -68,3 +68,7 @@ superpowers/
 # journals, not the project itself.
 *.aup3-shm
 *.aup3-wal
+
+# Real RevenueCat keys, passed in with --dart-define-from-file. The example
+# beside it is tracked and shows the shape; this one is filled in per machine.
+/env/revenuecat.json

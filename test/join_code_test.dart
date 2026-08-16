@@ -213,7 +213,20 @@ void main() {
       // The default has to be everything, or a host who never opens the list
       // gets a shorter evening than the one before this existed.
       expect(host.chosenGames, hasLength(GameCatalog.playlist.length));
-      expect(host.offers.every((o) => o.chosen), isTrue);
+
+      // "Chosen" in the offers list means "Play would actually run this",
+      // which a locked Premium game never is — this host has not unlocked
+      // Premium, so only the free games read as chosen even though every
+      // game is ticked underneath.
+      final free = GameCatalog.playlist
+          .where((g) => g.manifest.tier == GameTier.free)
+          .map((g) => g.manifest.id)
+          .toSet();
+      expect(
+        host.offers.where((o) => o.chosen).map((o) => o.manifest.id).toSet(),
+        free,
+      );
+      expect(host.offers.where((o) => o.isLocked), isNotEmpty);
 
       // Ticked is not the same as in the run, and with nobody connected the
       // difference is the whole list: twelve ticks, no games.
