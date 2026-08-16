@@ -336,7 +336,14 @@ void main() {
           final r = raw!.getUint8(i);
           final g = raw.getUint8(i + 1);
           final b = raw.getUint8(i + 2);
-          if (r + g + b > 300) lit++;
+          // Anything a player is drawn in, and nothing of the background.
+          //
+          // Not a round number picked by eye: the background is 0x0B1020,
+          // which sums to 59, and the darkest swatch in the palette sums to
+          // 293. Half way between the two is clear of both, and stays clear if
+          // the palette is re-tuned. The previous 300 sat *above* one of the
+          // swatches, so a re-coloured player simply stopped being counted.
+          if (r + g + b > 150) lit++;
         }
       }
       return lit;

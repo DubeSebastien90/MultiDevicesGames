@@ -3,11 +3,10 @@
 Several phones laid side by side on a table become **one shared game world**. One
 phone runs the authoritative simulation; every phone is a viewport onto it.
 
-The games are deliberately tiny — an Angry-Birds-style slingshot, and a bin that
-catches falling balls. The point is not the games. It is **the seam**: when the
-bird flies off one phone's screen, across the physical gap, and onto the next
-one, it has to look like one continuous motion across one continuous screen. The
-ball bin is the same trick turned ninety degrees.
+The games are deliberately tiny. The point is not the games. It is **the seam**:
+when something flies off one phone's screen, across the physical gap, and onto
+the next one, it has to look like one continuous motion across one continuous
+screen — and it has to work whichever way the phones are laid out.
 
 Built to [`multiscreen-game-v1-spec.md`](multiscreen-game-v1-spec.md).
 
@@ -51,15 +50,14 @@ Full write-up in [`sdk-architecture.md`](sdk-architecture.md).
 
 | Game | Layout it asks for | Board | Won by |
 | --- | --- | --- | --- |
-| **Slingshot** | `Layouts.row`, smallest first | wide and short | hitting the tower |
-| **Ball Bin** | `Layouts.column`, largest last | narrow and tall | catching 10 balls |
 | **Hot Potato** | `Layouts.circle`, join order | a ring | not holding it at the end |
 | **Flood** | `Layouts.grid`, 2 rows, upright | two rows facing each other | flooding the other team off the board |
-| **Flood: Closing In** | the same grid | the same | holding the lead as the field closes |
+| **Arena** | `Layouts.row`, sideways, casings touching — `Layouts.grid`, 2 rows, at even counts above three | one long strip, or two rows facing | eliminating everyone else |
+| **Dodgeball** | the same: `Layouts.row` sideways, or `Layouts.grid`, 2 rows, at even counts above three | one long strip, or two rows facing | being the last one not hit |
 | **Guac-a-Mole** | `Layouts.grid`, 2 rows, upright | a block | most points in a minute |
+| **Pitch Cars** | `Layouts.path` — a different shape every round | a winding track, phone to phone | first past the finish line |
 | **Reaction Time** | `Layouts.circle`, or a row for two | a ring | the fastest average over thirty seconds |
 | **Chronometer** | `Layouts.circle`, or a row for two | a ring | guessing when the shown number of seconds has elapsed |
-| **Random Path** | `Layouts.path` — a different shape every round | a winding path | nothing: five seconds and everybody wins |
 | **Hungry Hippos** | a row for two, `Layouts.grid` for four and six | a block around a dish | swallowing marbles — every player for themselves |
 | **Subway Skater** | `Layouts.row`, join order, centred | one long three-lane corridor | nothing: a minute of dodging, scored by how far up the line you spent it |
 
@@ -137,15 +135,14 @@ There is **exactly one exception**, and it is one line:
 import '../games/your_game/your_game.dart';   // ← add this
 
 static const playlist = <MultiscreenGame>[
-  SlingshotGame(),
-  BallBinGame(),
   HotPotatoGame(),
+  FloodGame(),
   YourGame(),                                 // ← and this
 ];
 ```
 
 That file exists *to be* the seam. Nothing else in `sdk/` names a game, and
-that is checked: `grep -rn "Slingshot" lib/sdk/` returns only `catalog.dart`.
+that is checked: `grep -rn "Game()" lib/sdk/` returns only `catalog.dart`.
 
 A game added to the list is in every run from the moment it ships — the host's
 game settings (the gear beside **Play**) store the games that have been *taken
@@ -341,8 +338,8 @@ class YourSim extends Forge2DGameSim {
 }
 ```
 
-`hide(id)` / `show(id)` park a body without destroying it — how Ball Bin
-recycles a pool of six balls.
+`hide(id)` / `show(id)` park a body without destroying it, which is how a game
+recycles a pool of projectiles rather than churning bodies.
 
 **Even with no physics, still use entities.** Physics is optional; the
 platform's interpolation is not. An entity's transform is smoothed onto the
@@ -360,8 +357,8 @@ GameView createView(ViewContext c) => ShapeView();
 // entity props: shape (circle|box), r / w+h, color, spin
 ```
 
-**Extend it** — keep the shapes and add your own layer, which is what Slingshot
-does for its rubber band:
+**Extend it** — keep the shapes and add your own layer, which is what a game
+does for anything the props cannot describe:
 
 ```dart
 class YourView extends ShapeView {
@@ -511,9 +508,8 @@ lib/games/your_game/
 Score belongs to the lobby, not to a game: one running total per phone that
 survives across rounds, so a table can play five minigames and still know who is
 winning. A game calls `scores.award(phoneId, points)`; the platform does the
-rest, and shows nothing at all until somebody actually scores — both shipped
-games are co-operative, and Ball Bin is the only one that credits catches to
-individual phones.
+rest, and shows nothing at all until somebody actually scores — a co-operative
+game may never put a number on the board at all.
 
 ### A float in `sharedState` is a 60 Hz stream
 
@@ -557,13 +553,10 @@ lib/
     ui/           role → lobby → placement → game → results
     catalog.dart  the playlist — the ONLY file in sdk/ that knows games/ exists
   games/
-    slingshot/     game + sim + view + config
-    ball_bin/      game + sim + view + config
     hot_potato/    game + sim + view + config
     arena/         game + sim + view + config
     flood_common/  board, config, and the sim/view both variants share
     flood/         Flood — growing tap power
-    flood_closing/ Flood: Closing In — shrinking field
     guacamole/     game + sim + view + config
   main.dart
 ```

@@ -41,7 +41,7 @@ enum PlayerArtSlot {
 ///
 /// **[draw] always paints something.** The sprite loader this replaced handed
 /// the not-ready case back to its caller, and every caller solved it the same
-/// way — Slingshot drew a circle — so this solves it once, on the inside. There
+/// way, by drawing a circle — so this solves it once, on the inside. There
 /// is no `false` to check and no fallback for a game to write: art that has not
 /// loaded, or does not exist, is the placeholder geometry, and the round
 /// neither waits nor looks broken. Artwork is not allowed to decide whether a

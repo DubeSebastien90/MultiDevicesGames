@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
+import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/ui/board_diagram.dart';
@@ -55,7 +55,7 @@ void main() {
       (tester) async {
     final lobby = LobbyInfo([phone('p1'), phone('p2'), phone('p3')]);
     final board =
-        const BoardCompiler().compile(const BallBinGame().planBoard(lobby), lobby);
+        const BoardCompiler().compile(const DodgeballGame().planBoard(lobby), lobby);
 
     // Two joins in a three-phone stack, so two colours.
     expect(board.links.map((l) => l.colorIndex).toSet(), {0, 1});

@@ -1,17 +1,13 @@
 import '../games/arena/arena_game.dart';
-import '../games/ball_bin/ball_bin_game.dart';
 import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
-import '../games/flood_closing/flood_closing_game.dart';
 import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
 import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/photo_finish/photo_finish_game.dart';
-import '../games/random_path/random_path_game.dart';
 import '../games/reaction/reaction_game.dart';
-import '../games/slingshot/slingshot_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
 import 'contract/game.dart';
 
@@ -19,7 +15,7 @@ import 'contract/game.dart';
 ///
 /// **This is the only file in `sdk/` that knows `games/` exists.** Keeping it to
 /// one import list is what makes the boundary real: everything else in the SDK
-/// works against [MultiscreenGame] and has never heard of a slingshot. It is
+/// works against [MultiscreenGame] and has never heard of any of them. It is
 /// also the line a package extraction would cut along, if this ever becomes a
 /// published SDK rather than a folder convention.
 ///
@@ -28,18 +24,14 @@ class GameCatalog {
   const GameCatalog._();
 
   static const playlist = <MultiscreenGame>[
-    SlingshotGame(),
-    BallBinGame(),
     HotPotatoGame(),
     FloodGame(),
-    FloodClosingGame(),
     ArenaGame(),
     DodgeballGame(),
     GuacamoleGame(),
     PitchCarsGame(),
     ReactionGame(),
     ChronometerGame(),
-    RandomPathGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
     PhotoFinishGame(),

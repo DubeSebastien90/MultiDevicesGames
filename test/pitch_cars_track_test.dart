@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_config.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_game.dart';
+import 'package:multiscreen_slingshot/games/pitch_cars/pitch_cars_scale.dart';
 import 'package:multiscreen_slingshot/games/pitch_cars/track.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
@@ -262,41 +263,55 @@ void main() {
       }
     });
 
+    /// How far the road strays from the straight line between the points where
+    /// it enters and leaves [phone] — the amplitude of that phone's wiggle.
+    ///
+    /// Measured as the furthest perpendicular distance of any of that phone's
+    /// bend control points from the entry-to-exit chord, rather than as one
+    /// named point's distance from the chord's midpoint. A small table now gets
+    /// **two** bends per phone, thrown opposite ways at the thirds of the
+    /// chord, so there is no longer a single middle point to look at and
+    /// neither of the two sits at the middle anyway.
+    ///
+    /// The spline interpolates every control point exactly, at flattened index
+    /// `k * splineSamplesPerSegment` for control index `k`. Phone `i` owns
+    /// control points `i * (bends + 1) + 1 ..= i * (bends + 1) + bends`,
+    /// between its entry at `i * (bends + 1)` and its exit at the next one.
+    double wiggleAmplitude(PitchTrack t, int phone, int phones) {
+      final bends = PitchCarsScale.forPlayers(phones).bendsPerPhone;
+      const s = PitchCarsConfig.splineSamplesPerSegment;
+      Waypoint at(int control) => t.waypoints[control * s];
+
+      final entry = at(phone * (bends + 1));
+      final exit = at((phone + 1) * (bends + 1));
+      final dx = exit.x - entry.x;
+      final dy = exit.y - entry.y;
+      final chord = math.sqrt(dx * dx + dy * dy);
+      if (chord < 1e-9) return 0;
+
+      var worst = 0.0;
+      for (var k = 1; k <= bends; k++) {
+        final p = at(phone * (bends + 1) + k);
+        final off =
+            ((p.x - entry.x) * dy - (p.y - entry.y) * dx).abs() / chord;
+        if (off > worst) worst = off;
+      }
+      return worst;
+    }
+
     test('the centerline wiggles inside a straight-through phone', () {
       final board = straightRow();
       final track = TrackGenerator.generate(
         slices: board.slices,
         random: _MaxRandom(),
       );
-      // Control points for a 3-phone chain: [start, offset0, seam0,
-      // offset1, seam1, offset2, end] — offset1 is the interior phone's.
-      // The spline interpolates every control point exactly, at flattened
-      // index `k * splineSamplesPerSegment` for control index `k`.
-      const s = PitchCarsConfig.splineSamplesPerSegment;
-      final offset = track.waypoints[3 * s];
-      final before = track.waypoints[2 * s];
-      final after = track.waypoints[4 * s];
-      final chordMidX = (before.x + after.x) / 2;
-      final chordMidY = (before.y + after.y) / 2;
-      final deviation = math.sqrt(
-        math.pow(offset.x - chordMidX, 2) + math.pow(offset.y - chordMidY, 2),
-      );
-      expect(deviation, greaterThan(0.1));
+      // The middle phone of three: entered and left on opposite edges, so the
+      // road has the whole screen to wander across.
+      expect(wiggleAmplitude(track, 1, 3), greaterThan(0.1));
     });
 
     test('the wiggle amplitude through a turn is smaller than through a '
         'straight run', () {
-      double deviation(PitchTrack t) {
-        // See the comment in the previous test for the index mapping.
-        const s = PitchCarsConfig.splineSamplesPerSegment;
-        final offset = t.waypoints[3 * s];
-        final before = t.waypoints[2 * s];
-        final after = t.waypoints[4 * s];
-        final midX = (before.x + after.x) / 2;
-        final midY = (before.y + after.y) / 2;
-        return math.sqrt(math.pow(offset.x - midX, 2) + math.pow(offset.y - midY, 2));
-      }
-
       final straightTrack = TrackGenerator.generate(
         slices: straightRow().slices,
         random: _MaxRandom(),
@@ -306,8 +321,28 @@ void main() {
         random: _MaxRandom(),
       );
 
-      expect(deviation(turnTrack), lessThan(deviation(straightTrack)));
+      expect(
+        wiggleAmplitude(turnTrack, 1, 3),
+        lessThan(wiggleAmplitude(straightTrack, 1, 3)),
+      );
     });
+
+    /// How many waypoints a chain of [phones] should sample to.
+    ///
+    /// Each phone contributes its bends plus the point where the road leaves
+    /// it, and the whole chain one more where it enters the first phone:
+    ///
+    ///     control points = phones × (bends + 1) + 1
+    ///
+    /// [PitchCarsScale] sets the bends, and a small table now gets two of them
+    /// — an S across each screen, to make a short board interesting. So this
+    /// is no longer the fixed `one wiggle per phone` the counts were written
+    /// against.
+    int sampledLength(int phones) {
+      final bends = PitchCarsScale.forPlayers(phones).bendsPerPhone;
+      final segments = phones * (bends + 1);
+      return segments * PitchCarsConfig.splineSamplesPerSegment + 1;
+    }
 
     test('the spline is sampled densely between each control point', () {
       final board = straightRow(3);
@@ -315,10 +350,7 @@ void main() {
         slices: board.slices,
         random: math.Random(1),
       );
-      // 3 phones -> 7 control points (start, offset, seam, offset, seam,
-      // offset, end) -> 6 segments between them.
-      final expected = 6 * PitchCarsConfig.splineSamplesPerSegment + 1;
-      expect(track.waypoints.length, expected);
+      expect(track.waypoints.length, sampledLength(3));
     });
 
     test('the minimum 2-phone chain samples cleanly', () {
@@ -327,8 +359,7 @@ void main() {
         slices: board.slices,
         random: math.Random(1),
       );
-      // 2 phones -> 5 control points -> 4 segments.
-      expect(track.waypoints.length, 4 * PitchCarsConfig.splineSamplesPerSegment + 1);
+      expect(track.waypoints.length, sampledLength(2));
       expect(track.closed, isFalse);
     });
 
@@ -400,7 +431,12 @@ void main() {
             board.slices.firstWhere((s) => s.phoneId == firstPhoneId).viewport;
         final lastViewport =
             board.slices.firstWhere((s) => s.phoneId == lastPhoneId).viewport;
-        const margin = PitchCarsConfig.trackWidthWorld / 2;
+        // Half of *this table's* road, not the tuning constant: the width is
+        // scaled by player count now, and a two-phone board's road is
+        // narrower than the base figure. Asserting the constant here demands
+        // a margin the generator was never asked to leave.
+        final margin =
+            PitchCarsScale.forPlayers(board.slices.length).trackWidthWorld / 2;
         const slack = 1e-6;
 
         void expectMargin(Waypoint w, WorldRect viewport) {

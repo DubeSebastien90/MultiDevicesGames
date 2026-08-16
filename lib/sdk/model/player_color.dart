@@ -50,84 +50,85 @@ class PlayerColor {
 
 /// The palette, and the rules for handing it out.
 ///
-/// Eight entries, ordered so that the first four — the ones a four-player game
-/// actually uses — are maximally far apart in hue. Growing the table adds
-/// colours that are still distinct but sit closer to their neighbours, which is
-/// the honest trade: eight-way distinguishable is about the limit of a phone
-/// screen seen across a table.
+/// Eight entries. The first four — what a four-player game actually uses — are
+/// the four that stay furthest apart, including in a photograph with the colour
+/// taken out. Growing the table adds colours that are still distinct but sit
+/// closer to their neighbours, which is the honest trade: eight-way
+/// distinguishable is about the limit of a phone screen seen across a table.
 ///
-/// Chosen to stay separable for the common colour-vision deficiencies: the
-/// red/green pair that deuteranopia collapses is split by a large lightness
-/// gap, and no two adjacent entries rely on hue alone.
+/// The swatches are fixed. The **order** is the part that is chosen: seats are
+/// filled from the top, so the earlier entries are the ones a small table
+/// actually uses, and they are sorted so that the fewer people are playing, the
+/// further apart their colours are.
 class PlayerPalette {
   const PlayerPalette._();
 
   static const green = PlayerColor(
     id: 'green',
     name: 'Green',
-    value: Color(0xFF4CAF50),
-    onColor: Color(0xFF0B2D0D),
+    value: Color(0xFF31B83C),
+    onColor: Color(0xFF0B280D),
   );
 
   static const orange = PlayerColor(
     id: 'orange',
     name: 'Orange',
-    value: Color(0xFFFF9800),
-    onColor: Color(0xFF3A2000),
+    value: Color(0xFFFE7013),
+    onColor: Color(0xFF381904),
   );
 
   static const blue = PlayerColor(
     id: 'blue',
     name: 'Blue',
-    value: Color(0xFF2196F3),
-    onColor: Color(0xFF04243D),
+    value: Color(0xFF14AEEF),
+    onColor: Color(0xFF042635),
   );
 
   static const pink = PlayerColor(
     id: 'pink',
     name: 'Pink',
-    value: Color(0xFFEC407A),
-    onColor: Color(0xFF3D0A1C),
+    value: Color(0xFFFB48C4),
+    onColor: Color(0xFF37102B),
   );
 
   static const yellow = PlayerColor(
     id: 'yellow',
     name: 'Yellow',
-    value: Color(0xFFFFEB3B),
-    onColor: Color(0xFF3B3600),
+    value: Color(0xFFF3C61A),
+    onColor: Color(0xFF352C06),
   );
 
   static const purple = PlayerColor(
     id: 'purple',
     name: 'Purple',
-    value: Color(0xFF9C27B0),
-    onColor: Color(0xFF2B0A32),
+    value: Color(0xFF8D13FF),
+    onColor: Color(0xFF1F0438),
   );
 
-  static const cyan = PlayerColor(
-    id: 'cyan',
-    name: 'Cyan',
-    value: Color(0xFF26C6DA),
-    onColor: Color(0xFF04302F),
+  static const brown = PlayerColor(
+    id: 'brown',
+    name: 'Brown',
+    value: Color(0xFFBA6C24),
+    onColor: Color(0xFF291808),
   );
 
   static const red = PlayerColor(
     id: 'red',
     name: 'Red',
-    value: Color(0xFFE53935),
-    onColor: Color(0xFF3D0A09),
+    value: Color(0xFFD23131),
+    onColor: Color(0xFF2E0B0B),
   );
 
   /// Every colour, in hand-out order.
   static const all = <PlayerColor>[
     green,
-    orange,
-    blue,
-    pink,
     yellow,
     purple,
-    cyan,
+    brown,
+    pink,
     red,
+    orange,
+    blue,
   ];
 
   /// The ceiling on players in one session, and therefore on phones.

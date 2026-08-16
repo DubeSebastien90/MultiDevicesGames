@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
-import 'package:multiscreen_slingshot/games/slingshot/slingshot_game.dart';
+import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
+import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/name_drop_optimizer.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 
@@ -20,6 +20,20 @@ PhoneSpec spec(String id, double widthMm) => PhoneSpec(
   activePxHeight: 2400,
 );
 
+/// Phones stacked in a column, lying sideways, casings touching.
+///
+/// A fixture rather than a game. This was the shape of the one game that laid
+/// phones out in a column, and when that game was retired the arrangement it
+/// exercised would have gone with it — leaving the optimizer's whole reason for
+/// existing untested. The layout is the platform's, not the game's, so the test
+/// asks for it directly.
+BoardPlan columnPlan(LobbyInfo lobby) => Layouts.column(
+  lobby.phones,
+  sort: PhoneSort.largestLast,
+  align: CrossAlign.center,
+  gap: Gaps.casingsTouching,
+);
+
 /// Which way each phone ends up facing, in plan order.
 List<double> turns(BoardPlan plan) => [
   for (final p in plan.placements) p.turnDeg,
@@ -27,7 +41,7 @@ List<double> turns(BoardPlan plan) => [
 
 void main() {
   group('phones stacked tops-together are turned apart', () {
-    // Ball Bin stacks phones lying sideways, so each top edge is a vertical
+    // A column stacks phones lying sideways, so each top edge is a vertical
     // segment down one side and neighbours' segments are collinear, end to end,
     // a few millimetres apart. Both phones facing the same way is the trigger.
     //
@@ -39,7 +53,7 @@ void main() {
     for (final wide in [66.0, 70.0, 74.0, 77.0, 80.0, 95.0]) {
       test('a 60 mm phone under a ${wide.round()} mm one', () {
         final lobby = LobbyInfo([spec('p1', 60), spec('p2', wide)]);
-        final raw = const BallBinGame().planBoard(lobby);
+        final raw = columnPlan(lobby);
 
         expect(turns(raw).toSet(), hasLength(1),
             reason: 'the layout is meant to hand both phones the same turn — '
@@ -64,7 +78,7 @@ void main() {
         spec('p2', 68),
         spec('p3', 77),
       ]);
-      final raw = const SlingshotGame().planBoard(lobby);
+      final raw = const ArenaGame().planBoard(lobby);
 
       expect(
         NameDropOptimizer.optimize(raw, lobby).placements.map((p) => p.turnDeg),
@@ -90,7 +104,7 @@ void main() {
 
     test('one phone has nothing to be near', () {
       final lobby = LobbyInfo([spec('p1', 68)]);
-      final raw = const SlingshotGame().planBoard(lobby);
+      final raw = const ArenaGame().planBoard(lobby);
 
       expect(NameDropOptimizer.optimize(raw, lobby), same(raw),
           reason: 'a plan that cannot be improved should come back untouched');
@@ -135,7 +149,7 @@ void main() {
       spec('p4', 79),
       spec('p5', 88),
     ]);
-    final raw = const BallBinGame().planBoard(lobby);
+    final raw = columnPlan(lobby);
     final fixed = NameDropOptimizer.optimize(raw, lobby);
 
     // Bottom to top, no two neighbours may face the same way — that is what

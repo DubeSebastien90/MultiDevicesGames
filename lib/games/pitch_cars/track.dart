@@ -4,6 +4,7 @@ import '../../sdk/contract/sim.dart' show PhoneSlice;
 import '../../sdk/layout/board_links.dart';
 import '../../sdk/model/world_rect.dart';
 import 'pitch_cars_config.dart';
+import 'pitch_cars_scale.dart';
 
 /// A point on a track's centerline, in world units.
 class Waypoint {
@@ -48,6 +49,22 @@ class PitchTrack {
   /// Total length of the centerline — the finish distance for a line, one
   /// full circuit for a loop.
   double get length => _cumulative.last;
+
+  /// The exact point sequence every question about the track is answered
+  /// against — the one [lateralDistance], [isOnTrack] and [progressAt] walk,
+  /// with a closed track's wrap-around segment already in it.
+  ///
+  /// Handed out so that whatever draws the road draws *this*, rather than
+  /// rebuilding `closed ? [...waypoints, first] : waypoints` beside it and
+  /// hoping the two stay in step. They did not: the renderer used to emit a
+  /// rectangle per segment, which is not the shape [isOnTrack] tests for, and
+  /// the picture disagreed with the physics at every bend and both ends.
+  ///
+  /// The shape that *is* [isOnTrack] is this polyline stroked to
+  /// [widthWorld] with round caps and round joins: the set of points within
+  /// half a width of a polyline is exactly its Minkowski sum with a disc of
+  /// that radius, which is what such a stroke draws.
+  late final List<Waypoint> collisionOutline = List.unmodifiable(_points);
 
   /// Perpendicular distance from (x, y) to the nearest point on the
   /// centerline.
@@ -143,12 +160,17 @@ class PitchTrack {
 class TrackGenerator {
   const TrackGenerator._();
 
+  /// [scale] decides both how wide the road is and how much it is allowed to
+  /// wander on its way across a phone. Defaulted from the table's own size,
+  /// because that is what it would be derived from anyway.
   static PitchTrack generate({
     required List<PhoneSlice> slices,
     required math.Random random,
-    double widthWorld = PitchCarsConfig.trackWidthWorld,
+    PitchCarsScale? scale,
   }) {
     assert(slices.length >= 2, 'a track needs at least two phones');
+    final tuning = scale ?? PitchCarsScale.forPlayers(slices.length);
+    final widthWorld = tuning.trackWidthWorld;
     final chain = _recoverChainOrder(slices);
     final markers = BoardLinks.of(chain);
     final seams = [
@@ -170,12 +192,12 @@ class TrackGenerator {
           : _classify(_nearestEdge(entry, viewport), _nearestEdge(exit, viewport));
 
       if (i == 0) control.add(entry);
-      control.add(_offsetWaypoint(
+      control.addAll(_bendPoints(
         entry: entry,
         exit: exit,
         viewport: viewport,
         straightThrough: relation == _Relation.opposite,
-        widthWorld: widthWorld,
+        tuning: tuning,
         random: random,
       ));
       control.add(exit);
@@ -308,41 +330,75 @@ class TrackGenerator {
   static _Relation _classify(_Edge a, _Edge b) =>
       _isOpposite(a, b) ? _Relation.opposite : _Relation.adjacent;
 
-  /// A point roughly at the center of the entry-exit chord, nudged
-  /// sideways by a random amount — the "worm" wiggle — clamped so the
-  /// offset, plus half the track's own width, never leaves [viewport].
-  static Waypoint _offsetWaypoint({
+  /// The points that make the road bend on its way across one phone, nudged
+  /// sideways off the straight line from where it enters to where it leaves.
+  ///
+  /// How many is [PitchCarsScale.bendsPerPhone], and it is the small table's
+  /// whole answer to being short:
+  ///
+  /// - **Two** puts them at the thirds and throws them opposite ways, so the
+  ///   road makes an S across the screen. Two corners per phone out of a board
+  ///   that only has a handful of phones to give.
+  /// - **One** is a single lazy bend — the original behaviour.
+  /// - **None** runs seam to seam. On a big table the phones are already
+  ///   supplying a corner at every join, and adding more only lengthens a race
+  ///   that was too long to begin with.
+  ///
+  /// Each point is capped independently against the room actually available
+  /// where it sits, so an S never pushes its second half off the screen just
+  /// because its first half fitted.
+  static List<Waypoint> _bendPoints({
     required Waypoint entry,
     required Waypoint exit,
     required WorldRect viewport,
     required bool straightThrough,
-    required double widthWorld,
+    required PitchCarsScale tuning,
     required math.Random random,
   }) {
-    final midX = (entry.x + exit.x) / 2;
-    final midY = (entry.y + exit.y) / 2;
+    final count = tuning.bendsPerPhone;
+    if (count <= 0) return const [];
+
     final dx = exit.x - entry.x;
     final dy = exit.y - entry.y;
     final len = math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) return Waypoint(midX, midY);
+    if (len < 1e-6) return [Waypoint((entry.x + exit.x) / 2, (entry.y + exit.y) / 2)];
     final nx = -dy / len;
     final ny = dx / len;
 
-    final baseAmplitude =
-        straightThrough ? PitchCarsConfig.lineAmplitudeWorld : PitchCarsConfig.cornerAmplitudeWorld;
-    final halfWidth = widthWorld / 2;
+    final baseAmplitude = straightThrough
+        ? tuning.lineAmplitudeWorld
+        : tuning.cornerAmplitudeWorld;
+    final halfWidth = tuning.trackWidthWorld / 2;
 
-    // Catmull-Rom (Task 3) can overshoot its control polygon near a turn,
-    // so the geometric room to wiggle in is halved before it becomes the
-    // cap — headroom for the curve, not just this one point.
+    // Catmull-Rom can overshoot its control polygon near a turn, so the
+    // geometric room to wiggle in is halved before it becomes the cap —
+    // headroom for the curve, not just for these points.
     const safetyFactor = 0.5;
-    final maxPos = _maxOffsetAlong(midX, midY, nx, ny, halfWidth, viewport) * safetyFactor;
-    final maxNeg = _maxOffsetAlong(midX, midY, -nx, -ny, halfWidth, viewport) * safetyFactor;
-    final clampedAmplitude = math.min(baseAmplitude, math.min(maxPos, maxNeg));
 
-    final sign = random.nextBool() ? 1.0 : -1.0;
-    final amount = clampedAmplitude * sign * (0.5 + random.nextDouble() * 0.5);
-    return Waypoint(midX + nx * amount, midY + ny * amount);
+    // One in the middle; two at the thirds, which leaves the chord's ends
+    // free for the spline to come out of the seam straight.
+    final along = count == 1 ? <double>[0.5] : <double>[1 / 3, 2 / 3];
+    final firstSign = random.nextBool() ? 1.0 : -1.0;
+
+    final bends = <Waypoint>[];
+    for (var k = 0; k < along.length; k++) {
+      final t = along[k];
+      final px = entry.x + dx * t;
+      final py = entry.y + dy * t;
+
+      final maxPos =
+          _maxOffsetAlong(px, py, nx, ny, halfWidth, viewport) * safetyFactor;
+      final maxNeg =
+          _maxOffsetAlong(px, py, -nx, -ny, halfWidth, viewport) * safetyFactor;
+      final capped = math.min(baseAmplitude, math.min(maxPos, maxNeg));
+
+      // Alternating, so two bends read as an S. Both the same way would only
+      // be one wide arc with an extra control point in it.
+      final sign = firstSign * (k.isEven ? 1.0 : -1.0);
+      final amount = capped * sign * (0.5 + random.nextDouble() * 0.5);
+      bends.add(Waypoint(px + nx * amount, py + ny * amount));
+    }
+    return bends;
   }
 
   /// How far a point can move from (x, y) along direction (dx, dy) before

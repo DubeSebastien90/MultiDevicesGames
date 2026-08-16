@@ -17,7 +17,7 @@ import 'phone_spec.dart';
 /// pairs within 15 mm. That measures the wrong thing, and it fails on exactly
 /// the tables this platform exists for — ones with mismatched phones.
 ///
-/// Stack phones in a column lying sideways, as Ball Bin does. Each phone's top
+/// Stack phones in a column lying sideways. Each phone's top
 /// edge is then a vertical segment down one side, and neighbours' segments are
 /// collinear, end to end, separated by
 ///

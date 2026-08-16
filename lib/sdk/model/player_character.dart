@@ -144,13 +144,13 @@ class Cast {
     sadAsset: 'assets/sdk/players/purple-sad.wav',
   );
 
-  static const cyan = PlayerCharacter(
-    colorId: 'cyan',
-    name: 'Jellyfish',
-    topdownAsset: 'assets/sdk/players/cyan-topdown.png',
-    faceAsset: 'assets/sdk/players/cyan-face.png',
-    happyAsset: 'assets/sdk/players/cyan-happy.wav',
-    sadAsset: 'assets/sdk/players/cyan-sad.wav',
+  static const brown = PlayerCharacter(
+    colorId: 'brown',
+    name: 'Bear',
+    topdownAsset: 'assets/sdk/players/brown-topdown.png',
+    faceAsset: 'assets/sdk/players/brown-face.png',
+    happyAsset: 'assets/sdk/players/brown-happy.wav',
+    sadAsset: 'assets/sdk/players/brown-sad.wav',
   );
 
   static const red = PlayerCharacter(
@@ -170,7 +170,7 @@ class Cast {
     pink,
     yellow,
     purple,
-    cyan,
+    brown,
     red,
   ];
 

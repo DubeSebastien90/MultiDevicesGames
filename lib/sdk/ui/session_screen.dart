@@ -5,6 +5,8 @@ import '../client/client_session.dart';
 import 'game_view.dart';
 import 'lobby_view.dart';
 import 'name_drop_notice.dart';
+import 'intro_animation.dart';
+import 'ball_wipe.dart';
 import 'placement_view.dart';
 import 'results_view.dart';
 import 'scoreboard_view.dart';
@@ -55,6 +57,24 @@ class SessionScreen extends StatelessWidget {
       );
     }
 
+    final screen = _screenFor(context, client);
+
+    // Above the phase, not inside one. The wipe covers the finished game and
+    // uncovers the score, and those are two different phases — so it has to
+    // outlive the switch below rather than live in a branch of it. The key
+    // keeps one wipe running across the swap instead of restarting it.
+    if (client.wipe != WipePhase.none) {
+      return BallWipe(
+        key: const ValueKey('round-wipe'),
+        onCovered: client.revealResult,
+        onDone: client.wipeFinished,
+        child: screen,
+      );
+    }
+    return screen;
+  }
+
+  Widget _screenFor(BuildContext context, ClientSession client) {
     switch (client.phase) {
       case ClientPhase.connecting:
         return const _Waiting(message: 'Connecting…');
@@ -69,6 +89,21 @@ class SessionScreen extends StatelessWidget {
         return NameDropGate(child: LobbyView(controller: controller));
 
       case ClientPhase.placing:
+        // The curtain between the lobby and the first board of a run. It sits
+        // in front of the placement screen rather than instead of it: the
+        // layout has already arrived and the game's view is loading behind
+        // this, so the seconds it takes are the same dead seconds placement
+        // was always going to spend.
+        if (client.showIntro) {
+          return IntroAnimation(
+            // This phone's own colour, so the table plays one character in six
+            // colours. Known already: the roster arrives with the layout that
+            // raised the curtain.
+            playerColor: client.me?.color.value,
+            onDone: client.introFinished,
+          );
+        }
+
         // Keyed per round for the same reason the game below is: Flutter reuses
         // a State across rounds, and this screen's state is "have I confirmed
         // yet". Carried into the next round that answer is both wrong and

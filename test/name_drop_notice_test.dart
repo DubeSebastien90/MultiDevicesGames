@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/games/ball_bin/ball_bin_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/sdk/client/interruption_watcher.dart';
 import 'package:multiscreen_slingshot/sdk/host/name_drop_detector.dart';
+import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/name_drop_optimizer.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/name_drop_status.dart';
@@ -56,7 +56,15 @@ void main() {
   group('which pairs are still dangerous', () {
     test('a stack the optimizer can fix leaves none', () {
       final lobby = LobbyInfo([spec('p1', 60), spec('p2', 74)]);
-      final plan = const BallBinGame().planBoard(lobby);
+      // Phones stacked in a column, casings touching — the arrangement this
+      // whole subsystem exists for. Asked of the platform directly rather than
+      // borrowed from whichever game happens to lay phones out that way.
+      final plan = Layouts.column(
+        lobby.phones,
+        sort: PhoneSort.largestLast,
+        align: CrossAlign.center,
+        gap: Gaps.casingsTouching,
+      );
       final fixed = NameDropOptimizer.optimize(plan, lobby);
 
       expect(NameDropOptimizer.dangerousPairs(plan, lobby), isNotEmpty,

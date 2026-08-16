@@ -2,9 +2,37 @@ part of 'pitch_cars_sim.dart';
 
 /// Off-track recovery, lap progress and finish/turn resolution.
 extension _Progress on PitchCarsSim {
-  void _resolveOffTrack() {
+  /// Cars that have left the road: let them fall, then put them back.
+  ///
+  /// This used to happen in one tick — a car crossed the edge and was already
+  /// home again before the frame was drawn, which looked like it had *stopped*
+  /// at the edge. Two things were wrong with that. Nobody watching could see
+  /// that a car had been knocked anywhere, and a car knocked off came back to
+  /// the exact spot it was standing on, so shoving a rival cost them nothing
+  /// and there was no reason to aim at anybody.
+  ///
+  /// Now the car sails on for [PitchCarsConfig.fallSeconds] — as a sensor, so
+  /// it passes through everything on its way out — and then reappears:
+  ///
+  /// - **Its own fault** (the player flicked themselves off): back where the
+  ///   turn started, as before. Losing the shot is the whole penalty.
+  /// - **Knocked off by somebody**: back on the centerline
+  ///   [PitchCarsScale.knockBackWorld] *behind* where it went over.
+  ///
+  /// Where it lands is settled the moment it leaves, not when it arrives. The
+  /// turn can end mid-fall, and `_preTurnPosition` means somebody else by then.
+  void _resolveOffTrack(double dt) {
     for (final id in _order) {
       if (_finished.contains(id)) continue;
+
+      final falling = _fallenFor[id];
+      if (falling != null) {
+        final elapsed = falling + dt;
+        _fallenFor[id] = elapsed;
+        if (elapsed >= PitchCarsConfig.fallSeconds) _land(id);
+        continue;
+      }
+
       final car = carOf(id);
       final pos = car.position;
       final sinceHit = _sinceLaunch - (_lastHitAt[id] ?? Duration.zero);
@@ -12,26 +40,72 @@ extension _Progress on PitchCarsSim {
           _lastHitBy[id] != null &&
           sinceHit >= Duration.zero &&
           sinceHit <= PitchCarsConfig.hitGraceWindow;
+
       if (track.isOnTrack(pos.x, pos.y)) {
         if (!hitRecently) _lastOnTrack[id] = pos.clone();
         continue;
       }
-      final selfFault = id == currentTurn && !hitRecently;
-      final reference = selfFault
-          ? _preTurnPosition
-          : (_lastOnTrack[id] ?? _preTurnPosition);
-      final resetTo = _clearOfOthers(id, reference.clone());
-      car
-        ..setTransform(resetTo, car.angle)
-        ..linearVelocity = Vector2.zero()
-        ..angularVelocity = 0;
-      _lastOnTrack[id] = resetTo.clone();
-      _lastHitBy[id] = null;
+
+      _beginFall(id, ownFault: id == currentTurn && !hitRecently);
     }
   }
 
+  void _beginFall(String id, {required bool ownFault}) {
+    final Vector2 target;
+    if (ownFault) {
+      target = _preTurnPosition.clone();
+    } else {
+      // Measured from the last progress recorded while the car was still *on*
+      // the road, not from projecting where it is now. Projection is only
+      // meaningful for a point near the centerline: a car that has flown into
+      // the void can sit nearest some entirely different stretch of a track
+      // that wanders back past itself, and taking the knockback from there
+      // sent it most of a lap backwards instead of a road's width.
+      final fell = _rawProgress[id] ?? 0.0;
+      final back = math.max(0.0, fell - scale.knockBackWorld);
+      final point = track.pointAtArclength(back);
+      target = Vector2(point.x, point.y);
+    }
+
+    _fallenFor[id] = 0;
+    _fallTarget[id] = target;
+    // Through everything on the way down. A car tumbling into the void should
+    // not clip a rival still on the road, and should not be stopped by the
+    // kerb it has already cleared.
+    _fixtureOf[id]?.setSensor(true);
+  }
+
+  void _land(String id) {
+    final car = carOf(id);
+    final resetTo = _clearOfOthers(
+      id,
+      (_fallTarget[id] ?? _preTurnPosition).clone(),
+    );
+
+    car
+      ..setTransform(resetTo, car.angle)
+      ..linearVelocity = Vector2.zero()
+      ..angularVelocity = 0;
+
+    // Progress is tracked as a running total of small deltas, and this is a
+    // jump rather than a delta — so both halves are restated together. Without
+    // it the road given up would be handed straight back on the next step.
+    final landedArc = track.progressAt(resetTo.x, resetTo.y);
+    final lost = (_rawProgress[id] ?? landedArc) - landedArc;
+    if (lost > 0) {
+      _progress[id] = math.max(0.0, (_progress[id] ?? 0) - lost);
+    }
+    _rawProgress[id] = landedArc;
+
+    _lastOnTrack[id] = resetTo.clone();
+    _lastHitBy[id] = null;
+    _fallenFor.remove(id);
+    _fallTarget.remove(id);
+    _fixtureOf[id]?.setSensor(false);
+  }
+
   Vector2 _clearOfOthers(String id, Vector2 target) {
-    const minGap = PitchCarsConfig.carRadius * 2 + 1e-4;
+    final minGap = scale.minCarGap;
     for (final other in _order) {
       if (other == id || _finished.contains(other)) continue;
       final otherPos = carOf(other).position;
@@ -55,6 +129,10 @@ extension _Progress on PitchCarsSim {
   void _updateProgress() {
     for (final id in _order) {
       if (_finished.contains(id)) continue;
+      // A car in the void is not getting anywhere. Left running, its projection
+      // onto the centerline would keep drifting while it tumbled — and could
+      // sail past the finish threshold, winning the race from off the board.
+      if (_fallenFor.containsKey(id)) continue;
       final pos = carOf(id).position;
       final raw = track.progressAt(pos.x, pos.y);
       final prevRaw = _rawProgress[id] ?? 0.0;

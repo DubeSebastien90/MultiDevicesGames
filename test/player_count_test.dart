@@ -109,9 +109,16 @@ void main() {
       }
     });
 
-    test('one phone can still play something', () {
-      expect(GameCatalog.anyPlayable(1), isTrue);
-      expect(GameCatalog.playableFrom(0, 1)!.manifest.id, 'slingshot');
+    test('one phone plays nothing, and the walk says so plainly', () {
+      // Every game needs two. A lone phone is not a table, and the walk
+      // returns null rather than something it cannot lay out.
+      expect(GameCatalog.anyPlayable(1), isFalse);
+      expect(GameCatalog.playableFrom(0, 1), isNull);
+    });
+
+    test('two phones are the smallest real table', () {
+      expect(GameCatalog.anyPlayable(2), isTrue);
+      expect(GameCatalog.playableFrom(0, 2), isNotNull);
     });
 
     test('three phones unlock Hot Potato', () {
@@ -121,16 +128,17 @@ void main() {
 
     test('the summary leads with the game closest to playable', () {
       final summary = GameCatalog.requirementSummary();
-      final slingshotAt = summary.indexOf('Slingshot');
+      final nearestAt = summary.indexOf('Flood');
       final potatoAt = summary.indexOf('Hot Potato');
-      expect(slingshotAt, greaterThanOrEqualTo(0));
-      expect(potatoAt, greaterThan(slingshotAt),
+      expect(nearestAt, greaterThanOrEqualTo(0));
+      expect(potatoAt, greaterThan(nearestAt),
           reason: 'a short-handed table should hear the nearest option first');
     });
 
     test('playableTableSizes reports every size that plays something', () {
       final sizes = GameCatalog.playableTableSizes();
-      expect(sizes, contains(1));
+      expect(sizes, isNot(contains(1)), reason: 'one phone plays nothing');
+      expect(sizes, contains(2));
       expect(sizes, contains(3));
       for (final n in sizes) {
         expect(GameCatalog.anyPlayable(n), isTrue);

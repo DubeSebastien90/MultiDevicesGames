@@ -27,12 +27,18 @@ class ResultsView extends StatelessWidget {
     // message everyone else does. Reading its own `outcome` object here instead
     // would be a second source for one fact, and every time this codebase has
     // had two of those they have eventually disagreed.
-    final verdict = result?.verdictFor(client.phoneId) ??
+    final verdict =
+        result?.verdictFor(client.phoneId) ??
         const RoundVerdict(
           headline: 'Round over',
           line: null,
           celebrate: false,
         );
+    // This phone's own player. Null only before anybody has been seated, which
+    // a finished round cannot be — but a joiner that arrived late has no seat,
+    // and gets the screen without a portrait rather than no screen.
+    final me = client.me;
+
     final summary = result?.summary;
     final title = result?.title;
 
@@ -42,14 +48,16 @@ class ResultsView extends StatelessWidget {
     //
     // Only ever used to decide *which* button the host gets. What comes next is
     // no longer announced: this screen is for what just happened.
-    final hasNext =
-        host != null ? host.nextGame != null : (result?.hasNext ?? false);
+    final hasNext = host != null
+        ? host.nextGame != null
+        : (result?.hasNext ?? false);
 
     // Three endings, not two. A game picked off the list ends back at the list;
     // a playlist that has run out of games ends at the standings for the whole
     // run, which is the thing everyone stayed for.
-    final runIsOver =
-        host != null ? host.runIsOver : (result?.runIsOver ?? false);
+    final runIsOver = host != null
+        ? host.runIsOver
+        : (result?.runIsOver ?? false);
 
     return Scaffold(
       body: SafeArea(
@@ -62,6 +70,15 @@ class ResultsView extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Whose result this is, before what the result was. The
+                  // portrait is the same character this phone has been all
+                  // round, so the screen is recognisably *yours* at a glance
+                  // across a table — which is the same job the colour does
+                  // everywhere else.
+                  if (me != null) ...[
+                    Center(child: me.face.widget(size: 72)),
+                    const SizedBox(height: 12),
+                  ],
                   Icon(
                     verdict.celebrate ? Icons.emoji_events : Icons.replay,
                     size: 44,
@@ -122,14 +139,14 @@ class ResultsView extends StatelessWidget {
                       onPressed: hasNext
                           ? host.advanceToNextGame
                           : runIsOver
-                              ? host.showScoreboard
-                              : host.returnToLobby,
+                          ? host.showScoreboard
+                          : host.returnToLobby,
                       icon: Icon(
                         hasNext
                             ? Icons.arrow_forward
                             : runIsOver
-                                ? Icons.emoji_events
-                                : Icons.list,
+                            ? Icons.emoji_events
+                            : Icons.list,
                       ),
                       label: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -137,8 +154,8 @@ class ResultsView extends StatelessWidget {
                           hasNext
                               ? 'Next game'
                               : runIsOver
-                                  ? 'Score board'
-                                  : 'Back to the games',
+                              ? 'Score board'
+                              : 'Back to the games',
                         ),
                       ),
                     )
@@ -147,8 +164,8 @@ class ResultsView extends StatelessWidget {
                       hasNext
                           ? 'Waiting for the host to start the next one…'
                           : runIsOver
-                              ? 'Waiting for the host to show the score board…'
-                              : 'Waiting for the host to pick the next game…',
+                          ? 'Waiting for the host to show the score board…'
+                          : 'Waiting for the host to pick the next game…',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

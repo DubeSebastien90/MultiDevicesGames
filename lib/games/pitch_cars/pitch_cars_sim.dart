@@ -7,7 +7,9 @@ import '../../sdk/contract/sim.dart';
 import '../../sdk/model/player_color.dart';
 import '../../sdk/physics/forge2d_game_sim.dart';
 import '../../sdk/render/shape_view.dart';
+import 'corner_walls.dart';
 import 'pitch_cars_config.dart';
+import 'pitch_cars_scale.dart';
 import 'track.dart';
 
 part 'sim_track.dart';
@@ -24,8 +26,17 @@ part 'sim_contact.dart';
 class PitchCarsSim extends Forge2DGameSim {
   PitchCarsSim(super.context, {math.Random? random})
     : _random = random ?? math.Random() {
-    track = TrackGenerator.generate(slices: context.slices, random: _random);
+    // Everything the table's size changes, settled once and read from here on.
+    // Derived from the slices rather than the players because it is the *road*
+    // this sets the shape of, and the road is built from the board.
+    scale = PitchCarsScale.forPlayers(context.slices.length);
+    track = TrackGenerator.generate(
+      slices: context.slices,
+      random: _random,
+      scale: scale,
+    );
     _buildTrackEntities();
+    _buildCornerWalls();
     _buildFinishLineEntities();
     _order = context.phoneIds;
     _colorOf = {
@@ -44,6 +55,10 @@ class PitchCarsSim extends Forge2DGameSim {
   }
 
   final math.Random _random;
+
+  /// How big this table's race is drawn and how far its flicks carry.
+  late final PitchCarsScale scale;
+
   late final PitchTrack track;
   late final List<String> _order;
   late final Map<String, PlayerColor> _colorOf;
@@ -56,6 +71,14 @@ class PitchCarsSim extends Forge2DGameSim {
   final _lastHitBy = <String, String?>{};
   final _lastHitAt = <String, Duration>{};
   final _lastOnTrack = <String, Vector2>{};
+
+  /// Cars currently over the edge, and how long they have been falling.
+  /// Membership is the state: absent means on the road.
+  final _fallenFor = <String, double>{};
+
+  /// Where each falling car will reappear, decided when it went over rather
+  /// than when it lands — by then the turn may have moved on.
+  final _fallTarget = <String, Vector2>{};
   final _rawProgress = <String, double>{};
   final _progress = <String, double>{};
   late Vector2 _preTurnPosition;
@@ -88,7 +111,7 @@ class PitchCarsSim extends Forge2DGameSim {
     switch (touch.phase) {
       case TouchPhase.down:
         if (_draggingPhoneId != null) return;
-        final reach = PitchCarsConfig.carRadius + PitchCarsConfig.grabSlack;
+        final reach = scale.carRadius + scale.grabSlack;
         if (p.distanceTo(car.position) > reach) return;
         _draggingPhoneId = touch.phoneId;
         _pull = car.position.clone();
@@ -114,7 +137,7 @@ class PitchCarsSim extends Forge2DGameSim {
       return;
     }
 
-    _resolveOffTrack();
+    _resolveOffTrack(dt);
     _updateProgress();
 
     if (_moving) {
@@ -123,10 +146,14 @@ class PitchCarsSim extends Forge2DGameSim {
       var maxSpeed = 0.0;
       for (final id in _order) {
         if (_finished.contains(id)) continue;
+        // A car tumbling into the void must not hold the turn open. It is off
+        // the board and on a timer of its own; waiting for it to slow down
+        // would stall the table for as long as it took to coast to a stop.
+        if (_fallenFor.containsKey(id)) continue;
         final speed = carOf(id).linearVelocity.length;
         if (speed > maxSpeed) maxSpeed = speed;
       }
-      _atRest = maxSpeed < PitchCarsConfig.restSpeed
+      _atRest = maxSpeed < scale.restSpeed
           ? _atRest + elapsed
           : Duration.zero;
 
@@ -136,7 +163,7 @@ class PitchCarsSim extends Forge2DGameSim {
       final currentPos = carOf(currentTurn).position;
       if (_stallAnchor == null ||
           currentPos.distanceTo(_stallAnchor!) >
-              PitchCarsConfig.stallDisplacement) {
+              scale.stallDisplacement) {
         _stallAnchor = currentPos.clone();
         _sinceStallAnchor = Duration.zero;
       } else {
@@ -186,13 +213,20 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   Iterable<Entity> get entities sync* {
-    // Track segments first so cars (from super.entities) paint on top.
+    // The finish checkerboard first, so cars (from super.entities) paint on
+    // top of it. The road itself is in here too but draws nowhere near this
+    // order — it carries no `ShapeProps.shape`, so `ShapeView` passes over it
+    // and `PitchCarsView` paints it in the background, under everything.
     yield* _trackEntities;
     yield* super.entities;
   }
 
   @override
   Map<String, Object?> get sharedState => {
+    // The draw a full-strength shot takes, so the aim arrow reads power
+    // against this table's own scale rather than a constant that is only
+    // right for one size of board.
+    'maxPull': scale.maxPull,
     'currentTurn': _roundOver ? null : currentTurn,
     'winner': _finishOrder.isEmpty ? null : _finishOrder.first,
     for (final id in _order) 'finished_$id': _finished.contains(id),
@@ -230,6 +264,11 @@ class PitchCarsSim extends Forge2DGameSim {
     _sinceStallAnchor = Duration.zero;
     _lastHitBy.clear();
     _lastHitAt.clear();
+    // Anything mid-fall is landed by the reset itself. Left behind, its id
+    // would still read as falling on the new grid — skipped by the progress
+    // update and by the rest check, and never put back.
+    _fallenFor.clear();
+    _fallTarget.clear();
 
     for (var i = 0; i < _order.length; i++) {
       final pos = _startPositionFor(i);

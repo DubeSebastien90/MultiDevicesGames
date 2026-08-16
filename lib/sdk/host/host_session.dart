@@ -160,6 +160,14 @@ class HostSession extends ChangeNotifier {
   Timer? _loop;
   String? _warning;
 
+  /// Whether the next board laid out is the one at the start of a run.
+  ///
+  /// Set by the **Play** button and spent on the next layout broadcast, so the
+  /// curtain falls once — between the lobby and the first game — and not again
+  /// between the first game and the second. A re-calibrate re-lays the same
+  /// board and does not raise it again, because the flag is already spent.
+  bool _introPending = false;
+
   /// The round's audio queue. Made with the sim and thrown away with it, which
   /// is what makes handles round-scoped without anything having to expire them.
   RoundAudio? _audio;
@@ -825,7 +833,7 @@ class HostSession extends ChangeNotifier {
   ///
   /// Whether it can is asked of the *manifest*, not left to the layout to
   /// refuse, because most layouts will not: `Layouts.column` will happily
-  /// arrange a single phone, so Ball Bin would have quietly gone ahead as a
+  /// arrange a single phone, so a two-phone game would have quietly gone ahead as a
   /// one-player game after its second player walked off.
   void _layOutAgain({required String because}) {
     final game = _game;
@@ -1075,6 +1083,9 @@ class HostSession extends ChangeNotifier {
     // until there is a run to answer against instead.
     _runGames = {for (final game in runningOrder) game.manifest.id};
 
+    // The one moment the whole table is asked to look at the same thing.
+    _introPending = true;
+
     // Always from the top: a run is the whole list, not a resumption of one
     // somebody abandoned.
     _startGame(
@@ -1147,9 +1158,13 @@ class HostSession extends ChangeNotifier {
         // once by the compiler; every phone draws the same answer.
         'links': [for (final l in solved.links) l.toJson()],
         'instruction': solved.instruction,
+        // Every phone plays the curtain, so every phone has to be told in the
+        // same message that carries the board it hides.
+        if (_introPending) 'intro': true,
         ..._gameFields,
       });
     }
+    _introPending = false;
     _broadcastLobby();
     _updateBeacon();
     notifyListeners();
@@ -1607,7 +1622,7 @@ class HostSession extends ChangeNotifier {
       'phase': _phase.name,
       // Which seat is running the session. Nothing can derive it: board order
       // is not join order, and a host that reconnects does not take the first
-      // seat back. Games ask — Slingshot fires the host's face at a tower.
+      // seat back. Games ask, because a game may want to show whose table
       if (hostPhoneId != null) 'host': hostPhoneId,
       // The table changing shape is news for every phone, not only the one
       // running the session — everybody is about to be asked to move.

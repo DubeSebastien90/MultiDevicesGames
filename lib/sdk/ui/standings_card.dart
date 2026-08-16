@@ -120,9 +120,15 @@ class StandingsCard extends StatelessWidget {
                     ),
                     if (showDeltas && entry.roundDelta != 0) ...[
                       Text(
-                        '+${entry.roundDelta}',
+                        // A negative number brings its own sign. Prefixing
+                        // every delta made a loss read '+-10'.
+                        entry.roundDelta > 0
+                            ? '+${entry.roundDelta}'
+                            : '${entry.roundDelta}',
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.primary,
+                          color: entry.roundDelta > 0
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.error,
                         ),
                       ),
                       const SizedBox(width: 10),

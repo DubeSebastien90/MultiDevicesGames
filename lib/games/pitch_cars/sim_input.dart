@@ -4,10 +4,10 @@ part of 'pitch_cars_sim.dart';
 extension _Input on PitchCarsSim {
   Vector2 _clampPull(Vector2 p) {
     final delta = p - _preTurnPosition;
-    if (delta.length > PitchCarsConfig.maxPull) {
+    if (delta.length > scale.maxPull) {
       delta
         ..normalize()
-        ..scale(PitchCarsConfig.maxPull);
+        ..scale(scale.maxPull);
     }
     return _preTurnPosition + delta;
   }
@@ -18,9 +18,12 @@ extension _Input on PitchCarsSim {
     _pull = null;
     final car = carOf(currentTurn);
 
-    if (pullBack.length < 0.15) {
+    // A tap, not a shot. Measured against the pull this table allows rather
+    // than a fixed distance, so the dead zone stays the same *gesture* whether
+    // the road is narrow or wide.
+    if (pullBack.length < scale.maxPull * 0.05) {
       car.setTransform(_preTurnPosition.clone(), car.angle);
-      return; // a tap, not a shot — the turn is not consumed
+      return; // the turn is not consumed
     }
 
     car
@@ -28,7 +31,7 @@ extension _Input on PitchCarsSim {
       ..linearVelocity = Vector2.zero()
       ..angularVelocity = 0
       ..setAwake(true)
-      ..applyLinearImpulse(pullBack * PitchCarsConfig.impulsePerPull);
+      ..applyLinearImpulse(pullBack * scale.impulsePerPull);
 
     _moving = true;
     _sinceLaunch = Duration.zero;
