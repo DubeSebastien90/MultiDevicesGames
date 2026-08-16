@@ -8,6 +8,7 @@ import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
 import '../games/hungry_hippos/hungry_hippos_game.dart';
+import '../games/photo_finish/photo_finish_game.dart';
 import '../games/random_path/random_path_game.dart';
 import '../games/reaction/reaction_game.dart';
 import '../games/slingshot/slingshot_game.dart';
@@ -41,6 +42,7 @@ class GameCatalog {
     RandomPathGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
+    PhotoFinishGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds
