@@ -82,7 +82,7 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       // Also what Android shows in the recent-apps switcher.
-      title: 'MultiDevicesGame',
+      title: 'BubbleGames',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

@@ -1,11 +1,11 @@
 {
-    "name": "multiscreen_slingshot",
-    "short_name": "multiscreen_slingshot",
+    "name": "BubbleGames",
+    "short_name": "BubbleGames",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "BubbleGames - multi-device party games.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

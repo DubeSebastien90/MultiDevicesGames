@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.multidevicesgames" "\0"
-            VALUE "FileDescription", "multiscreen_slingshot" "\0"
+            VALUE "FileDescription", "BubbleGames" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "multiscreen_slingshot" "\0"
+            VALUE "InternalName", "BubbleGames" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.multidevicesgames. All rights reserved." "\0"
-            VALUE "OriginalFilename", "multiscreen_slingshot.exe" "\0"
-            VALUE "ProductName", "multiscreen_slingshot" "\0"
+            VALUE "OriginalFilename", "BubbleGames.exe" "\0"
+            VALUE "ProductName", "BubbleGames" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

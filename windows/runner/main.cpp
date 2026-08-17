@@ -34,7 +34,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // board comes out turned a quarter turn from what the screen actually shows.
   // Roughly 9:16 keeps a test window honest.
   Win32Window::Size size(460, 820);
-  if (!window.Create(L"MultiDevicesGame", origin, size)) {
+  if (!window.Create(L"BubbleGames", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
