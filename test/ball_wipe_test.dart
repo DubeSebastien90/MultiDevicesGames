@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -188,6 +190,20 @@ void main() {
       expect(client.inputsFrozen, isTrue);
       expect(client.phase, isNot(ClientPhase.finished));
     });
+  });
+
+  test('a jittered ball still covers its cell', () {
+    // The one piece of arithmetic in this file that cannot be checked by
+    // looking at it. A ball may sit up to `jitter` out of place on both axes,
+    // so the square it must reach the corners of is (1 + 2·jitter) wide, and a
+    // circle covering a square of side c needs a diameter of c·√2.
+    //
+    // Shrinking the ball or growing the jitter without redoing this leaves
+    // holes — on some screen sizes and not others, for the single frame the
+    // finished game is meant to be hidden behind.
+    const jitter = 0.15;
+    const spread = 1.90;
+    expect(spread, greaterThan(math.sqrt2 * (1 + 2 * jitter)));
   });
 
   test('every palette colour has a ball', () {

@@ -257,19 +257,44 @@ class _WipePainter extends CustomPainter {
   /// the last frame of a round, a decode — has somewhere to do it.
   static const _lead = 0.45;
 
-  /// A ball has to cover its whole cell, corners included. A circle covering a
-  /// square of side c needs a diameter of at least c·√2; the rest is margin so
-  /// that antialiased edges never show a seam between two of them.
-  static const _spread = 1.55;
+  /// How far a ball may sit from the middle of its cell, as a fraction of one.
+  ///
+  /// Rolled per ball and per wipe, so the pattern is never quite the same twice
+  /// and the grid stops reading as a grid.
+  static const _jitter = 0.15;
 
-  /// Deterministic per cell, so the same ball is the same colour on every
-  /// frame without storing a grid that would have to be rebuilt on resize.
-  int _hash(int col, int row) {
-    var h = seed ^ (col * 0x1f1f1f1f) ^ (row * 0x85ebca6b);
+  /// How wide a ball is drawn, as a fraction of its cell.
+  ///
+  /// **This is a guarantee, not a look.** A circle that covers a square of side
+  /// c needs a diameter of at least c·√2 — and once the ball may be up to
+  /// [_jitter] out of place in both directions, the square it has to reach the
+  /// corners of is effectively (1 + 2·jitter) wide. That puts the floor at
+  /// 1.838; the rest is margin so antialiased edges never show a seam.
+  ///
+  /// Shrink this or grow [_jitter] without redoing that arithmetic and the wipe
+  /// develops holes — on some screen sizes and not others, for one frame, which
+  /// is the frame the finished game is meant to be hidden behind.
+  static const _spread = 1.90;
+
+  /// Deterministic per cell, so a ball keeps its colour, its place and its
+  /// turn in the stack on every frame — without storing a grid that would have
+  /// to be rebuilt whenever the screen changed size.
+  ///
+  /// [salt] draws independent values from the same cell: one for the colour,
+  /// one for the depth, one for each axis of the offset. Reusing a single
+  /// number for all four would tie them together, and the colour would tell you
+  /// where the ball had been nudged.
+  int _hash(int col, int row, int salt) {
+    var h =
+        seed ^ (col * 0x1f1f1f1f) ^ (row * 0x85ebca6b) ^ (salt * 0x27d4eb2d);
     h ^= h >> 13;
     h = (h * 0x5bd1e995) & 0x3fffffff;
     return h ^ (h >> 15);
   }
+
+  /// A hashed value in -1..1.
+  double _signed(int col, int row, int salt) =>
+      (_hash(col, row, salt) % 2000) / 1000 - 1;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -304,48 +329,45 @@ class _WipePainter extends CustomPainter {
       offset = p * (size.height + side);
     }
 
-    // Grouped per image so each colour is one draw call rather than one per
-    // ball.
-    final batches = <int, (List<RSTransform>, List<Rect>)>{};
-
+    // Collected first, then drawn in a shuffled order.
+    //
+    // The order is **hashed, not scanned**: it comes from the cell and this
+    // wipe's seed, so it differs every time the animation plays and is
+    // identical on every frame of one. That distinction is the whole lesson
+    // here. An earlier version grouped balls by colour and drew a batch each,
+    // so the order depended on which colour was met first while scanning — and
+    // as rows scrolled past the cull that changed mid-slide, and overlapping
+    // balls visibly swapped places. Random is fine. Random *per frame* is what
+    // looked broken.
+    //
+    // About forty balls on a phone screen, so collecting and sorting them each
+    // frame costs nothing worth measuring.
+    final cells = <(double, double, int, int)>[];
     for (var row = 0; row < rows; row++) {
       final y = offset + (row + 0.5) * cell;
       if (y < -side || y > size.height + side) continue;
 
       for (var col = 0; col < columns; col++) {
-        final index = _hash(col, row) % images.length;
-        final image = images[index];
-        final batch = batches.putIfAbsent(
-          index,
-          () => (<RSTransform>[], <Rect>[]),
-        );
-        batch.$1.add(
-          RSTransform.fromComponents(
-            rotation: 0,
-            scale: side / image.width,
-            anchorX: image.width / 2,
-            anchorY: image.height / 2,
-            translateX: (col + 0.5) * cell,
-            translateY: y,
-          ),
-        );
-        batch.$2.add(
-          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
-        );
+        cells.add((
+          (col + 0.5) * cell + _signed(col, row, 3) * _jitter * cell,
+          y + _signed(col, row, 4) * _jitter * cell,
+          _hash(col, row, 1) % images.length,
+          _hash(col, row, 2),
+        ));
       }
     }
+    cells.sort((a, b) => a.$4.compareTo(b.$4));
 
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.medium;
-    for (final entry in batches.entries) {
-      canvas.drawAtlas(
-        images[entry.key],
-        entry.value.$1,
-        entry.value.$2,
-        null,
-        null,
-        null,
+
+    for (final (x, y, index, _) in cells) {
+      final image = images[index];
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        Rect.fromCenter(center: Offset(x, y), width: side, height: side),
         paint,
       );
     }
