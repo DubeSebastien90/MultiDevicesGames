@@ -30,6 +30,15 @@
 	     network — hosting, joining, or listening for nearby games. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Finds games hosted by phones on the same WiFi, and connects yours to them.</string>
+	<!-- Bonjour is how this app finds games on iOS at all: UDP broadcast is
+	     refused here without the multicast entitlement, which Apple grants only
+	     on request. iOS 14+ will not browse a service type the app has not
+	     declared, and it fails by quietly finding nothing — so this string must
+	     stay identical to kBonjourServiceType in net/bonjour_discovery.dart. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_bubblegames._tcp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Scans the QR code shown on the host phone to join its game.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -10,6 +10,7 @@ import '../model/device_identity.dart';
 import '../model/device_metrics.dart';
 import '../model/player_color.dart';
 import '../net/discovery.dart';
+import '../net/discovery_stack.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
 import '../net/websocket_transport.dart';
@@ -169,7 +170,7 @@ class HostSession extends ChangeNotifier {
   /// The session standings, shared by every game.
   final scores = Scoreboard();
 
-  DiscoveryBroadcaster? _beacon;
+  GameAdvertiser? _beacon;
 
   HostPhase _phase = HostPhase.idle;
   Uri? _address;
@@ -465,7 +466,7 @@ class HostSession extends ChangeNotifier {
     _subs.add(_transport.onPeer.listen(_attachPeer));
 
     if (_advertise) {
-      final beacon = DiscoveryBroadcaster(
+      final beacon = createGameAdvertiser(
         id:
             '${DateTime.now().microsecondsSinceEpoch}-'
             '${Random().nextInt(1 << 32)}',

@@ -43,6 +43,13 @@ dependencies:
   rive: ^0.14.11
   flutter_svg: ^2.3.0
   purchases_flutter: ^10.9.0
+  # Bonjour/mDNS discovery, for iOS. UDP broadcast — the original transport —
+  # needs the multicast entitlement there, which Apple grants only on request;
+  # Bonjour goes through the system daemon and needs none. See
+  # `net/bonjour_discovery.dart`.
+  # Pinned below 7.1.5 on purpose: that release needs Dart >=3.12, and this
+  # project is on 3.11.5. Raise it after the SDK moves, not before.
+  bonsoir: ^7.1.4
 
 dev_dependencies:
   flutter_test:
