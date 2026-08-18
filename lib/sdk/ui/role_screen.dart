@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../model/age_band.dart';
 import '../model/player_name.dart';
 
 import '../app_controller.dart';
@@ -14,9 +15,22 @@ import 'metrics_card.dart';
 
 /// Pick a role. One app, two jobs: run the world, or be a window onto it.
 class RoleScreen extends StatefulWidget {
-  const RoleScreen({super.key, required this.controller});
+  const RoleScreen({
+    super.key,
+    required this.controller,
+    required this.ageBand,
+  });
 
   final AppController controller;
+
+  /// Decides whether the two names on this screen are typed or issued.
+  ///
+  /// Required and non-nullable on purpose. Both names leave the phone in clear
+  /// — the player name rides along in [DeviceMetrics], and the game name goes
+  /// out on the discovery beacon to everything on the network — so this screen
+  /// should be impossible to construct without having settled the question
+  /// first. [AgeGate] is the only thing that answers it.
+  final AgeBand ageBand;
 
   @override
   State<RoleScreen> createState() => _RoleScreenState();
@@ -34,6 +48,8 @@ class _RoleScreenState extends State<RoleScreen> {
 
   final _nameController = TextEditingController();
   bool _hasSavedScreenSize = false;
+
+  bool get _isChild => widget.ageBand == AgeBand.child;
 
   @override
   void initState() {
@@ -55,10 +71,18 @@ class _RoleScreenState extends State<RoleScreen> {
     // nothing — so one is picked and written down on the first run, and anyone
     // who dislikes theirs types over it.
     final saved = prefs.getString(_kNameKey);
-    final name = (saved != null && saved.isNotEmpty)
-        ? saved
-        : PlayerNames.random();
-    if (saved == null || saved.isEmpty) {
+
+    // A child keeps a stored name only if the app is the one that made it up.
+    // The check runs on every load rather than once at the gate, because a
+    // typed name can predate the gate — an install from before this existed, or
+    // a phone an adult set up and handed over. Either way the name is replaced
+    // here, before anything has had a chance to put it on the wire.
+    final usable = saved != null &&
+        saved.isNotEmpty &&
+        (!_isChild || PlayerNames.isGenerated(saved));
+
+    final name = usable ? saved : PlayerNames.random();
+    if (!usable) {
       await prefs.setString(_kNameKey, name);
       if (!mounted) return;
     }
@@ -92,6 +116,8 @@ class _RoleScreenState extends State<RoleScreen> {
   }
 
   void _onNameChanged(String name) {
+    // Only ever reached from the text field, which a child does not get, or
+    // from the dice, which can only produce names off the fixed lists.
     SharedPreferences.getInstance().then((p) => p.setString(_kNameKey, name));
     final label = name.trim().isEmpty ? 'phone' : name.trim();
     setState(() => _metrics = _metrics?.copyWith(label: label));
@@ -190,10 +216,25 @@ class _RoleScreenState extends State<RoleScreen> {
     );
   }
 
+  /// What the game is called before anyone renames it.
+  ///
+  /// Derived from the player name rather than being a fixed string: a join list
+  /// showing three separate entries called "My board" is a coin toss, and the
+  /// person hosting is the one thing everyone at the table can already identify.
+  /// It also means a child's board is named after a made-up animal for free.
+  String _defaultBoardName() => "${_currentLabel()}'s board";
+
   Future<void> _host() async {
     final name = await showDialog<String>(
       context: context,
-      builder: (_) => const _NameDialog(),
+      builder: (_) => _NameDialog(
+        initialName: _defaultBoardName(),
+        // This name goes out on the beacon, unencrypted, to every device on the
+        // network — it is the more exposed of the two fields on this screen,
+        // not the less. Locking the player name and leaving this one open would
+        // move the problem rather than solve it.
+        locked: _isChild,
+      ),
     );
     if (name == null || !mounted) return;
     await widget.controller.startHost(_metrics!, name: name);
@@ -243,25 +284,35 @@ class _RoleScreenState extends State<RoleScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 18),
-                  TextField(
-                    controller: _nameController,
-                    onChanged: _onNameChanged,
-                    textCapitalization: TextCapitalization.words,
-                    maxLength: 30,
-                    decoration: InputDecoration(
-                      labelText: 'Your name',
-                      prefixIcon: const Icon(Icons.person_outline),
-                      // Rolling for another is quicker than thinking of one,
-                      // and quicker still than typing it on a phone.
-                      suffixIcon: IconButton(
-                        tooltip: 'Roll another name',
-                        onPressed: _rollName,
-                        icon: const Icon(Icons.casino_outlined),
+                  if (_isChild)
+                    // Not a read-only TextField. That still draws a box that
+                    // asks to be tapped, and a field that does nothing when
+                    // tapped reads as broken rather than as closed. This is a
+                    // name being shown, with a dice next to it.
+                    _IssuedNameField(
+                      name: _nameController.text,
+                      onRoll: _rollName,
+                    )
+                  else
+                    TextField(
+                      controller: _nameController,
+                      onChanged: _onNameChanged,
+                      textCapitalization: TextCapitalization.words,
+                      maxLength: 30,
+                      decoration: InputDecoration(
+                        labelText: 'Your name',
+                        prefixIcon: const Icon(Icons.person_outline),
+                        // Rolling for another is quicker than thinking of one,
+                        // and quicker still than typing it on a phone.
+                        suffixIcon: IconButton(
+                          tooltip: 'Roll another name',
+                          onPressed: _rollName,
+                          icon: const Icon(Icons.casino_outlined),
+                        ),
+                        border: const OutlineInputBorder(),
+                        counterText: '',
                       ),
-                      border: const OutlineInputBorder(),
-                      counterText: '',
                     ),
-                  ),
                   const SizedBox(height: 14),
                   if (_surfaceIsLandscape) ...[
                     _LandscapeWarning(),
@@ -325,6 +376,38 @@ class _RoleScreenState extends State<RoleScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The player name as a fact rather than a field, with a dice to change it.
+///
+/// Everything a player can do here produces a name off [PlayerNames]'s two
+/// fixed lists, so there is no path from this widget to a string that means
+/// anything about the person holding the phone. Which is the entire point: the
+/// name is going out over the LAN either way, and nine hundred combinations of
+/// adjective and animal are plenty to tell six phones apart.
+class _IssuedNameField extends StatelessWidget {
+  const _IssuedNameField({required this.name, required this.onRoll});
+
+  final String name;
+  final VoidCallback onRoll;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: 'Your name',
+        prefixIcon: const Icon(Icons.person_outline),
+        suffixIcon: IconButton(
+          tooltip: 'Roll another name',
+          onPressed: onRoll,
+          icon: const Icon(Icons.casino_outlined),
+        ),
+        border: const OutlineInputBorder(),
+      ),
+      child: Text(name, style: theme.textTheme.bodyLarge),
     );
   }
 }
@@ -397,19 +480,30 @@ class _LandscapeWarning extends StatelessWidget {
 
 /// Names the game. This name is what friends look for in their join list, so
 /// it is the one thing worth asking before the lobby opens.
+///
+/// [locked] turns the field into a label. The name typed here is put on a UDP
+/// beacon in clear, to the whole subnet, by a device whose owner is a child —
+/// so on that path there is nothing to type and nothing to submit but the name
+/// the app already chose. The dialog still opens rather than being skipped:
+/// being shown what the rest of the network is about to be told is worth a tap.
 class _NameDialog extends StatefulWidget {
-  const _NameDialog();
+  const _NameDialog({required this.initialName, this.locked = false});
+
+  final String initialName;
+  final bool locked;
 
   @override
   State<_NameDialog> createState() => _NameDialogState();
 }
 
 class _NameDialogState extends State<_NameDialog> {
-  final _controller = TextEditingController(text: 'My board');
+  late final _controller = TextEditingController(text: widget.initialName);
 
   @override
   void initState() {
     super.initState();
+    // Selected, not just filled in. The default is a suggestion, and the first
+    // keystroke should replace it rather than land in the middle of it.
     _controller.selection = TextSelection(
       baseOffset: 0,
       extentOffset: _controller.text.length,
@@ -424,7 +518,7 @@ class _NameDialogState extends State<_NameDialog> {
 
   void _submit() {
     final name = _controller.text.trim();
-    Navigator.of(context).pop(name.isEmpty ? 'My board' : name);
+    Navigator.of(context).pop(name.isEmpty ? widget.initialName : name);
   }
 
   @override
@@ -437,18 +531,27 @@ class _NameDialogState extends State<_NameDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            maxLength: 40,
-            textCapitalization: TextCapitalization.words,
-            onSubmitted: (_) => _submit(),
-            decoration: const InputDecoration(
-              labelText: 'Game name',
-              counterText: '',
-              border: OutlineInputBorder(),
+          if (widget.locked)
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Game name',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(widget.initialName, style: theme.textTheme.bodyLarge),
+            )
+          else
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLength: 40,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => _submit(),
+              decoration: const InputDecoration(
+                labelText: 'Game name',
+                counterText: '',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
           const SizedBox(height: 8),
           Text(
             // JOIN CODE DISABLED — second sentence was: 'You will get a

@@ -46,4 +46,25 @@ class PlayerNames {
     return '${adjectives[rng.nextInt(adjectives.length)]}'
         '${animals[rng.nextInt(animals.length)]}';
   }
+
+  /// Whether [name] is one this class could have produced.
+  ///
+  /// The child guard needs to answer "is the name on this phone a made-up one,
+  /// or did somebody type it?", and it has to answer that on **every** load,
+  /// not once. A phone can arrive at the child state carrying a name from
+  /// before it got there — an install that predates the age question, or a
+  /// household where the adult set the phone up and the child then answered for
+  /// themselves. Checking the shape of the stored string catches all of those
+  /// without needing to have witnessed how it got written.
+  ///
+  /// Exact, case-sensitive matching against the two lists. Anything looser —
+  /// "starts with a known adjective", say — would pass `SpicyYak Smith`, and
+  /// the surname is the entire thing being kept off the network.
+  static bool isGenerated(String name) {
+    for (final adjective in adjectives) {
+      if (!name.startsWith(adjective)) continue;
+      if (animals.contains(name.substring(adjective.length))) return true;
+    }
+    return false;
+  }
 }
