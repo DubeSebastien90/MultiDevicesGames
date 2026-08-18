@@ -28,6 +28,7 @@ class SubwaySkaterGame implements MultiscreenGame {
     // Two is a line, barely — one hit and you have swapped ends. Beyond about
     // eight the corridor is longer than anybody can watch at once.
     players: PlayerCount.range(min: 2, max: 8),
+    tier: GameTier.premium,
   );
 
   /// One long corridor, phones on their sides, short edges touching — the same

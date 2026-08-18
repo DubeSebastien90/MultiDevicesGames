@@ -40,6 +40,7 @@ class GuacamoleGame implements MultiscreenGame {
       max: PlayerPalette.size,
       parity: CountParity.even,
     ),
+    tier: GameTier.premium,
   );
 
   /// A block, not a strip.

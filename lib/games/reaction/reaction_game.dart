@@ -29,6 +29,7 @@ class ReactionGame implements MultiscreenGame {
     // the palette, because a turn is announced by a player's colour and two
     // people sharing one would not know whose turn it was.
     players: PlayerCount.range(min: 2, max: PlayerPalette.size),
+    tier: GameTier.premium,
   );
 
   /// A ring when there are enough people for one, a row when there are two.

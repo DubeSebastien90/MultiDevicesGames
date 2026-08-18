@@ -120,7 +120,8 @@ class LobbyView extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         IconButton.filledTonal(
-                          onPressed: () => showGamesSheet(context, host),
+                          onPressed: () =>
+                              showGamesSheet(context, host, controller.premium),
                           icon: const Icon(Icons.settings),
                           tooltip: 'Choose which games are in the run',
                           style: IconButton.styleFrom(

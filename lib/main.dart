@@ -71,6 +71,10 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
     // Read this device's own name off storage now rather than when somebody
     // taps Join, so rejoining a game never waits on a disk read.
     _controller.warmUp();
+    // Same shape: ask RevenueCat now so a host who already owns Premium sees
+    // the catalogue unlocked before they ever open the games list, rather
+    // than waiting on a network round trip the first time they tap it.
+    _controller.premium.initialize();
   }
 
   @override

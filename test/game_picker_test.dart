@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
+import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/contract/game.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
+import 'package:multiscreen_slingshot/sdk/monetization/premium_status.dart';
 import 'package:multiscreen_slingshot/sdk/ui/game_picker.dart';
+
+class _UnlockedPremiumStatus extends PremiumStatus {
+  @override
+  bool get isPremium => true;
+}
 
 /// The list decides what the evening consists of, so the two facts it carries
 /// have to stay apart: whether a game is *ticked* is the host's choice, and
@@ -17,39 +24,47 @@ void main() {
     MultiscreenGame game, {
     bool fits = true,
     bool chosen = true,
+    bool locked = false,
   }) => GameOffer(
     game: game,
     fitsTable: fits,
     reason: fits ? null : game.manifest.requirement(),
     chosen: chosen,
+    isLocked: locked,
   );
 
   var toggles = <(String, bool)>[];
   var alls = 0;
   var nones = 0;
+  var selectionLockedTaps = 0;
 
   setUp(() {
     toggles = [];
     alls = 0;
     nones = 0;
+    selectionLockedTaps = 0;
   });
 
-  Future<void> show(WidgetTester tester, List<GameOffer> offers) =>
-      tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: GamePicker(
-                offers: offers,
-                onChoose: (game, chosen) =>
-                    toggles.add((game.manifest.id, chosen)),
-                onAll: () => alls++,
-                onNone: () => nones++,
-              ),
-            ),
+  Future<void> show(
+    WidgetTester tester,
+    List<GameOffer> offers, {
+    bool selectionLocked = false,
+  }) => tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: GamePicker(
+            offers: offers,
+            selectionLocked: selectionLocked,
+            onChoose: (game, chosen) => toggles.add((game.manifest.id, chosen)),
+            onAll: () => alls++,
+            onNone: () => nones++,
+            onSelectionLockedTap: () => selectionLockedTaps++,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('every game is listed with its tick', (tester) async {
     await show(tester, [
@@ -69,12 +84,12 @@ void main() {
 
   testWidgets('a ticked game the table cannot play is not counted as in the '
       'run', (tester) async {
-    // The count is the run, not the ticks. Hot Potato is ticked and will not be
+    // The count is the run, not the ticks. Flood is ticked and will not be
     // played, and a footer that counts it is telling the host they are about to
     // play a game they are not.
     await show(tester, [
       offer(const ArenaGame()),
-      offer(const HotPotatoGame(), fits: false),
+      offer(const FloodGame(), fits: false),
     ]);
 
     expect(find.text('1 of 2 in the run'), findsNothing);
@@ -109,27 +124,69 @@ void main() {
     // settings screen where nothing can be set is not a settings screen.
     await show(tester, [
       offer(const ArenaGame()),
-      offer(const HotPotatoGame(), fits: false),
+      offer(const FloodGame(), fits: false),
     ]);
 
     final playable = tester.widget<Text>(find.text('Arena'));
-    final greyed = tester.widget<Text>(find.text('Hot Potato'));
-    expect(greyed.style!.color, isNot(playable.style?.color),
-        reason: 'a game this table cannot play looked like one it can');
+    final greyed = tester.widget<Text>(find.text('Flood'));
+    expect(
+      greyed.style!.color,
+      isNot(playable.style?.color),
+      reason: 'a game this table cannot play looked like one it can',
+    );
 
-    await tester.tap(find.text('Hot Potato'));
-    expect(toggles, [('hotpotato', false)],
-        reason: 'a run could not be shaped before the table filled up');
+    await tester.tap(find.text('Flood'));
+    expect(toggles, [
+      ('flood', false),
+    ], reason: 'a run could not be shaped before the table filled up');
   });
 
   testWidgets('a game that does not fit says what it needs instead of its '
       'tagline', (tester) async {
-    await show(tester, [offer(const HotPotatoGame(), fits: false)]);
+    await show(tester, [offer(const FloodGame(), fits: false)]);
 
     // The requirement is the more useful sentence at that moment, and the
     // smallest table it would take is on the row as well.
-    expect(find.textContaining('3'), findsWidgets);
-    expect(find.text(const HotPotatoGame().manifest.tagline), findsNothing);
+    expect(
+      find.textContaining(const FloodGame().manifest.smallestTable.toString()),
+      findsWidgets,
+    );
+    expect(find.text(const FloodGame().manifest.tagline), findsNothing);
+  });
+
+  testWidgets('a locked Premium game has no checkbox and opens the paywall '
+      'on tap', (tester) async {
+    var lockedTaps = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GamePicker(
+              offers: [
+                offer(const ArenaGame()),
+                offer(const HotPotatoGame(), locked: true),
+              ],
+              onChoose: (game, chosen) =>
+                  toggles.add((game.manifest.id, chosen)),
+              onLockedTap: (offer) => lockedTaps.add(offer.manifest.id),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Hot Potato'), findsOneWidget);
+    expect(find.text('PREMIUM'), findsOneWidget);
+    // One checkbox only — Arena's. A locked row has nothing to tick.
+    expect(find.byType(CheckboxListTile), findsOneWidget);
+
+    await tester.tap(find.text('Hot Potato'));
+    expect(lockedTaps, ['hotpotato']);
+    expect(
+      toggles,
+      isEmpty,
+      reason: 'a locked row should open the paywall, not tick itself',
+    );
   });
 
   testWidgets('both ends of the list are one tap each', (tester) async {
@@ -141,13 +198,46 @@ void main() {
     expect((alls, nones), (1, 1));
   });
 
+  testWidgets('game selection opens premium instead of mutating when locked', (
+    tester,
+  ) async {
+    await show(tester, [
+      offer(const ArenaGame()),
+      offer(const DodgeballGame(), chosen: false),
+    ], selectionLocked: true);
+
+    await tester.tap(find.text('Arena'));
+    await tester.tap(find.text('None'));
+    await tester.tap(find.text('All'));
+
+    expect(selectionLockedTaps, 3);
+    expect(toggles, isEmpty);
+    expect((alls, nones), (0, 0));
+  });
+
+  test('a non-Premium host cannot customize the run directly', () {
+    final host = HostSession(name: 'kitchen table', advertise: false);
+    addTearDown(host.dispose);
+
+    host.chooseGame(const ArenaGame(), chosen: false);
+    host.chooseNoGames();
+
+    expect(host.chosenGames.map((g) => g.manifest.id), contains('arena'));
+    expect(host.chosenGames, isNotEmpty);
+  });
+
   testWidgets('the gear opens it, and a tick reaches the session', (
     tester,
   ) async {
     // The whole path, because the two halves were built apart: the sheet has to
     // write through to the host, and the host has to redraw the sheet. A copy
     // of the offers taken once when the sheet opened would tick nothing.
-    final host = HostSession(name: 'kitchen table', advertise: false);
+    final premium = _UnlockedPremiumStatus();
+    final host = HostSession(
+      name: 'kitchen table',
+      advertise: false,
+      premium: premium,
+    );
     addTearDown(host.dispose);
 
     await tester.pumpWidget(
@@ -156,7 +246,7 @@ void main() {
           body: Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.settings),
-              onPressed: () => showGamesSheet(context, host),
+              onPressed: () => showGamesSheet(context, host, premium),
             ),
           ),
         ),
@@ -167,7 +257,6 @@ void main() {
     // meant to be one import and one list entry, not one import, one list entry
     // and a test to go and fix.
     final total = GameCatalog.playlist.length;
-
     await tester.tap(find.byIcon(Icons.settings));
     await tester.pumpAndSettle();
     expect(find.text('Games in the run'), findsOneWidget);
@@ -184,8 +273,6 @@ void main() {
 
     await tester.tap(find.text('Arena'));
     await tester.pumpAndSettle();
-    expect(host.chosenGames.map((g) => g.manifest.id),
-        isNot(contains('arena')));
     expect(
       find.text(
         '0 of $total in the run · ${total - 1} ticked but the wrong size for '
