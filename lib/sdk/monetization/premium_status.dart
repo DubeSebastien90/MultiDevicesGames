@@ -41,6 +41,15 @@ class PremiumStatus extends ChangeNotifier {
   bool _ready = false;
   String? _error;
 
+  /// Whether [Purchases.configure] has succeeded.
+  ///
+  /// Tracked because [retry] has to know which half failed. Configuring the SDK
+  /// a second time is the thing this class's doc warns about — it works in
+  /// development and misbehaves quietly in production — so a retry that has
+  /// already configured must ask for customer info instead, and only a retry
+  /// that never got that far may configure.
+  bool _configured = false;
+
   /// True once [CustomerInfo] has been fetched at least once. Before that,
   /// [isPremium] is a guess (false) rather than an answer — screens that gate
   /// on Premium should treat "not ready" as "don't show a locked badge yet"
@@ -82,6 +91,7 @@ class PremiumStatus extends ChangeNotifier {
 
       final configuration = PurchasesConfiguration(apiKey);
       await Purchases.configure(configuration);
+      _configured = true;
 
       Purchases.addCustomerInfoUpdateListener(_onCustomerInfo);
 
@@ -115,6 +125,30 @@ class PremiumStatus extends ChangeNotifier {
       _error = '$e';
       notifyListeners();
     }
+  }
+
+  /// Ask again, after a failure, from wherever it failed.
+  ///
+  /// This is the button behind [error]. Somebody who has paid and is looking at
+  /// a locked catalogue because their phone had no signal at launch needs a way
+  /// to say "look again" that is not "uninstall the app" — and the ordinary
+  /// [refresh] is not it, because if [initialize] never got as far as
+  /// configuring the SDK then every call into it will keep failing the same way.
+  ///
+  /// Clears [error] and drops back to "not settled" first, so the UI can show
+  /// that something is happening rather than leaving the old failure on screen
+  /// while the network is retried behind it.
+  Future<void> retry() async {
+    _error = null;
+    _ready = false;
+    notifyListeners();
+    if (_configured) {
+      await refresh();
+      _ready = true;
+      notifyListeners();
+      return;
+    }
+    await initialize();
   }
 
   @override

@@ -58,6 +58,7 @@ class GameOffer {
     required this.reason,
     required this.chosen,
     required this.isLocked,
+    this.lockPending = false,
   });
 
   final MultiscreenGame game;
@@ -81,7 +82,25 @@ class GameOffer {
   /// rather than a checkbox — tapping it opens the paywall instead of ticking
   /// it, so there is no tick state to get out of sync with a purchase that
   /// has not happened yet.
+  ///
+  /// False while [lockPending]: "we have not heard back" is not "you have not
+  /// paid", and only one of those may draw a padlock.
   final bool isLocked;
+
+  /// A Premium game whose status is still being fetched.
+  ///
+  /// The third state, and the reason this is not one boolean. Until RevenueCat
+  /// answers, a host who paid last week and a host who never paid are
+  /// indistinguishable from inside the app — and of the two ways to guess, one
+  /// is much worse than the other. Guessing *unlocked* offers a tick that may be
+  /// taken away half a second later. Guessing *locked* puts a padlock and a
+  /// PREMIUM badge on games somebody has already bought, which is the app
+  /// calling a paying customer a freeloader while their phone looks for signal.
+  ///
+  /// So it guesses neither. A pending row is inert and says nothing about
+  /// money, and it settles into [isLocked] or into an ordinary tickable row
+  /// once there is an answer.
+  final bool lockPending;
 
   GameManifest get manifest => game.manifest;
 }
@@ -158,6 +177,27 @@ class HostSession extends ChangeNotifier {
 
   /// Whether this host currently has Premium unlocked.
   bool get isPremiumUnlocked => _premium?.isPremium ?? false;
+
+  /// Whether [isPremiumUnlocked] is an answer yet, or still a default.
+  ///
+  /// Only the *display* may consult this. Everything that decides what actually
+  /// runs — [_skipping], [_mayStart] — must keep treating unsettled as "not
+  /// premium", because failing closed is the whole reason a missing gate is
+  /// safe. This exists so a screen can decline to say anything rather than say
+  /// the wrong thing while waiting.
+  ///
+  /// A null [_premium] reads as settled: no paywall is wired up, that is not
+  /// going to change, and a UI that waited on it would wait forever.
+  bool get isPremiumSettled => _premium?.isReady ?? true;
+
+  /// Why the Premium state could not be established, if it could not.
+  ///
+  /// Non-null means the padlocks on screen may be lying — the host might well
+  /// have paid and this device simply could not find out. The games sheet says
+  /// so out loud and offers a retry, because the alternative is a paying
+  /// customer looking at a locked catalogue with no explanation and concluding
+  /// the purchase failed.
+  String? get premiumError => _premium?.error;
 
   final _clock = Stopwatch();
   final _phones = <PhoneRecord>[];
@@ -413,7 +453,14 @@ class HostSession extends ChangeNotifier {
         // restore it without a special case, but the checkbox has to show
         // what Play is actually about to do, not what is stored.
         chosen: !_skipping.contains(game.manifest.id),
-        isLocked: game.manifest.tier == GameTier.premium && !isPremiumUnlocked,
+        // Locked only once we know. Until then the row is pending, which draws
+        // no padlock and offers no tick — see [GameOffer.lockPending].
+        isLocked: game.manifest.isPremium &&
+            !isPremiumUnlocked &&
+            isPremiumSettled,
+        lockPending: game.manifest.isPremium &&
+            !isPremiumUnlocked &&
+            !isPremiumSettled,
       ),
   ];
 

@@ -25,12 +25,14 @@ void main() {
     bool fits = true,
     bool chosen = true,
     bool locked = false,
+    bool pending = false,
   }) => GameOffer(
     game: game,
     fitsTable: fits,
     reason: fits ? null : game.manifest.requirement(),
     chosen: chosen,
     isLocked: locked,
+    lockPending: pending,
   );
 
   var toggles = <(String, bool)>[];
@@ -49,6 +51,8 @@ void main() {
     WidgetTester tester,
     List<GameOffer> offers, {
     bool selectionLocked = false,
+    String? premiumError,
+    Future<void> Function()? onRetryPremium,
   }) => tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -56,6 +60,8 @@ void main() {
           child: GamePicker(
             offers: offers,
             selectionLocked: selectionLocked,
+            premiumError: premiumError,
+            onRetryPremium: onRetryPremium,
             onChoose: (game, chosen) => toggles.add((game.manifest.id, chosen)),
             onAll: () => alls++,
             onNone: () => nones++,
@@ -213,6 +219,83 @@ void main() {
     expect(selectionLockedTaps, 3);
     expect(toggles, isEmpty);
     expect((alls, nones), (0, 0));
+  });
+
+  group('while the store has not answered', () {
+    testWidgets('a pending row accuses nobody of not paying', (tester) async {
+      await show(tester, [
+        offer(const FloodGame()),
+        offer(const HotPotatoGame(), pending: true),
+      ]);
+
+      // The whole point: no padlock and no PREMIUM badge on a game the host may
+      // well already own. Nothing on screen makes a claim about money.
+      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      expect(find.text('PREMIUM'), findsNothing);
+      expect(find.textContaining('locked behind Premium'), findsNothing);
+
+      // Nor is it offered as tickable, which would be the opposite lie.
+      expect(find.widgetWithText(CheckboxListTile, 'Hot Potato'), findsNothing);
+      expect(find.text('Checking your purchase…'), findsOneWidget);
+
+      // The rest of the list still works while one row waits.
+      expect(find.widgetWithText(CheckboxListTile, 'Flood'), findsOneWidget);
+    });
+
+    testWidgets('All and None wait rather than sell', (tester) async {
+      await show(tester, [
+        offer(const FloodGame()),
+        offer(const HotPotatoGame(), pending: true),
+      ], selectionLocked: false);
+
+      await tester.tap(find.text('All'));
+      await tester.pump();
+
+      // Neither applied nor bounced to the paywall: we do not yet know which
+      // this host deserves.
+      expect(alls, 0);
+      expect(selectionLockedTaps, 0);
+    });
+
+    testWidgets('once it answers, the padlock appears', (tester) async {
+      await show(tester, [offer(const HotPotatoGame(), locked: true)]);
+
+      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+      expect(find.text('PREMIUM'), findsOneWidget);
+      expect(find.text('Checking your purchase…'), findsNothing);
+    });
+  });
+
+  group('when the store cannot be reached', () {
+    testWidgets('it says so, instead of letting padlocks speak',
+        (tester) async {
+      await show(
+        tester,
+        [offer(const HotPotatoGame(), locked: true)],
+        premiumError: 'PlatformException(23, no connection, null, null)',
+      );
+
+      expect(find.textContaining('Could not check your purchase'),
+          findsOneWidget);
+      // The raw exception is for logs, not for a player.
+      expect(find.textContaining('PlatformException'), findsNothing);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('Retry asks again', (tester) async {
+      var retries = 0;
+      await show(
+        tester,
+        [offer(const HotPotatoGame(), locked: true)],
+        premiumError: 'nope',
+        onRetryPremium: () async => retries++,
+      );
+
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+
+      expect(retries, 1);
+    });
   });
 
   test('a free host cannot start a Premium game by naming it', () async {

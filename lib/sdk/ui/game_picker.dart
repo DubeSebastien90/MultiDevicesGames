@@ -36,7 +36,11 @@ Future<void> showGamesSheet(
         child: SingleChildScrollView(
           child: GamePicker(
             offers: host.offers,
-            selectionLocked: !premium.isPremium,
+            // Not `!premium.isPremium`: that reads an unanswered fetch as a
+            // refusal, and sends somebody who has paid to the paywall.
+            selectionLocked: premium.isReady && !premium.isPremium,
+            premiumError: premium.error,
+            onRetryPremium: premium.retry,
             onChoose: (game, chosen) => host.chooseGame(game, chosen: chosen),
             onAll: host.chooseAllGames,
             onNone: host.chooseNoGames,
@@ -83,6 +87,8 @@ class GamePicker extends StatelessWidget {
     this.selectionLocked = false,
     this.onSelectionLockedTap,
     this.onLockedTap,
+    this.premiumError,
+    this.onRetryPremium,
   });
 
   final List<GameOffer> offers;
@@ -105,6 +111,18 @@ class GamePicker extends StatelessWidget {
   /// anyway.
   final void Function(GameOffer offer)? onLockedTap;
 
+  /// Why the Premium state could not be established, if it could not.
+  ///
+  /// Shown as a banner above the list, because the padlocks underneath it may
+  /// be wrong: a host who bought Premium last week and opened the app somewhere
+  /// with no signal sees exactly what a host who never paid sees, and only one
+  /// of them is being told the truth. Saying so costs a line and turns "my
+  /// purchase vanished" into "it will check again in a moment".
+  final String? premiumError;
+
+  /// Look again. Wired to [PremiumStatus.retry].
+  final Future<void> Function()? onRetryPremium;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -117,6 +135,10 @@ class GamePicker extends StatelessWidget {
     final inRun = offers.where((o) => o.chosen && o.fitsTable).length;
     final wrongSize = offers.where((o) => o.chosen && !o.fitsTable).length;
     final locked = offers.where((o) => o.isLocked).length;
+
+    // Still waiting on the store. Derived from the rows rather than passed
+    // alongside them, so the sheet and its rows cannot disagree about it.
+    final pending = offers.any((o) => o.lockPending);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -141,12 +163,18 @@ class GamePicker extends StatelessWidget {
                 ),
                 // Twelve taps to play one game is not a choice anybody makes
                 // twice, so the two ends of the list are one tap each.
+                // Disabled rather than sent to the paywall while pending: we do
+                // not yet know whether this host would need one.
                 TextButton(
-                  onPressed: selectionLocked ? onSelectionLockedTap : onAll,
+                  onPressed: pending
+                      ? null
+                      : (selectionLocked ? onSelectionLockedTap : onAll),
                   child: const Text('All'),
                 ),
                 TextButton(
-                  onPressed: selectionLocked ? onSelectionLockedTap : onNone,
+                  onPressed: pending
+                      ? null
+                      : (selectionLocked ? onSelectionLockedTap : onNone),
                   child: const Text('None'),
                 ),
               ],
@@ -163,6 +191,31 @@ class GamePicker extends StatelessWidget {
               ),
             ),
           ),
+          if (premiumError != null)
+            _PremiumTrouble(onRetry: onRetryPremium)
+          else if (pending)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Checking your purchase…',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           for (final offer in offers)
             _Row(
               offer: offer,
@@ -193,6 +246,90 @@ class GamePicker extends StatelessWidget {
   }
 }
 
+/// Shown when the store could not be reached, above rows that may be lying.
+///
+/// The wording is the point. "Couldn't check your purchase" says the app failed
+/// at something; "you have not bought this" — which is what a padlock says
+/// without this banner — accuses the reader of something, and is the sentence
+/// that turns a flaky network into a refund request and a one-star review.
+///
+/// The retry is not decoration either: without it, the only remedies a paying
+/// customer can think of are reinstalling the app and asking for their money
+/// back, and one of those makes the problem worse.
+class _PremiumTrouble extends StatefulWidget {
+  const _PremiumTrouble({required this.onRetry});
+
+  final Future<void> Function()? onRetry;
+
+  @override
+  State<_PremiumTrouble> createState() => _PremiumTroubleState();
+}
+
+class _PremiumTroubleState extends State<_PremiumTrouble> {
+  bool _retrying = false;
+
+  Future<void> _retry() async {
+    final onRetry = widget.onRetry;
+    if (onRetry == null) return;
+    setState(() => _retrying = true);
+    try {
+      await onRetry();
+    } finally {
+      // The sheet rebuilds off PremiumStatus, so a success simply replaces this
+      // widget; this only matters when it failed again.
+      if (mounted) setState(() => _retrying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              // Deliberately not the exception text. "PlatformException(23, …)"
+              // tells the reader nothing they can act on and reads like the
+              // purchase itself broke.
+              'Could not check your purchase. If you have bought Premium, it '
+              'will unlock once this device can reach the store.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          if (_retrying)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: widget.onRetry == null ? null : _retry,
+              child: const Text('Retry'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Row extends StatelessWidget {
   const _Row({
     required this.offer,
@@ -215,6 +352,32 @@ class _Row extends StatelessWidget {
     final locked = offer.isLocked;
     final fits = offer.fitsTable;
     final faded = scheme.onSurfaceVariant.withValues(alpha: 0.55);
+
+    if (offer.lockPending) {
+      // Says nothing about money, because nothing is known about money yet.
+      // No padlock, no PREMIUM badge, no checkbox and no tap target: an inert
+      // row that is plainly not ready, rather than a claim that turns out to be
+      // wrong half a second later.
+      return ListTile(
+        leading: SizedBox(
+          width: 20,
+          height: 20,
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: CircularProgressIndicator(strokeWidth: 2, color: faded),
+          ),
+        ),
+        title: Text(
+          offer.manifest.title,
+          style: theme.textTheme.titleSmall?.copyWith(color: faded),
+        ),
+        subtitle: Text(
+          offer.manifest.tagline,
+          style: theme.textTheme.bodySmall?.copyWith(color: faded),
+        ),
+        dense: true,
+      );
+    }
 
     if (locked) {
       // No checkbox: a locked row has nothing a tap could toggle, and a
