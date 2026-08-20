@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/sdk/net/discovery.dart';
+import 'package:multiscreen_slingshot/sdk/net/udp_discovery.dart';
 
 /// Discovery over real sockets.
 ///
@@ -14,12 +14,12 @@ void main() {
 
   test('a broadcaster is heard by a listener, and disappears when it stops',
       () async {
-    final beacon = DiscoveryBroadcaster(
+    final beacon = UdpGameAdvertiser(
       id: 'live-test',
       name: 'live test board',
       address: Uri.parse('ws://127.0.0.1:8080'),
     );
-    final listener = DiscoveryListener();
+    final listener = UdpGameFinder();
 
     await listener.start();
     await beacon.start();
@@ -80,12 +80,12 @@ void _unhandledErrorTests() {
     final escaped = <Object>[];
 
     await runZonedGuarded(() async {
-      final beacon = DiscoveryBroadcaster(
+      final beacon = UdpGameAdvertiser(
         id: 'zone-test',
         name: 'zone test',
         address: Uri.parse('ws://127.0.0.1:8080'),
       );
-      final listener = DiscoveryListener();
+      final listener = UdpGameFinder();
 
       await listener.start();
       await beacon.start();

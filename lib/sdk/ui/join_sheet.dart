@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 // import 'package:flutter/services.dart';
 
 import '../net/discovery.dart';
+import '../net/discovery_stack.dart';
 import '../net/host_address.dart';
 import 'scan_sheet.dart';
 
@@ -39,7 +40,10 @@ class JoinSheet extends StatefulWidget {
 }
 
 class _JoinSheetState extends State<JoinSheet> {
-  final _listener = DiscoveryListener();
+  // Typed as the contract, built by the factory: this sheet only ever reads
+  // `games`, `failure` and `refresh`, so how many transports are behind it —
+  // one on Android, two on iOS — is not its business.
+  final GameFinder _listener = createGameFinder();
 
   @override
   void initState() {

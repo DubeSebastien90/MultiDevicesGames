@@ -1,9 +1,16 @@
-/// LAN game discovery over UDP broadcast.
+/// What a game looks like from across the room, and the two jobs discovery has.
 ///
-/// A host shouts a small JSON beacon onto the subnet once a second; phones on
-/// the "join" screen listen for it and build a live list. Nothing connects — a
-/// listener is a passive receiver, which is the whole point: you can see who is
-/// hosting before committing to anything.
+/// A host announces that it is hosting; phones on the "join" screen build a
+/// live list of what they can hear. Nothing connects while looking — you can
+/// see who is hosting before committing to anything.
+///
+/// This file is deliberately transport-free. It holds the vocabulary both sides
+/// agree on ([GameBeacon]) and the two contracts ([GameAdvertiser],
+/// [GameFinder]), and says nothing about how a beacon actually crosses the
+/// room. The UDP broadcast implementation lives in `udp_discovery.dart`;
+/// splitting them is what lets a second implementation — Bonjour/mDNS, which
+/// iOS allows without the multicast entitlement that broadcast requires — sit
+/// beside it rather than replace it.
 ///
 /// The beacon carries the game *name* and address, never the join code. The
 /// name is how a human recognises the right game; the code is the secret that
@@ -11,27 +18,16 @@
 /// (see `HostSession`), not out here where anyone with a packet sniffer sits.
 library;
 
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
-/// Fixed UDP port both sides bind. Separate from the WebSocket port so the
-/// beacon keeps working while the game socket is busy.
-const int kDiscoveryPort = 41234;
-
-/// How often a host re-announces itself.
-const Duration kBeaconInterval = Duration(seconds: 1);
-
-/// Drop a game from the list if we have not heard from it in this long. Four
-/// missed beacons — long enough to survive a dropped packet, short enough that
-/// a closed game disappears while you are still looking at the screen.
-const Duration kBeaconTimeout = Duration(seconds: 4);
-
 /// Marks our datagrams so we ignore whatever else is broadcasting on this port.
-const String _magic = 'mss1';
+///
+/// Public rather than private only because [GameBeacon]'s codec and the UDP
+/// transport that carries it now live in different files and must agree on it.
+const String kBeaconMagic = 'mss1';
 
 /// A fresh 5-digit join code. Leading zeros are kept, so all 100 000 are usable
 /// and the code always looks the same length on screen.
@@ -58,6 +54,10 @@ class GameBeacon {
 
   /// Stable per-host-session id. Keyed on this rather than the address so a
   /// host that changes IP mid-lobby does not appear twice.
+  ///
+  /// This is also what lets two transports run at once without showing the
+  /// same table twice: a game heard over both UDP and mDNS arrives under one
+  /// id, and the second sighting simply refreshes the first.
   final String id;
 
   /// What the host called the game. Display only, and untrusted — see [name]'s
@@ -81,8 +81,13 @@ class GameBeacon {
 
   final DateTime seenAt;
 
+  /// The UDP wire format: one JSON object per datagram.
+  ///
+  /// A Bonjour transport would not send this as bytes — the same keys become
+  /// TXT record attributes on the advertised service — but keeping one set of
+  /// key names means a beacon means the same thing whichever way it arrived.
   Map<String, dynamic> toJson() => {
-    'app': _magic,
+    'app': kBeaconMagic,
     'id': id,
     'name': name,
     'ws': uri.toString(),
@@ -100,7 +105,42 @@ class GameBeacon {
     try {
       final decoded = jsonDecode(utf8.decode(data));
       if (decoded is! Map<String, dynamic>) return null;
-      if (decoded['app'] != _magic) return null;
+      return _fromMap(decoded, now: now);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// The same beacon, arriving as a Bonjour TXT record instead of a datagram.
+  ///
+  /// TXT values are strings and only strings, so the three fields that are not
+  /// strings are widened here and everything else falls through to exactly the
+  /// checks [tryParse] applies. That reuse is the point: this input is every bit
+  /// as hostile as a datagram — anyone on the network can advertise a service —
+  /// and it would be a poor trade to gain a transport and lose the sanitising.
+  static GameBeacon? tryFromAttributes(
+    Map<String, String> attributes, {
+    DateTime? now,
+  }) {
+    try {
+      final rejoin = attributes['rejoin'];
+      return _fromMap({
+        ...attributes,
+        'players': int.tryParse(attributes['players'] ?? '') ?? 0,
+        // Absent reads as open, matching the datagram default. Only an explicit
+        // '0' closes a game.
+        'open': attributes['open'] != '0',
+        if (rejoin != null) 'rejoin': rejoin.split(','),
+      }, now: now);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// The one set of guards, whichever way the beacon arrived.
+  static GameBeacon? _fromMap(Map<String, dynamic> decoded, {DateTime? now}) {
+    try {
+      if (decoded['app'] != kBeaconMagic) return null;
       if (decoded['probe'] == true) return null;
 
       final id = decoded['id'];
@@ -139,336 +179,53 @@ class GameBeacon {
   }
 }
 
-/// Host side: announces the game until disposed.
+/// Host side: tells the network this game exists, until disposed.
 ///
-/// Every failure mode here is non-fatal. On iOS 14+ broadcasting needs the
-/// multicast entitlement, and on locked-down networks the packets go nowhere —
-/// in both cases hosting must still work, with the QR and typed address as the
-/// way in. [failure] records why, so the lobby can say so out loud.
-class DiscoveryBroadcaster {
-  DiscoveryBroadcaster({
-    required this.id,
-    required this.name,
-    required this.address,
-    this.port = kDiscoveryPort,
-  });
+/// **Failure is never fatal, and implementations must guarantee that.** A phone
+/// can be on a network that drops broadcasts, or on an iOS build without the
+/// multicast entitlement, and hosting has to work anyway — the QR code and the
+/// typed address are the way in when this is silent. So [start] does not throw
+/// on a network it cannot announce onto; it records why in [failure] and the
+/// lobby says so out loud.
+abstract class GameAdvertiser {
+  /// Begins announcing. Completes even when announcing turns out to be
+  /// impossible — check [failure] rather than catching.
+  Future<void> start();
 
-  final String id;
-  final String name;
+  /// Keeps the advertised details current. Called when something a joiner can
+  /// see actually changes, not on a timer, so an implementation that has to pay
+  /// to publish a change is not paying every second.
+  void update({int? players, bool? open, List<String>? rejoinable});
 
-  /// The WebSocket address joiners should use.
-  final Uri address;
-  final int port;
+  /// Non-null when the game could not be announced. Hosting is unaffected.
+  String? get failure;
 
-  RawDatagramSocket? _socket;
-  Timer? _timer;
-  int _players = 0;
-  bool _open = true;
-  List<String> _rejoinable = const [];
-  int _consecutiveFailures = 0;
-
-  /// Non-null when discovery could not start. Hosting is unaffected.
-  String? get failure => _failure;
-  String? _failure;
-
-  bool get running => _socket != null;
-
-  /// Give up after this many refusals in a row. A flapping interface deserves
-  /// another go; an OS that will never allow broadcast deserves silence rather
-  /// than an error every second for the rest of the session.
-  static const int _maxConsecutiveFailures = 3;
-
-  Future<void> start() async {
-    try {
-      final socket = await _bind(port);
-      socket.broadcastEnabled = true;
-      _socket = socket;
-      // Learn the subnet broadcast addresses; the first datagram goes out on
-      // 255.255.255.255 regardless, so this never delays anything.
-      unawaited(_refreshLocalIPs());
-      // Answer probes immediately: a joiner opening the list should not wait
-      // out our next scheduled beacon before seeing the game.
-      socket.listen(
-        (event) {
-          if (event != RawSocketEvent.read) return;
-          final dg = socket.receive();
-          if (dg == null) return;
-          if (_isProbe(dg.data)) _send();
-        },
-        // A refused send does NOT throw at the call site — the OS error is
-        // reported here, asynchronously, well after `send` has returned. This
-        // handler is the only thing standing between "this network will not
-        // carry our beacon" and an unhandled exception that takes the host
-        // down with it.
-        onError: _handleSocketError,
-        cancelOnError: false,
-      );
-      _timer = Timer.periodic(kBeaconInterval, (_) => _send());
-      _send();
-    } on Object catch (e) {
-      _failure = '$e';
-    }
-  }
-
-  void _handleSocketError(Object error) {
-    _consecutiveFailures++;
-    if (_consecutiveFailures < _maxConsecutiveFailures) return;
-    _failure = '$error';
-    // Stop beaconing, keep the socket: hosting carries on, the lobby says the
-    // game could not be announced, and the QR does the job instead.
-    _timer?.cancel();
-    _timer = null;
-  }
-
-  /// Keeps the advertised player count and joinability current.
-  void update({int? players, bool? open, List<String>? rejoinable}) {
-    if (players != null) _players = players;
-    if (open != null) _open = open;
-    if (rejoinable != null) _rejoinable = rejoinable;
-  }
-
-  void _send() {
-    final socket = _socket;
-    if (socket == null) return;
-    final beacon = GameBeacon(
-      id: id,
-      name: name,
-      uri: address,
-      players: _players,
-      rejoinable: _rejoinable,
-      open: _open,
-      seenAt: DateTime.now(),
-    );
-    final bytes = utf8.encode(jsonEncode(beacon.toJson()));
-    _sendToBroadcastTargets(socket, bytes, port);
-  }
-
-  void dispose() {
-    _timer?.cancel();
-    _timer = null;
-    _socket?.close();
-    _socket = null;
-  }
+  void dispose();
 }
 
-/// Joiner side: a live list of games heard on this network.
+/// Joiner side: a live list of the games within earshot.
 ///
-/// Purely passive. Listening costs nothing and tells the hosts nothing, apart
-/// from the single probe sent at startup to skip the first beacon interval.
-class DiscoveryListener extends ChangeNotifier {
-  DiscoveryListener({this.port = kDiscoveryPort});
+/// Purely passive from the user's point of view — appearing on this list costs
+/// a host nothing and tells it nothing about who is looking.
+///
+/// A [ChangeNotifier] because the join sheet rebuilds off it directly, and
+/// because implementations differ in *when* they learn things: a UDP listener
+/// hears a datagram on a timer, an mDNS browser is pushed an event. Both just
+/// notify.
+abstract class GameFinder extends ChangeNotifier {
+  /// Begins looking. Like [GameAdvertiser.start], completes rather than throws
+  /// when the network will not allow it, and reports through [failure].
+  Future<void> start();
 
-  final int port;
-
-  RawDatagramSocket? _socket;
-  Timer? _prune;
-  final _byId = <String, GameBeacon>{};
-
-  /// Non-null when we could not listen at all — the UI should then point at
-  /// the QR and typed-address fallbacks rather than spinning forever.
-  String? get failure => _failure;
-  String? _failure;
-
-  /// Set when the outgoing probe was refused. Diagnostic only: listening is
-  /// the half that matters, and it may well still be working.
-  String? get probeFailure => _probeFailure;
-  String? _probeFailure;
-
-  /// Games heard recently, most players first, then alphabetical so the list
+  /// Games heard recently, joinable ones first, then alphabetical so the list
   /// does not reshuffle itself under the user's thumb every second.
-  List<GameBeacon> get games {
-    final list = _byId.values.toList()
-      ..sort((a, b) {
-        final byOpen = (b.open ? 1 : 0).compareTo(a.open ? 1 : 0);
-        if (byOpen != 0) return byOpen;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
-    return List.unmodifiable(list);
-  }
+  List<GameBeacon> get games;
 
-  Future<void> start() async {
-    try {
-      final socket = await _bind(port);
-      socket.broadcastEnabled = true;
-      _socket = socket;
-      // Learn the subnet broadcast addresses; the first datagram goes out on
-      // 255.255.255.255 regardless, so this never delays anything.
-      unawaited(_refreshLocalIPs());
-      socket.listen(
-        (event) {
-          if (event != RawSocketEvent.read) return;
-          final dg = socket.receive();
-          if (dg == null) return;
-          final beacon = GameBeacon.tryParse(dg.data);
-          if (beacon == null) return;
-          final previous = _byId[beacon.id];
-          _byId[beacon.id] = beacon;
-          // Only repaint when something a human can see actually changed.
-          if (previous == null ||
-              previous.name != beacon.name ||
-              previous.players != beacon.players ||
-              previous.open != beacon.open ||
-              previous.uri != beacon.uri) {
-            notifyListeners();
-          }
-        },
-        // A refused probe arrives here rather than at the call site, and it is
-        // not fatal: a machine that may not transmit can still hear beacons.
-        // Recorded, never surfaced as "cannot search the network".
-        onError: (Object e) => _probeFailure = '$e',
-        cancelOnError: false,
-      );
-      _probe();
-      _prune = Timer.periodic(kBeaconInterval, (_) => _pruneStale());
-    } on Object catch (e) {
-      _failure = '$e';
-      notifyListeners();
-    }
-  }
+  /// For a pull-to-refresh or a "not seeing it?" tap. Implementations that are
+  /// pushed their updates may reasonably do very little here.
+  void refresh();
 
-  /// Asks any host within earshot to beacon right now.
-  ///
-  /// Entirely optional. If the probe cannot go out we simply wait for the next
-  /// scheduled beacon — *receiving* is the half that matters here, and it can
-  /// work fine on a machine that is not allowed to transmit.
-  void _probe() {
-    final socket = _socket;
-    if (socket == null) return;
-    _sendToBroadcastTargets(
-      socket,
-      utf8.encode(jsonEncode({'app': _magic, 'probe': true})),
-      port,
-    );
-  }
-
-  /// Re-probe, for a pull-to-refresh or a "not seeing it?" tap.
-  void refresh() {
-    _pruneStale();
-    _probe();
-  }
-
-  void _pruneStale() {
-    final cutoff = DateTime.now().subtract(kBeaconTimeout);
-    final before = _byId.length;
-    _byId.removeWhere((_, b) => b.seenAt.isBefore(cutoff));
-    if (_byId.length != before) notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _prune?.cancel();
-    _socket?.close();
-    _socket = null;
-    super.dispose();
-  }
-}
-
-/// Sends one datagram to every address worth trying.
-///
-/// `255.255.255.255` is the obvious one, but plenty of networks and stacks drop
-/// it while happily carrying a subnet-directed broadcast like `192.168.1.255`.
-/// Dart does not expose interface netmasks, so the subnet targets are derived
-/// by assuming a /24 — wrong for an unusual netmask, harmless when it is (the
-/// datagram simply goes nowhere), and right on essentially every home network.
-///
-/// Failures are not reported here at all. A refused send surfaces asynchronously
-/// on the socket's own stream, which is where both sides handle it.
-void _sendToBroadcastTargets(RawDatagramSocket socket, List<int> bytes,
-    int port) {
-  for (final target in _broadcastTargets) {
-    try {
-      socket.send(bytes, target, port);
-    } on Object {
-      // Keep going: one dead interface must not stop the others.
-    }
-  }
-}
-
-/// Cached because it hits the interface list, and it changes rarely.
-List<InternetAddress> get _broadcastTargets {
-  final now = DateTime.now();
-  final cached = _cachedTargets;
-  if (cached != null &&
-      now.difference(_targetsComputedAt) < const Duration(seconds: 30)) {
-    return cached;
-  }
-  final targets = <InternetAddress>[InternetAddress('255.255.255.255')];
-  for (final ip in _lastKnownLocalIPv4) {
-    final parts = ip.split('.');
-    if (parts.length != 4) continue;
-    try {
-      targets.add(InternetAddress('${parts[0]}.${parts[1]}.${parts[2]}.255'));
-    } on Object {
-      // Not a usable address; skip it.
-    }
-  }
-  _cachedTargets = targets;
-  _targetsComputedAt = now;
-  return targets;
-}
-
-List<InternetAddress>? _cachedTargets;
-DateTime _targetsComputedAt = DateTime.fromMillisecondsSinceEpoch(0);
-
-/// Local IPv4 addresses, refreshed in the background so building the target
-/// list never blocks a beacon.
-List<String> _lastKnownLocalIPv4 = const [];
-bool _refreshingIPs = false;
-
-Future<void> _refreshLocalIPs() async {
-  if (_refreshingIPs) return;
-  _refreshingIPs = true;
-  try {
-    final interfaces = await NetworkInterface.list(
-      includeLoopback: false,
-      includeLinkLocal: false,
-      type: InternetAddressType.IPv4,
-    );
-    _lastKnownLocalIPv4 = [
-      for (final i in interfaces)
-        for (final a in i.addresses) a.address,
-    ];
-    _cachedTargets = null; // Recompute with the fresh list.
-  } on Object {
-    // Keep whatever we had; the limited broadcast address still works.
-  } finally {
-    _refreshingIPs = false;
-  }
-}
-
-/// Binds the shared discovery port.
-///
-/// Host and joiner both want it, and on a single device (or one desktop running
-/// two copies while you test) they have to coexist — hence reusePort.
-///
-/// Windows does not implement the option: it logs a line to stderr, ignores it,
-/// and binds anyway, which is why that message shows up in dev runs and is
-/// nothing to chase. Platforms that refuse harder throw, and get a plain bind.
-Future<RawDatagramSocket> _bind(int port) async {
-  try {
-    return await RawDatagramSocket.bind(
-      InternetAddress.anyIPv4,
-      port,
-      reuseAddress: true,
-      reusePort: true,
-    );
-  } on Object {
-    return RawDatagramSocket.bind(
-      InternetAddress.anyIPv4,
-      port,
-      reuseAddress: true,
-    );
-  }
-}
-
-bool _isProbe(List<int> data) {
-  if (data.length > 512) return false;
-  try {
-    final decoded = jsonDecode(utf8.decode(data));
-    return decoded is Map<String, dynamic> &&
-        decoded['app'] == _magic &&
-        decoded['probe'] == true;
-  } on Object {
-    return false;
-  }
+  /// Non-null when we could not look at all — the UI should then point at the
+  /// QR and typed-address fallbacks rather than spinning forever.
+  String? get failure;
 }

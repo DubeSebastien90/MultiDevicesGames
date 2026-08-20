@@ -1,4 +1,4 @@
-package com.multidevicesgames.multiscreen_slingshot
+package com.reallifecorp.bubblegames
 
 import android.content.Context
 import android.net.wifi.WifiManager

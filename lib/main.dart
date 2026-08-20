@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'sdk/app_controller.dart';
+import 'sdk/ui/age_gate_screen.dart';
 import 'sdk/ui/ball_wipe.dart';
 import 'sdk/ui/intro_animation.dart';
 import 'sdk/ui/role_screen.dart';
@@ -86,7 +87,7 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       // Also what Android shows in the recent-apps switcher.
-      title: 'MultiDevicesGame',
+      title: 'BubbleGames',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -97,14 +98,20 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
         ),
         scaffoldBackgroundColor: const Color(0xFF0B1020),
       ),
-      home: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          if (_controller.client == null) {
-            return RoleScreen(controller: _controller);
-          }
-          return SessionScreen(controller: _controller);
-        },
+      // Nothing else gets a frame until the gate has an answer. The band it
+      // produces is threaded into RoleScreen as an argument rather than looked
+      // up there, so the screen that owns the name field cannot be built
+      // without it.
+      home: AgeGate(
+        builder: (context, band) => AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            if (_controller.client == null) {
+              return RoleScreen(controller: _controller, ageBand: band);
+            }
+            return SessionScreen(controller: _controller);
+          },
+        ),
       ),
     );
   }

@@ -22,9 +22,10 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
 
     <application
-        android:label="MultiDevicesGame"
+        android:label="BubbleGames"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <!-- Portrait is locked here as well as in main.dart. The runtime call is
              what matters on a running app, but it lands a frame or two after the
              activity is created, and iOS has carried the same lock in its
