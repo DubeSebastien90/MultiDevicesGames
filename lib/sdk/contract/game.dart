@@ -4,6 +4,21 @@ import '../layout/phone_spec.dart';
 import 'sim.dart';
 import 'view.dart';
 
+/// Whether a game is free for everyone or requires Premium to be unlocked.
+///
+/// Lives on the manifest, next to the id and title, rather than in a separate
+/// list elsewhere: a game's tier is a fact about the game, the same kind of
+/// fact as its title or its player count, and belongs where those are
+/// declared so nobody has to cross-reference two files to know what a game
+/// costs.
+enum GameTier {
+  /// Playable, and pickable into the run, by anyone.
+  free,
+
+  /// Requires Premium to be picked into the run or played.
+  premium,
+}
+
 /// Who a game is, and what table it needs.
 class GameManifest {
   const GameManifest({
@@ -13,6 +28,7 @@ class GameManifest {
     required this.goal,
     this.players = const PlayerCount.range(min: 1),
     this.supportsIpad = false,
+    this.tier = GameTier.free,
   });
 
   /// Stable and wire-visible: every device resolves this to the same game.
@@ -44,6 +60,13 @@ class GameManifest {
   /// large phone are not far apart, and Android tablets exist. Most likely a
   /// threshold on [PhoneSpec.diagonalMm] rather than a platform check.
   final bool supportsIpad;
+
+  /// Free forever, or behind Premium. Defaults to [GameTier.free] so a game
+  /// that never mentions it is free — the same "declared deliberately" shape
+  /// as [supportsIpad].
+  final GameTier tier;
+
+  bool get isPremium => tier == GameTier.premium;
 
   bool fits(int phoneCount) => players.fits(phoneCount);
 

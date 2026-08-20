@@ -21,6 +21,7 @@ import '../layout/board_compiler.dart';
 import '../layout/board_plan.dart';
 import '../layout/name_drop_optimizer.dart';
 import '../layout/phone_spec.dart';
+import '../monetization/premium_status.dart';
 import '../score/scoreboard.dart';
 import 'name_drop_detector.dart';
 
@@ -55,6 +56,7 @@ class GameOffer {
     required this.fitsTable,
     required this.reason,
     required this.chosen,
+    required this.isLocked,
   });
 
   final MultiscreenGame game;
@@ -73,6 +75,12 @@ class GameOffer {
 
   /// Whether the host has left it in the run.
   final bool chosen;
+
+  /// A Premium game this host has not unlocked. Shown greyed with a lock
+  /// rather than a checkbox — tapping it opens the paywall instead of ticking
+  /// it, so there is no tick state to get out of sync with a purchase that
+  /// has not happened yet.
+  final bool isLocked;
 
   GameManifest get manifest => game.manifest;
 }
@@ -121,10 +129,12 @@ class HostSession extends ChangeNotifier {
     String name = 'My board',
     String? joinCode,
     bool advertise = true,
+    PremiumStatus? premium,
   }) : _transport = transport ?? WebSocketHostTransport(),
        _name = name,
        _joinCode = joinCode ?? generateJoinCode(),
-       _advertise = advertise;
+       _advertise = advertise,
+       _premium = premium;
 
   // JOIN CODE DISABLED — the lockout only means something with a code to get
   // wrong.
@@ -139,6 +149,14 @@ class HostSession extends ChangeNotifier {
   final String _name;
   final String _joinCode;
   final bool _advertise;
+
+  /// Null in tests and anywhere else Premium is not wired up — treated the
+  /// same as "not premium", never as "everything unlocked". A missing gate
+  /// must fail closed, not open.
+  final PremiumStatus? _premium;
+
+  /// Whether this host currently has Premium unlocked.
+  bool get isPremiumUnlocked => _premium?.isPremium ?? false;
 
   final _clock = Stopwatch();
   final _phones = <PhoneRecord>[];
@@ -202,13 +220,25 @@ class HostSession extends ChangeNotifier {
   /// What the walk leaves out right now.
   ///
   /// Everything outside the run once one is under way; the unticked games
-  /// before that, which is what the lobby is choosing between.
+  /// before that, which is what the lobby is choosing between. Either way,
+  /// every Premium game is folded in on top when this host has not unlocked
+  /// Premium — the one place that guarantee lives, so every query answered
+  /// from [_skipping] (`runningOrder`, `upcoming`, `canStart`,
+  /// `playableFrom`) automatically respects the paywall without having to
+  /// remember to check it themselves.
   Set<String> get _skipping {
     final run = _runGames;
-    if (run == null) return _skipped;
+    final base = run == null
+        ? _skipped
+        : {
+            for (final game in GameCatalog.playlist)
+              if (!run.contains(game.manifest.id)) game.manifest.id,
+          };
+    if (isPremiumUnlocked) return base;
     return {
+      ...base,
       for (final game in GameCatalog.playlist)
-        if (!run.contains(game.manifest.id)) game.manifest.id,
+        if (game.manifest.tier == GameTier.premium) game.manifest.id,
     };
   }
 
@@ -253,6 +283,7 @@ class HostSession extends ChangeNotifier {
     _broadcastLobby();
     notifyListeners();
   }
+
   GameOutcome? get outcome => _outcome;
 
   /// The game being set up or played.
@@ -274,8 +305,10 @@ class HostSession extends ChangeNotifier {
   /// gets a slice of the board, whether a game can start. Everything about
   /// *remembering* — the standings, and matching a returning phone to who it
   /// was — counts [phones].
-  List<PhoneRecord> get _present =>
-      [for (final p in _phones) if (p.connected) p];
+  List<PhoneRecord> get _present => [
+    for (final p in _phones)
+      if (p.connected) p,
+  ];
 
   double get simTimeMs => _stepCount * (1000 / PlatformConfig.simHz);
 
@@ -293,10 +326,10 @@ class HostSession extends ChangeNotifier {
 
   /// The game the playlist would start right now, or null if none fits.
   MultiscreenGame? get upcoming => GameCatalog.playableFrom(
-        _gameIndex,
-        _present.length,
-        skipping: _skipping,
-      );
+    _gameIndex,
+    _present.length,
+    skipping: _skipping,
+  );
 
   bool get canStart =>
       _phase == HostPhase.lobby &&
@@ -325,9 +358,7 @@ class HostSession extends ChangeNotifier {
       // be sending them after something they already said no to.
       final sizes = GameCatalog.playableTableSizes(skipping: _skipping);
       final nearest = sizes.where((n) => n > _present.length).toList();
-      final advice = nearest.isEmpty
-          ? ''
-          : ' Try ${nearest.first} phone(s).';
+      final advice = nearest.isEmpty ? '' : ' Try ${nearest.first} phone(s).';
       return 'No ticked game fits ${_present.length} phone(s).$advice '
           '${GameCatalog.requirementSummary(skipping: _skipping)}.';
     }
@@ -376,7 +407,12 @@ class HostSession extends ChangeNotifier {
         reason: game.manifest.fits(_present.length)
             ? null
             : game.manifest.requirement(),
-        chosen: !_skipped.contains(game.manifest.id),
+        // A locked game reads as un-chosen no matter what the tick list
+        // remembers — "All" tickets it internally so a later purchase can
+        // restore it without a special case, but the checkbox has to show
+        // what Play is actually about to do, not what is stored.
+        chosen: !_skipping.contains(game.manifest.id),
+        isLocked: game.manifest.tier == GameTier.premium && !isPremiumUnlocked,
       ),
   ];
 
@@ -385,7 +421,12 @@ class HostSession extends ChangeNotifier {
   /// Takes effect from the next game the run reaches rather than the current
   /// one, because the run walks the list by asking what comes next — so a game
   /// unticked mid-round is simply never arrived at.
+  ///
+  /// Choosing tonight's exact lineup is itself Premium. Without it, the host
+  /// gets the default free run and every attempt to customize is ignored here,
+  /// even if a caller forgets to route the tap through the paywall first.
   void chooseGame(MultiscreenGame game, {required bool chosen}) {
+    if (!isPremiumUnlocked) return;
     final changed = chosen
         ? _skipped.remove(game.manifest.id)
         : _skipped.add(game.manifest.id);
@@ -394,6 +435,7 @@ class HostSession extends ChangeNotifier {
 
   /// Put the whole catalogue back in the run.
   void chooseAllGames() {
+    if (!isPremiumUnlocked) return;
     if (_skipped.isEmpty) return;
     _skipped.clear();
     notifyListeners();
@@ -405,6 +447,7 @@ class HostSession extends ChangeNotifier {
   /// says so — rather than refusing the tap and leaving somebody wondering which
   /// of the twelve boxes is the one that will not come off.
   void chooseNoGames() {
+    if (!isPremiumUnlocked) return;
     if (_skipped.length == GameCatalog.playlist.length) return;
     _skipped
       ..clear()
@@ -423,7 +466,8 @@ class HostSession extends ChangeNotifier {
 
     if (_advertise) {
       final beacon = DiscoveryBroadcaster(
-        id: '${DateTime.now().microsecondsSinceEpoch}-'
+        id:
+            '${DateTime.now().microsecondsSinceEpoch}-'
             '${Random().nextInt(1 << 32)}',
         name: _name,
         address: uri,
@@ -470,11 +514,13 @@ class HostSession extends ChangeNotifier {
     // One subscription for the connection's whole life. Splitting it into a
     // "gate" listener and a "session" listener would drop whatever arrived
     // between cancelling the first and attaching the second.
-    _subs.add(link.onMessage.listen(
-      (msg) => _handleMessage(record, msg),
-      onDone: () => _handleDisconnect(record),
-      onError: (Object _) => _handleDisconnect(record),
-    ));
+    _subs.add(
+      link.onMessage.listen(
+        (msg) => _handleMessage(record, msg),
+        onDone: () => _handleDisconnect(record),
+        onError: (Object _) => _handleDisconnect(record),
+      ),
+    );
 
     if (trusted) {
       _admit(record);
@@ -779,7 +825,8 @@ class HostSession extends ChangeNotifier {
         // and this advice would have been both wrong and in the way — a banner
         // telling the table to re-calibrate, over a screen already showing it
         // the new arrangement.
-        _warning = '${record.label} disconnected — re-calibrate to rebuild the '
+        _warning =
+            '${record.label} disconnected — re-calibrate to rebuild the '
             'board.';
         _tellTheGameSomebodyLeft(record);
       }
@@ -854,7 +901,8 @@ class HostSession extends ChangeNotifier {
       // being dropped into the lobby to work out for itself why the round it
       // was setting up vanished.
       _tableChange = TableChange(who: because);
-      _planError = '$because — nothing left in the playlist fits '
+      _planError =
+          '$because — nothing left in the playlist fits '
           '${_present.length} phone(s). '
           '${GameCatalog.requirementSummary(skipping: _skipping)}.';
       _game = null;
@@ -920,9 +968,7 @@ class HostSession extends ChangeNotifier {
       (sim as PlayerPresence).onPlayerLeft(record.phoneId);
       return;
     }
-    _finishRound(GameOutcome.draw(
-      summary: '${record.label} dropped out',
-    ));
+    _finishRound(GameOutcome.draw(summary: '${record.label} dropped out'));
   }
 
   void _handleMessage(PhoneRecord record, Map<String, dynamic> msg) {
@@ -936,8 +982,9 @@ class HostSession extends ChangeNotifier {
 
     switch (type) {
       case ClientMsg.calibration:
-        record.metrics =
-            DeviceMetrics.fromJson(msg['metrics'] as Map<String, dynamic>);
+        record.metrics = DeviceMetrics.fromJson(
+          msg['metrics'] as Map<String, dynamic>,
+        );
         // This is where a phone stops being 'p2' and becomes a name: the label
         // rides in with the measurements. The standings are keyed by phone but
         // *read* by name, so they have to be told — without this, every other
@@ -971,12 +1018,14 @@ class HostSession extends ChangeNotifier {
           (msg['lx'] as num).toDouble(),
           (msg['ly'] as num).toDouble(),
         );
-        sim.onTouch(TouchEvent(
-          phoneId: record.phoneId,
-          worldX: world.x,
-          worldY: world.y,
-          phase: msg['phase'] as String,
-        ));
+        sim.onTouch(
+          TouchEvent(
+            phoneId: record.phoneId,
+            worldX: world.x,
+            worldY: world.y,
+            phase: msg['phase'] as String,
+          ),
+        );
 
       case ClientMsg.interrupted:
         _handleInterrupted(record, msg);
@@ -1063,8 +1112,9 @@ class HostSession extends ChangeNotifier {
   void startGame(MultiscreenGame game) {
     if (!canStart) return;
     if (!game.manifest.fits(_present.length)) return;
-    final index = GameCatalog.playlist
-        .indexWhere((g) => g.manifest.id == game.manifest.id);
+    final index = GameCatalog.playlist.indexWhere(
+      (g) => g.manifest.id == game.manifest.id,
+    );
     if (index < 0) return;
     _mode = RoundMode.oneOff;
     // No run to be part of. A one-off that the table outgrows falls back to the
@@ -1384,14 +1434,12 @@ class HostSession extends ChangeNotifier {
   /// it happens rather than left to be puzzled over on five screens at once.
   void _warnAboutUnknownPhones(GameOutcome outcome) {
     final known = {for (final p in _present) p.phoneId};
-    final named = <String>{
-      ...?outcome.winners,
-      ...?outcome.lines?.keys,
-    };
+    final named = <String>{...?outcome.winners, ...?outcome.lines?.keys};
     final strangers = named.difference(known);
     if (strangers.isEmpty) return;
 
-    _warning = '${_game?.manifest.title ?? 'That game'} ended naming phones '
+    _warning =
+        '${_game?.manifest.title ?? 'That game'} ended naming phones '
         'that are not here: ${strangers.join(', ')}. Outcomes are keyed by '
         'phoneId.';
     debugPrint('[outcome] $_warning');

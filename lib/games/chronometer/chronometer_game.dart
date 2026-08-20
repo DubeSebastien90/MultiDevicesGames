@@ -29,6 +29,7 @@ class ChronometerGame implements MultiscreenGame {
         // ceiling is the palette, because a guess is announced by its owner's
         // colour and two people sharing one could not tell their pips apart.
         players: PlayerCount.range(min: 2, max: PlayerPalette.size),
+        tier: GameTier.premium,
       );
 
   /// A star: every phone upright in its own hand, pointing at the middle.
