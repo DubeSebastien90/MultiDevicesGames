@@ -50,6 +50,26 @@ class PremiumStatus extends ChangeNotifier {
   /// that never got that far may configure.
   bool _configured = false;
 
+  /// How long to wait on the store before giving up and saying so.
+  ///
+  /// **Not an optimisation — the thing that stops "we are still checking" from
+  /// becoming a permanent state.** [isReady] is what lets the games list
+  /// decline to draw a padlock on a game the host may already own, and that
+  /// restraint is only kind while it is temporary: a spinner that never stops
+  /// tells a paying customer even less than a wrong padlock did, because at
+  /// least a padlock comes with a Restore button.
+  ///
+  /// A network that hangs rather than refuses is the case this exists for. A
+  /// refusal already lands in the catch below within moments; a black hole —
+  /// captive-portal WiFi is the everyday one — returns nothing at all, and
+  /// without a deadline the future simply never completes.
+  ///
+  /// On expiry the state is exactly the state of any other failure: not
+  /// premium, [error] set, [isReady] true. Padlocks come back, but this time
+  /// with a banner saying the check failed and a button to try again — which is
+  /// the honest end state, and the one a customer can act on.
+  static const Duration storeTimeout = Duration(seconds: 10);
+
   /// True once [CustomerInfo] has been fetched at least once. Before that,
   /// [isPremium] is a guess (false) rather than an answer — screens that gate
   /// on Premium should treat "not ready" as "don't show a locked badge yet"
@@ -90,12 +110,15 @@ class PremiumStatus extends ChangeNotifier {
       }
 
       final configuration = PurchasesConfiguration(apiKey);
-      await Purchases.configure(configuration);
+      // Bounded too, so that no path through this method can leave [isReady]
+      // false forever. Worst case is two timeouts back to back, which is a long
+      // spinner but still a spinner that ends.
+      await Purchases.configure(configuration).timeout(storeTimeout);
       _configured = true;
 
       Purchases.addCustomerInfoUpdateListener(_onCustomerInfo);
 
-      final info = await Purchases.getCustomerInfo();
+      final info = await Purchases.getCustomerInfo().timeout(storeTimeout);
       _apply(info);
     } catch (e) {
       _error = '$e';
@@ -119,7 +142,9 @@ class PremiumStatus extends ChangeNotifier {
   /// listener, so the UI updates even if the update event is briefly delayed.
   Future<void> refresh() async {
     try {
-      final info = await Purchases.getCustomerInfo();
+      // Bounded for the same reason [initialize] is: this is what Retry runs,
+      // and a Retry that hangs is worse than the failure it was offered for.
+      final info = await Purchases.getCustomerInfo().timeout(storeTimeout);
       _apply(info);
     } catch (e) {
       _error = '$e';
