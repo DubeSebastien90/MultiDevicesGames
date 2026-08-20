@@ -31,6 +31,47 @@ pick it and type the code. Then:
 The host is a player too — it renders its own viewport through the same code path
 as everybody else.
 
+## Running the tests
+
+```bash
+flutter test --no-pub                          # the whole suite
+flutter test test/join_code_test.dart --no-pub # one suite, while iterating
+```
+
+**Always pass `--no-pub`.** Without it, every single invocation re-resolves the
+dependency graph and checks all twenty-odd packages against the network *before
+a test runs* — the output starts with `Resolving dependencies… / Downloading
+packages…` and that step alone costs more than the tests do. `flutter analyze`
+is the same: 13s without the flag, 4s with it. Nothing in this project needs a
+re-resolve unless `pubspec.yaml` actually changed.
+
+**Name the suite you are working on.** `flutter test` compiles every test entry
+point separately, and there are nearly forty of them over a heavy dependency
+graph — Flame, forge2d, rive, audioplayers, purchases_flutter, bonsoir. Almost
+every suite imports something under `lib/sdk/`, so **one edit there invalidates
+the cached build of nearly all of them**. Iterating on `host_session.dart` and
+re-running the full suite each time means paying for that recompile on every
+loop. Run the one suite you are changing; run everything once before you commit.
+
+**The timer in the output is not wall-clock time.** `All tests passed!` prints
+something like `00:14`, and that is test *execution* only — it excludes both the
+dependency resolution and the compilation. A run reporting fourteen seconds can
+take minutes end to end, so do not use that number to conclude the suite is
+fast, or a slow command to conclude something is stuck.
+
+Two situations where a slow run is expected and not a fault:
+
+- **After adding or removing a package**, especially one with native code. The
+  plugin registrant is regenerated and everything rebuilds. Once.
+- **After interrupting a run.** Killing `flutter test` part-way can leave locked
+  artifacts in `.dart_tool`, and the next run may die with a Dart VM stack dump
+  rather than a test failure. `flutter clean` clears it.
+
+If you pipe the output anywhere — `| grep`, `| tail` — you will see **nothing at
+all until the command finishes**, because those buffer when stdout is not a
+terminal. A long run then looks identical to a hung one. Use `--reporter=compact`
+and leave the output alone.
+
 ## It is an SDK now
 
 The platform owns lobby, discovery, transport, the shared timeline and the
@@ -497,7 +538,8 @@ lib/games/your_game/
 - [ ] `planBoard` uses a helper, or a plan the compiler accepts
 - [ ] Nothing under `lib/sdk/` modified
 - [ ] No alignment hints of your own — connectors are the platform's job
-- [ ] `flutter analyze` clean, `flutter test` green
+- [ ] `flutter analyze --no-pub` clean, `flutter test --no-pub` green
+      (see *Running the tests* — the flag is not optional advice)
 - [ ] A test that drives the sim headlessly — see `test/hot_potato_test.dart`,
       which plays a whole round with no host, no sockets and no rendering
 
@@ -659,11 +701,36 @@ each other.
 - **One phone on cellular** → not the same LAN → no connection.
 - **Escape hatch, no code change:** run a hotspot on one phone and join it from
   the other. The same WebSocket code works unchanged.
-- **iOS 14+** wants the `com.apple.developer.networking.multicast` entitlement
-  before an app may broadcast. Without it the beacon never leaves the phone:
-  hosting and joining still work, and joiners use the QR. Requesting it from
-  Apple is the only thing that turns the list on for iOS — the app needs no
-  change.
+- **iOS 14+** refuses broadcast and multicast outright without the
+  `com.apple.developer.networking.multicast` entitlement, which Apple grants
+  only on request. The UDP beacon therefore never leaves an iPhone, and no
+  amount of Dart fixes that.
+
+  So there is a **second transport**: the app also advertises and browses over
+  Bonjour/mDNS, which goes through the system's own responder and needs no
+  entitlement at all — only `NSBonjourServices` in `Info.plist` declaring
+  `_bubblegames._tcp`, which must stay identical to `kBonjourServiceType` in
+  `net/bonjour_discovery.dart`. iOS 14+ fails to browse an undeclared type by
+  quietly finding nothing, so a mismatch there looks like a dead network.
+
+  Both transports run at once on Apple platforms and one list is merged from
+  them by `GameBeacon.id`; everywhere else UDP runs alone, because it already
+  works there and `bonsoir` cannot carry TXT attributes on Android 6 and below.
+  `net/discovery_stack.dart` is the only place that decides. Requesting the
+  entitlement from Apple is still an option, and no longer a necessity.
+
+  One caveat worth knowing: **the Bonjour path has never run on hardware.** Its
+  codec and the merge are unit-tested, but the platform-channel half needs two
+  iPhones on one WiFi to be believed.
+
+- **A TXT record cannot be edited in place.** Nothing exposes an update, because
+  the platform APIs underneath do not — changing what is advertised means
+  stopping the broadcast and starting another, which blinks the game out of and
+  back into every join list watching it. `BonjourGameAdvertiser` therefore
+  republishes only for things worth a blink (a game closing, a seat freeing) and
+  lets the player count ride along until the next one. The UDP transport, which
+  re-sends everything once a second anyway, has no such problem — which is part
+  of why both are kept.
 - **macOS** is sandboxed, and Flutter's template grants
   `com.apple.security.network.server` but *not* `network.client` — and the
   release profile grants neither. Without the client entitlement the sandbox
@@ -681,9 +748,10 @@ each other.
 
 ## Deliberately not built
 
-No TypeScript, no cloud, no dedicated server. No accounts or persistence. No
-mDNS/Nearby/Multipeer — discovery is 200 lines of UDP broadcast with a QR and a
-typed address behind it, and it never leaves the LAN. No automatic freeform
+No TypeScript, no cloud, no dedicated server. No accounts. No Nearby and no
+Multipeer — discovery is UDP broadcast, plus Bonjour/mDNS on Apple platforms
+where broadcast is not allowed to work, with a QR and a typed address behind
+both. It never leaves the LAN either way. No automatic freeform
 packing — a game that wants something the `Layouts` helpers cannot express
 writes its placements by hand, as Flood's 2×N grid does. No sensor-based placement
 verification. No game-definition loader — but game logic is kept as data in
@@ -708,7 +776,11 @@ inside it.
   dark, rather than silently rearranging the board.
 - Launch feel is tuned for a two-phone board and scaled by `sqrt(width)` from
   there, so a four-phone board needs more shots to cross.
-- Measurements are not persisted, so they need re-entering each launch.
+- ~~Measurements are not persisted~~ — fixed. `role_screen.dart` writes
+  `screen_width_mm`, `screen_height_mm` and `screen_bezel_mm` to shared
+  preferences and reads them back on launch, so a calibration survives. Note
+  that Android and iOS both back app preferences up by default and this app does
+  not opt out, so they survive a reinstall too.
 - `Layouts.grid` sizes every cell to the largest phone and centres smaller ones
   inside theirs. A grid of mismatched screens has no honest answer — a short
   phone in the top row leaves a hole that is neither bezel nor playfield — so

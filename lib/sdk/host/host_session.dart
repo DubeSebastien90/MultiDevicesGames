@@ -1110,9 +1110,35 @@ class HostSession extends ChangeNotifier {
   /// Deliberately ignores the tick list. It names a game outright, which is a
   /// stronger statement than a tick — and the way to play exactly one game from
   /// the list is to be the only thing ticked in it.
+  ///
+  /// **Nothing in the app calls this, and nothing ever has.** No screen has
+  /// reached it in the whole history of the repository: the lobby settled on a
+  /// tick list, and naming a game outright never grew a button. What it is, in
+  /// practice, is the shortcut most of the test suite uses to put one specific
+  /// game on the table without ticking eleven others off first — which is worth
+  /// keeping, and worth being honest about.
+  ///
+  /// Hence [visibleForTesting]. It is not decoration: this method skips the
+  /// tick list, and the paywall lived inside the tick list until recently, so a
+  /// screen wired to it would have handed every Premium game to a free host. The
+  /// annotation turns "no production code calls this" from something somebody
+  /// has to keep checking into something the analyzer refuses to let through.
+  /// [_startGame] guards the paywall as well, for every caller — but a call that
+  /// cannot be written is better than a call that is caught.
+  ///
+  /// Note also that this is the only thing that ever sets [RoundMode.oneOff], so
+  /// that whole branch — [nextGame] returning null, [runIsOver] staying false —
+  /// is currently reachable only from tests. Either a screen should want it, or
+  /// the mode should go; that is a product call, not a cleanup.
+  @visibleForTesting
   void startGame(MultiscreenGame game) {
     if (!canStart) return;
     if (!game.manifest.fits(_present.length)) return;
+    // Naming a game outright is a stronger statement than a tick, but it is not
+    // a stronger statement than having paid. [_skipping] is where the paywall
+    // lives, and "ignores the tick list" must not quietly mean "ignores that
+    // too" — see [_mayStart].
+    if (!_mayStart(game)) return;
     final index = GameCatalog.playlist.indexWhere(
       (g) => g.manifest.id == game.manifest.id,
     );
@@ -1144,9 +1170,34 @@ class HostSession extends ChangeNotifier {
     );
   }
 
+  /// Whether this host is allowed to put [game] on the table at all.
+  ///
+  /// The paywall as a fact about the game and the receipt, with nothing about
+  /// tick lists or table sizes mixed in. [_skipping] answers "what should we
+  /// offer"; this answers "may this start", and the two are different questions
+  /// that happened to share an implementation until one entry point wanted the
+  /// first and got neither.
+  bool _mayStart(MultiscreenGame game) =>
+      !game.manifest.isPremium || isPremiumUnlocked;
+
   void _startGame(int index) {
-    _gameIndex = index;
     final game = GameCatalog.playlist[index];
+
+    // The last gate before a premium game reaches a screen, and the reason it
+    // is here rather than only at the callers: every way a round can begin —
+    // the Play button, a named one-off, advancing through the run, a replay —
+    // funnels through this method. A check here cannot be routed around by the
+    // next feature that wants to start a game, which is exactly how the one-off
+    // path came to skip the paywall in the first place.
+    //
+    // Deliberately before any state is touched, so a refusal is a no-op rather
+    // than a half-started round. In practice the playlist paths cannot reach
+    // this — they pick their index through [_skipping], which already excludes
+    // premium for a free host — so this firing means a caller found a new way
+    // in, and the right answer is to do nothing at all.
+    if (!_mayStart(game)) return;
+
+    _gameIndex = index;
     _game = game;
     _outcome = null;
     _planError = null;

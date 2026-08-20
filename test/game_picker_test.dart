@@ -215,6 +215,35 @@ void main() {
     expect((alls, nones), (0, 0));
   });
 
+  test('a free host cannot start a Premium game by naming it', () async {
+    // The playlist paths pick their index through `_skipping`, which already
+    // folds the paywall in — but `startGame` names a game outright and used to
+    // skip that reasoning entirely. Nothing in the UI routes there today, which
+    // is exactly why it needs a test: the next feature that wants "play this
+    // one now" must not quietly become the way around the paywall.
+    final free = HostSession(name: 'free table', advertise: false);
+    addTearDown(free.dispose);
+    await free.start();
+
+    free.startGame(const HotPotatoGame());
+    expect(free.game, isNull, reason: 'a free host started a Premium game');
+  });
+
+  test('a paying host can start the same game', () async {
+    // The other half: the guard must refuse the right people, not everybody.
+    final paid = HostSession(
+      name: 'paid table',
+      advertise: false,
+      premium: _UnlockedPremiumStatus(),
+    );
+    addTearDown(paid.dispose);
+    await paid.start();
+
+    // No phones are connected, so `canStart` is false and the round does not
+    // begin — but it stops for the table's shape, not for the receipt.
+    expect(paid.offers.where((o) => o.isLocked), isEmpty);
+  });
+
   test('a non-Premium host cannot customize the run directly', () {
     final host = HostSession(name: 'kitchen table', advertise: false);
     addTearDown(host.dispose);

@@ -12,6 +12,7 @@ import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_identity.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
+import 'package:multiscreen_slingshot/sdk/monetization/premium_status.dart';
 import 'package:multiscreen_slingshot/sdk/net/discovery.dart';
 import 'package:multiscreen_slingshot/sdk/net/host_address.dart';
 import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
@@ -49,12 +50,32 @@ List<String> beaconSeats(HostSession host) => [
           DeviceIdentity.fingerprint(p.deviceId!),
     ];
 
+/// A host that has paid, without going near a store.
+///
+/// Most of this file is about session mechanics — handshakes, playlists,
+/// rejoining — and wants the whole catalogue available so it can pick whichever
+/// game suits the assertion. A host left at the default is a *free* host, which
+/// silently drops every Premium game out of the run and makes `chooseGame` a
+/// no-op, so tests written before the paywall existed started failing on
+/// arithmetic that had nothing to do with what they were testing.
+///
+/// The tests that are genuinely about the paywall build their own free host —
+/// see 'every game starts ticked'.
+class _UnlockedPremiumStatus extends PremiumStatus {
+  @override
+  bool get isPremium => true;
+}
+
 void main() {
   late HostSession host;
   late Uri local;
 
   setUp(() async {
-    host = HostSession(name: 'kitchen table', advertise: false);
+    host = HostSession(
+      name: 'kitchen table',
+      advertise: false,
+      premium: _UnlockedPremiumStatus(),
+    );
     final address = await host.start();
     local = address.replace(host: '127.0.0.1');
   });
@@ -210,6 +231,12 @@ void main() {
     });
 
     test('every game starts ticked', () async {
+      // The one test in this group that wants a host who has *not* paid: the
+      // whole point below is the gap between what is ticked and what a free
+      // host would actually play.
+      final host = HostSession(name: 'free table', advertise: false);
+      addTearDown(host.dispose);
+
       // The default has to be everything, or a host who never opens the list
       // gets a shorter evening than the one before this existed.
       expect(host.chosenGames, hasLength(GameCatalog.playlist.length));
