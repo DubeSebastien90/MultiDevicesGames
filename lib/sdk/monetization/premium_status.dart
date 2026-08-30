@@ -70,16 +70,34 @@ class PremiumStatus extends ChangeNotifier {
   /// the honest end state, and the one a customer can act on.
   static const Duration storeTimeout = Duration(seconds: 10);
 
+  /// Whether this build hands out Premium without asking the store.
+  ///
+  /// [kDebugMode] is a compile-time constant, so in profile and release builds
+  /// this folds to `false` before the tree shaker runs and every branch below
+  /// it is dropped. There is no runtime path — and no flag anybody could flip
+  /// on a shipped binary — that turns this on in the build customers get.
+  ///
+  /// `--dart-define=LOCK_PREMIUM=true` puts the real gate back while staying in
+  /// debug. Without that escape hatch the padlocks, the paywall and the retry
+  /// banner become unreachable in the one mode you can attach a debugger to,
+  /// which would trade a testing convenience for a testing hole.
+  static const bool debugUnlocked =
+      kDebugMode && !bool.fromEnvironment('LOCK_PREMIUM');
+
   /// True once [CustomerInfo] has been fetched at least once. Before that,
   /// [isPremium] is a guess (false) rather than an answer — screens that gate
   /// on Premium should treat "not ready" as "don't show a locked badge yet"
   /// where that distinction matters, and as "not premium" everywhere it is
   /// simpler not to.
-  bool get isReady => _ready;
+  bool get isReady => debugUnlocked || _ready;
 
-  bool get isPremium => _isPremium;
+  bool get isPremium => debugUnlocked || _isPremium;
 
-  String? get error => _error;
+  /// Silent under [debugUnlocked]: with nothing locked there are no padlocks
+  /// for a failure banner to caution about, and on a machine with no
+  /// `env/revenuecat.json` the missing-key [StateError] would otherwise put a
+  /// red banner over every debug run of the games sheet.
+  String? get error => debugUnlocked ? null : _error;
 
   /// Configures the RevenueCat SDK and loads the current entitlement state.
   /// Call once, before the first frame that might ask [isPremium].
