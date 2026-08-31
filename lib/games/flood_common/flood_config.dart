@@ -62,7 +62,6 @@ class FloodConfig {
 
   static const int colorBlue = 0xFF2F6FED;
   static const int colorRed = 0xFFED4B2F;
-  static const int colorNeutral = 0xFF0B1020;
 }
 
 /// Option A's one knob.

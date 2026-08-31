@@ -47,32 +47,34 @@ abstract class FloodView extends GameView {
   /// How much of the screen's width the message may use before it wraps.
   static const double _briefingWidthFraction = 0.82;
 
-  /// The air between the count and the message, in logical pixels.
+  /// Type sizes and spacing, as a fraction of the screen's own width.
+  ///
+  /// **Not in logical pixels**, which is what these were and which made the
+  /// shape of the paragraph depend on a number that means nothing physical. A
+  /// line wraps when it runs out of *screen*, but a logical pixel is a
+  /// different size on every device: at a fixed 30 of them, the number of
+  /// words on a line is `screen width in logical px ÷ 30`, and that ranges
+  /// from about 360 on a small phone to well over a thousand on a tablet or a
+  /// desktop window. Small screens got a tall stack of two-word lines; wide
+  /// ones got the whole sentence strung across one line, running out past both
+  /// edges. Neither is a choice anybody made.
+  ///
+  /// As fractions the paragraph keeps its shape everywhere — the same handful
+  /// of words per line, the same number of lines — and only its physical size
+  /// changes with the glass, which is the thing that should change. The values
+  /// are what the old logical-pixel sizes came to on an ordinary phone, so a
+  /// phone looks as it did.
+  static const double _countSizeFraction = 0.20;
+  static const double _briefingSizeFraction = 0.083;
+
+  /// The air between the count and the message.
   ///
   /// Generous, and it buys two things at once. The count is enormous and the
   /// message is small, so a tight gap has the sentence hanging off the bottom
   /// of the digit as if it were part of it; and because the pair is centred as
-  /// one block, every pixel of gap also settles the message half a pixel
+  /// one block, every bit of gap also settles the message half that much
   /// further down the screen, which is where a line of instructions reads best.
-  static const double _briefingGap = 40.0;
-
-  /// The overlap of two world rectangles, or null when they do not meet.
-  ///
-  /// Flood fills *regions* rather than drawing objects, which is why it needs
-  /// this and the other games do not: `ShapeView` culls an entity with a
-  /// boolean "is this circle off-screen?", whereas "blue from the top of the
-  /// board down to the waterline" is a rectangle that has to be cut to what
-  /// this phone can actually see, in both axes. Doing that with four
-  /// hand-written min/max calls per drawing site is easy to get subtly wrong
-  /// in one axis, and a mistake there shows up as a seam artefact.
-  static WorldRect? overlap(WorldRect a, WorldRect b) {
-    final l = a.left > b.left ? a.left : b.left;
-    final t = a.top > b.top ? a.top : b.top;
-    final r = a.right < b.right ? a.right : b.right;
-    final bottom = a.bottom < b.bottom ? a.bottom : b.bottom;
-    if (r <= l || bottom <= t) return null;
-    return WorldRect(l, t, r - l, bottom - t);
-  }
+  static const double _briefingGapFraction = 0.11;
 
   /// Maps the game's `[-1, +1]` axis onto the board's vertical extent.
   ///
@@ -99,12 +101,12 @@ abstract class FloodView extends GameView {
         : seam - boundary * (seam - board.top);
   }
 
-  /// What a variant draws between the two territories, clipped to [band] —
-  /// the part of the playfield this screen can actually see.
+  /// What a variant draws between the two territories, across [band] — which
+  /// is this screen, edge to edge, for the same reason the colours are.
   ///
   /// Option A leaves it to the waterline alone; option B draws the narrowing
-  /// contested band that is its signature. Handing the band down means neither
-  /// subclass re-derives the board-against-viewport intersection.
+  /// contested band that is its signature. Handing the rect down means neither
+  /// subclass has to work out how far its drawing is allowed to reach.
   void renderContested(
     Canvas canvas,
     Frame frame,
@@ -120,39 +122,40 @@ abstract class FloodView extends GameView {
     final view = frame.visible;
     final waterY = waterlineY(frame, boundary);
 
-    // Outside the board — the strip of screen beyond the playfield, if any.
-    _fill.color = const Color(FloodConfig.colorNeutral);
-    canvas.drawRect(
-      Rect.fromLTWH(view.left, view.top, view.width, view.height),
-      _fill,
-    );
-
-    // Blue from the top of the board down to the waterline, red from there to
-    // the bottom. Drawn in *board* coordinates and cut to what this screen can
-    // see, so each phone shows its own slice of one continuous picture.
-    final band = overlap(frame.board, view);
-    if (band != null) {
-      _fill.color = const Color(FloodConfig.colorBlue);
-      final blueBottom = math.min(waterY, band.bottom);
-      if (blueBottom > band.top) {
-        canvas.drawRect(
-          Rect.fromLTRB(band.left, band.top, band.right, blueBottom),
-          _fill,
-        );
-      }
-
-      _fill.color = const Color(FloodConfig.colorRed);
-      final redTop = math.max(waterY, band.top);
-      if (redTop < band.bottom) {
-        canvas.drawRect(
-          Rect.fromLTRB(band.left, redTop, band.right, band.bottom),
-          _fill,
-        );
-      }
-
-      renderContested(canvas, frame, band, waterY);
-      _renderWaterline(canvas, frame, waterY, band.left, band.right);
+    // Blue from the top of the screen down to the waterline, red from there to
+    // the bottom. The waterline is a *board* coordinate, so every phone puts
+    // it in the same place and the picture stays continuous across the seam;
+    // the colours either side of it run to the edge of the glass.
+    //
+    // Edge to edge, and not clipped to the board. The board is the strip both
+    // rows cover — the intersection, not the union — so a phone wider than the
+    // one facing it has real glass to the left and right of it. That used to
+    // be painted neutral, a dark bar down each side of the widest phone at the
+    // table. It is not dead space and it never was: taps there count, the sim
+    // being deliberately position-blind about which part of a screen was hit.
+    // Painting it the team's colour is what makes the screen tell the truth
+    // about that. Only the *shared* picture has to agree between phones, and
+    // that is the waterline, which still comes from the board.
+    _fill.color = const Color(FloodConfig.colorBlue);
+    final blueBottom = math.min(waterY, view.bottom);
+    if (blueBottom > view.top) {
+      canvas.drawRect(
+        Rect.fromLTRB(view.left, view.top, view.right, blueBottom),
+        _fill,
+      );
     }
+
+    _fill.color = const Color(FloodConfig.colorRed);
+    final redTop = math.max(waterY, view.top);
+    if (redTop < view.bottom) {
+      canvas.drawRect(
+        Rect.fromLTRB(view.left, redTop, view.right, view.bottom),
+        _fill,
+      );
+    }
+
+    renderContested(canvas, frame, view, waterY);
+    _renderWaterline(canvas, frame, waterY, view.left, view.right);
 
     if (phase == FloodPhase.countdown) {
       _renderCountdownWash(canvas, frame);
@@ -237,17 +240,17 @@ abstract class FloodView extends GameView {
     // `FloodState.countdown`. Not the same as zero.
     final count = (frame.sharedState[FloodState.countdown] as num?)?.toInt();
 
-    // The canvas is in world units, so a size in logical pixels has to be
-    // converted or the text comes out either microscopic or the size of the
-    // table.
-    final px = frame.onePixel;
     final me = frame.me;
 
-    // Measured off this phone's real screen rather than `frame.visible`: that
-    // is the axis-aligned *bounding box* of a turned phone, which is wider
-    // than the glass, and wrapping text to it would run the message off both
-    // edges. The centre is the same either way; the width is not.
-    final maxWidth = me.halfWidth * 2 * _briefingWidthFraction;
+    // Everything below is measured off this one number: the width of this
+    // phone's own glass, in the world units the canvas draws in.
+    //
+    // This phone's real screen rather than `frame.visible`, which is the
+    // axis-aligned *bounding box* of a turned phone and so wider than the
+    // glass — wrapping text to it would run the message off both edges. The
+    // centre is the same either way; the width is not.
+    final screen = me.halfWidth * 2;
+    final maxWidth = screen * _briefingWidthFraction;
 
     // White, like the count. It used to carry the player's team colour, which
     // was worth it back when the line named the team — it does not any more,
@@ -255,7 +258,7 @@ abstract class FloodView extends GameView {
     // screen where legibility is the whole job.
     final message = _painterFor(
       _briefing,
-      size: 30 * px,
+      size: screen * _briefingSizeFraction,
       weight: FontWeight.w700,
       color: const Color(0xFFFFFFFF),
       lineHeight: 1.3,
@@ -269,7 +272,7 @@ abstract class FloodView extends GameView {
           : count > 0
           ? '$count'
           : 'GO',
-      size: 72 * px,
+      size: screen * _countSizeFraction,
       weight: FontWeight.w800,
       color: const Color(0xFFFFFFFF),
     );
@@ -283,7 +286,7 @@ abstract class FloodView extends GameView {
         _briefingPulse *
             math.sin(frame.timeMs / 1000 * 2 * math.pi / _briefingPulseSeconds);
 
-    final gap = _briefingGap * px;
+    final gap = screen * _briefingGapFraction;
     // The count's height is in here whether or not there is a count yet, so
     // the message holds one position from the first frame of the briefing to
     // the last of the countdown. Sized to the block that will exist rather
