@@ -60,6 +60,17 @@ class PitchCarsConfig {
 
   static const double maxPull = 3.0;
 
+  /// A draw shorter than this fraction of [maxPull] is a tap, not a shot: the
+  /// car stays put and the turn is not consumed.
+  ///
+  /// A fraction rather than a distance, so cancelling is the same *gesture* on
+  /// a narrow table as on a wide one. Generous on purpose — a shot can now be
+  /// aimed from anywhere on the board, and backing out of one you did not mean
+  /// to start should not require the finger to come back to within a hair of
+  /// where it landed. The view reads the same number, so the aim arrow appears
+  /// exactly when the release would actually fire.
+  static const double cancelPullFraction = 0.12;
+
   static const double impulsePerPull = 5.5;
   static const double restSpeed = 0.3;
   static const Duration restDelay = Duration(milliseconds: 600);
