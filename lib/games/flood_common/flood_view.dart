@@ -28,6 +28,34 @@ abstract class FloodView extends GameView {
   final _stroke = Paint()..style = PaintingStyle.stroke;
   final _foam = Paint();
 
+  /// Laid out once per distinct string and kept. There are only ever a handful
+  /// — the counts, "GO", and the briefing — and shaping text is far too much
+  /// work to redo sixty times a second for a digit that changes once.
+  final _text = <String, TextPainter>{};
+
+  /// The whole of how Flood is played, which is little enough to fit on the
+  /// screen and be read in the three seconds before the count starts.
+  static const _briefing =
+      'Tap as fast as you can on the screen to flood the other team!';
+
+  /// How much the briefing swells at the top of its breath, and how long one
+  /// breath takes. Small and slow on purpose: it is there to pull an eye that
+  /// has not looked up yet, not to be an animation.
+  static const double _briefingPulse = 0.07;
+  static const double _briefingPulseSeconds = 1.6;
+
+  /// How much of the screen's width the message may use before it wraps.
+  static const double _briefingWidthFraction = 0.82;
+
+  /// The air between the count and the message, in logical pixels.
+  ///
+  /// Generous, and it buys two things at once. The count is enormous and the
+  /// message is small, so a tight gap has the sentence hanging off the bottom
+  /// of the digit as if it were part of it; and because the pair is centred as
+  /// one block, every pixel of gap also settles the message half a pixel
+  /// further down the screen, which is where a line of instructions reads best.
+  static const double _briefingGap = 40.0;
+
   /// The overlap of two world rectangles, or null when they do not meet.
   ///
   /// Flood fills *regions* rather than drawing objects, which is why it needs
@@ -128,6 +156,7 @@ abstract class FloodView extends GameView {
 
     if (phase == FloodPhase.countdown) {
       _renderCountdownWash(canvas, frame);
+      _renderCountdown(canvas, frame);
     }
   }
 
@@ -185,66 +214,154 @@ abstract class FloodView extends GameView {
     );
   }
 
-  /// The countdown number, and afterwards nothing at all.
+  /// The briefing, and — once it has been up long enough to read — the count.
+  /// Both in the middle of this phone's own screen.
   ///
-  /// A HUD rather than canvas text: it is Flutter widgets, it only changes a
-  /// few times a round, and it therefore never touches the render loop.
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) {
-    final phase = frame.sharedState[FloodState.phase] as String?;
-    final teams = frame.sharedState[FloodState.teams];
-    final myTeam = teams is Map ? teams[frame.phoneId] as String? : null;
+  /// On the canvas rather than in a HUD widget, which is where the number used
+  /// to live. The platform gathers every game's HUD into the badge row in the
+  /// top-left corner — right for a score or a status pill, wrong for the one
+  /// thing on screen during the one moment when there is nothing else to look
+  /// at. A "get ready" belongs in the middle, next to the wash it is already
+  /// darkening the board with, and the canvas is the only place a view can put
+  /// something there.
+  ///
+  /// Centred on this phone's own screen, so every player reads it in their own
+  /// middle rather than all of them deferring to one point on the shared
+  /// board. The wash is per-screen for the same reason: this is the game
+  /// talking to each player, not the game drawing the world.
+  ///
+  /// The message does not move when the count appears above it: the count's
+  /// space is part of the layout from the first frame, occupied or not.
+  void _renderCountdown(Canvas canvas, Frame frame) {
+    // Null while the briefing has the screen to itself — see
+    // `FloodState.countdown`. Not the same as zero.
+    final count = (frame.sharedState[FloodState.countdown] as num?)?.toInt();
 
-    if (phase == FloodPhase.countdown) {
-      final remaining =
-          (frame.sharedState[FloodState.countdown] as num?)?.toInt() ?? 0;
-      return _CountdownPill(
-        text: remaining > 0 ? '$remaining' : 'GO',
-        team: myTeam,
-      );
+    // The canvas is in world units, so a size in logical pixels has to be
+    // converted or the text comes out either microscopic or the size of the
+    // table.
+    final px = frame.onePixel;
+    final me = frame.me;
+
+    // Measured off this phone's real screen rather than `frame.visible`: that
+    // is the axis-aligned *bounding box* of a turned phone, which is wider
+    // than the glass, and wrapping text to it would run the message off both
+    // edges. The centre is the same either way; the width is not.
+    final maxWidth = me.halfWidth * 2 * _briefingWidthFraction;
+
+    // White, like the count. It used to carry the player's team colour, which
+    // was worth it back when the line named the team — it does not any more,
+    // and a saturated blue sentence on a blue board is the one place on this
+    // screen where legibility is the whole job.
+    final message = _painterFor(
+      _briefing,
+      size: 30 * px,
+      weight: FontWeight.w700,
+      color: const Color(0xFFFFFFFF),
+      lineHeight: 1.3,
+      maxWidth: maxWidth,
+    );
+    // Laid out even while there is no count to show, because its *slot* is
+    // reserved either way — see [blockHeight]. Painted only when there is one.
+    final number = _painterFor(
+      count == null
+          ? '0'
+          : count > 0
+          ? '$count'
+          : 'GO',
+      size: 72 * px,
+      weight: FontWeight.w800,
+      color: const Color(0xFFFFFFFF),
+    );
+
+    // Breathing, phased off [Frame.timeMs] — the host's clock, identical on
+    // every phone — so the whole table swells and settles as one. A local
+    // clock would have six phones pulsing out of step, which reads as six
+    // screens rather than one board.
+    final pulse =
+        1 +
+        _briefingPulse *
+            math.sin(frame.timeMs / 1000 * 2 * math.pi / _briefingPulseSeconds);
+
+    final gap = _briefingGap * px;
+    // The count's height is in here whether or not there is a count yet, so
+    // the message holds one position from the first frame of the briefing to
+    // the last of the countdown. Sized to the block that will exist rather
+    // than the one that does, because a message that jumps when the number
+    // arrives is a message somebody has to find again mid-sentence.
+    //
+    // Built from the *unpulsed* height for the same reason: the message swells
+    // about its own middle rather than shoving the block around as it breathes.
+    final blockHeight = number.height + gap + message.height;
+
+    canvas.save();
+    // Undo the camera's turn. A phone laid sideways has the world rotated to
+    // meet it, which is exactly right for the board and exactly wrong for a
+    // word: this is being read by the one person holding this screen, so it
+    // wants to be upright on the glass, not square to the table.
+    canvas
+      ..translate(me.worldCenterX, me.worldCenterY)
+      ..rotate(me.turnRadians);
+
+    final top = -blockHeight / 2;
+    if (count != null) {
+      number.paint(canvas, Offset(-number.width / 2, top));
     }
 
-    // Once the round is live the screen says everything: your colour is
-    // advancing or it is not. A number would only be something else to look at.
-    return null;
+    final messageTop = top + number.height + gap;
+    final middle = messageTop + message.height / 2;
+    canvas
+      ..save()
+      ..translate(0, middle)
+      ..scale(pulse)
+      ..translate(0, -middle);
+    message.paint(canvas, Offset(-message.width / 2, messageTop));
+    canvas
+      ..restore()
+      ..restore();
   }
-}
 
-class _CountdownPill extends StatelessWidget {
-  const _CountdownPill({required this.text, required this.team});
-
-  final String text;
-  final String? team;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = team == FloodConfig.blue
-        ? const Color(FloodConfig.colorBlue)
-        : team == FloodConfig.red
-            ? const Color(FloodConfig.colorRed)
-            : const Color(0xFFFFFFFF);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 72,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFFFFFFFF),
+  /// One laid-out string, from the cache.
+  ///
+  /// Scaling is left to the canvas rather than done by laying out at a new
+  /// font size: a pulse that changed the size would be a fresh shaping pass on
+  /// every frame and a new cache entry for every size it passed through.
+  TextPainter _painterFor(
+    String value, {
+    required double size,
+    required FontWeight weight,
+    required Color color,
+    double lineHeight = 1.0,
+    double? maxWidth,
+  }) {
+    // Everything baked into the span or fixed at layout belongs in the key.
+    final key =
+        '$value|${size.toStringAsFixed(3)}|$weight|${color.toARGB32()}'
+        '|$lineHeight|${maxWidth?.toStringAsFixed(2)}';
+    return _text.putIfAbsent(
+      key,
+      () => TextPainter(
+        text: TextSpan(
+          text: value,
+          style: TextStyle(
+            color: color,
+            fontSize: size,
+            fontWeight: weight,
+            height: lineHeight,
           ),
         ),
-        if (team != null)
-          Text(
-            'tap anywhere for ${team!.toUpperCase()}',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-      ],
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout(maxWidth: maxWidth ?? double.infinity),
     );
+  }
+
+  @override
+  void dispose() {
+    for (final p in _text.values) {
+      p.dispose();
+    }
+    _text.clear();
+    super.dispose();
   }
 }
