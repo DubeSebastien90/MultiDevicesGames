@@ -4,21 +4,45 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
+import '../../sdk/render/player_animation.dart';
 import 'dodgeball_config.dart';
 
 /// Renders the dodgeball game: players, bouncing balls, dash effects, and
 /// countdown/game-over overlays.
 class DodgeballView extends GameView {
-  DodgeballView({required this.phoneId});
+  DodgeballView({
+    required this.phoneId,
+    this.characters = PlayerAnimations.none,
+    this.roster = Roster.empty,
+  });
 
   final String phoneId;
+
+  /// Everyone's walking character, loaded and coloured by the platform.
+  final PlayerAnimations characters;
+
+  /// Everyone in the round, for their platform colour. The sim ships a colour
+  /// of its own on the entity, but the one a player recognises across the table
+  /// is the one the lobby gave them.
+  final Roster roster;
 
   static const _floorColor = Color(0xFF161B22);
   static const _ballColor = Color(0xFFFF4444);
   static const _ballGlowColor = Color(0x44FF4444);
 
+  /// World units per second below which a player counts as standing still.
+  ///
+  /// Not zero: positions are interpolated, so a stationary player still jitters
+  /// by a hair between frames and an exact test would flicker the walk on and
+  /// off.
+  static const _walkingSpeed = 0.5;
+
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
+
+  /// Where each player was last frame, to tell walking from standing.
+  final _lastSeen = <String, Offset>{};
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -59,7 +83,13 @@ class DodgeballView extends GameView {
     for (final e in frame.ofKind('player')) {
       final idx = e.propInt('index');
       final key = 'p$idx';
-      final color = Color(e.propInt('color', 0xFFFFFFFF));
+      // The platform's colour for whoever is in this seat, which is the one
+      // they were shown in the lobby. The sim's own palette is the fallback,
+      // for a seat nobody is sitting in yet.
+      final phone = frame.sharedState['phoneId_$key'] as String?;
+      final seated = phone == null ? null : roster.byPhone(phone);
+      final color =
+          seated?.color.value ?? Color(e.propInt('color', 0xFFFFFFFF));
       final radius = e.propDouble('radius', DodgeballConfig.characterRadius);
       final alive = frame.sharedState['alive_$key'] == true;
       if (!alive) continue;
@@ -93,24 +123,33 @@ class DodgeballView extends GameView {
         );
       }
 
-      // Player body.
-      _fill.color = isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
-      canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+      // Player body. The character walks only while the player is actually
+      // moving; `RenderEntity` carries no velocity, so movement is the distance
+      // covered since the last frame.
+      final here = Offset(e.x, e.y);
+      final before = _lastSeen[e.id];
+      _lastSeen[e.id] = here;
+      final moving = before != null &&
+          frame.dt > 0 &&
+          (here - before).distance / frame.dt > _walkingSpeed;
 
-      // Direction indicator.
-      _fill.color = const Color(0xDDFFFFFF);
-      canvas.save();
-      canvas.translate(e.x, e.y);
-      canvas.rotate(e.angle);
-      final tip = radius * 1.15;
-      final base = radius * 0.3;
-      final dirPath = ui.Path()
-        ..moveTo(tip, 0)
-        ..lineTo(radius * 0.7, -base)
-        ..lineTo(radius * 0.7, base)
-        ..close();
-      canvas.drawPath(dirPath, _fill);
-      canvas.restore();
+      // A seat nobody is sitting in yet has no platform colour to ask for a
+      // character with, so it stays the sim's own circle.
+      if (seated == null) {
+        _fill.color =
+            isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
+        canvas.drawCircle(here, radius, _fill);
+      } else {
+        final character = characters.of(seated.color);
+        moving ? character.start() : character.stop();
+        character.draw(
+          canvas,
+          here,
+          worldSize: radius * 3,
+          dt: frame.dt,
+          angle: e.angle,
+        );
+      }
     }
 
     // Countdown overlay.

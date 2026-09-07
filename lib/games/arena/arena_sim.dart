@@ -10,7 +10,9 @@ import 'arena_config.dart';
 /// No physics engine — extends [GameSim] directly like Hot Potato. Movement,
 /// attacks and blocking are encoded via touch gestures: drag to move, tap to
 /// attack, hold to block.
-class ArenaSim implements GameSim, PlayerPresence {
+// Presence is deliberately not implemented — see the commented block under
+// 'who is still here' at the bottom of this class for what it used to do.
+class ArenaSim implements GameSim {
   ArenaSim(this.context) {
     _initFighters();
   }
@@ -27,13 +29,6 @@ class ArenaSim implements GameSim, PlayerPresence {
   double _countdown = ArenaConfig.countdownSeconds;
   String? _winnerId;
 
-  /// Fighters whose player has dropped out.
-  ///
-  /// The fighter stays exactly where it was and can still be cut down — a body
-  /// left standing in the middle of a brawl is fair game, and taking it off the
-  /// board would rescue whoever was losing to it. It only goes grey, so nobody
-  /// wonders why it has stopped fighting back.
-  final _away = <String>{};
 
   // -- fighters ---------------------------------------------------------------
   late final List<_Fighter> _fighters;
@@ -201,22 +196,33 @@ class ArenaSim implements GameSim, PlayerPresence {
 
   // -- who is still here ------------------------------------------------------
 
-  @override
-  void onPlayerLeft(String phoneId) {
-    _away.add(phoneId);
-    // Their hands are off the glass, so nothing should still be held down.
-    final f = _fighterOf(phoneId);
-    if (f == null) return;
-    f
-      ..moveAngle = null
-      ..touchDown = false
-      ..touchMoved = false
-      ..touchHeldTime = 0;
-    if (f.blocking) _endBlock(f);
-  }
-
-  @override
-  void onPlayerReturned(String phoneId) => _away.remove(phoneId);
+  // Kept as reference, not implemented. A fighter whose player has dropped out
+  // is treated exactly like one whose player is standing still: they stay where
+  // they are, they can still be cut down — a body left standing in the middle
+  // of a brawl is fair game, and taking it off the board would rescue whoever
+  // was losing to it — and nothing on screen says otherwise.
+  //
+  // To bring it back: `implements GameSim, PlayerPresence` on the class, the
+  // `_away` set, `map['away_$key'] = _away.contains(f.phoneId)` in
+  // [sharedState], and the grey body in `ArenaView`, which is commented there
+  // for the same reason.
+  //
+  // @override
+  // void onPlayerLeft(String phoneId) {
+  //   _away.add(phoneId);
+  //   // Their hands are off the glass, so nothing should still be held down.
+  //   final f = _fighterOf(phoneId);
+  //   if (f == null) return;
+  //   f
+  //     ..moveAngle = null
+  //     ..touchDown = false
+  //     ..touchMoved = false
+  //     ..touchHeldTime = 0;
+  //   if (f.blocking) _endBlock(f);
+  // }
+  //
+  // @override
+  // void onPlayerReturned(String phoneId) => _away.remove(phoneId);
 
   // -- input ------------------------------------------------------------------
 
@@ -321,7 +327,6 @@ class ArenaSim implements GameSim, PlayerPresence {
       map['blkCd_$key'] = _quantize(f.blockCooldownLeft);
       map['invincible_$key'] = f.invincibleLeft > 0;
       map['alive_$key'] = f.alive;
-      map['away_$key'] = _away.contains(f.phoneId);
     }
     return map;
   }

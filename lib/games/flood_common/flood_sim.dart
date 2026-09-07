@@ -17,7 +17,11 @@ class FloodState {
   /// What to draw and what wins: already in [-1, +1], already clamped.
   static const boundary = 'boundary';
 
-  /// Whole seconds still to wait, counting down to 0. What the HUD prints.
+  /// Whole seconds still to wait, counting down to 0. What the view prints.
+  ///
+  /// Null for the opening [FloodConfig.briefingSeconds], while the briefing
+  /// has the screen to itself — distinct from 0, which is the instant the wait
+  /// ends. There is no number to show yet, rather than a number that is zero.
   ///
   /// Deliberately an int rather than the sim's raw elapsed float: this map is
   /// diffed and broadcast on change, and a float that moves every tick would
@@ -75,10 +79,10 @@ abstract class FloodSim extends GameSim {
   /// of authoritative state the whole game turns on.
   double boundary = 0;
 
-  /// Seconds since the countdown ended. Negative during the countdown, so a
-  /// single number carries both phases and the ramp maths never sees the
-  /// countdown as round time.
-  double _elapsed = -FloodConfig.countdownSeconds;
+  /// Seconds since the pre-round ended. Negative until then, so a single
+  /// number carries both phases and the ramp maths never sees the wait as
+  /// round time.
+  double _elapsed = -FloodConfig.preRoundSeconds;
 
   /// Last tap per phone, for the rate limit. Round time, not wall clock.
   final Map<String, double> _lastTapAt = {};
@@ -246,7 +250,10 @@ abstract class FloodSim extends GameSim {
   Map<String, Object?> get sharedState => {
     FloodState.phase: phase,
     FloodState.boundary: _round(effectiveBoundary, 1000),
-    FloodState.countdown: _elapsed < 0 ? (-_elapsed).ceil() : 0,
+    // Nothing at all while the briefing is being read, then whole seconds.
+    FloodState.countdown: _elapsed < -FloodConfig.countdownSeconds
+        ? null
+        : (_elapsed < 0 ? (-_elapsed).ceil() : 0),
     FloodState.teams: teams,
     FloodState.seamY: seamY,
     FloodState.bluePulse: _round(_bluePulse, 20),
@@ -263,7 +270,7 @@ abstract class FloodSim extends GameSim {
   @override
   void reset() {
     boundary = 0;
-    _elapsed = -FloodConfig.countdownSeconds;
+    _elapsed = -FloodConfig.preRoundSeconds;
     _lastTapAt.clear();
     _bluePulse = 0;
     _redPulse = 0;

@@ -259,6 +259,14 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
         SubwaySkaterConfig.laneCenter(board, s.lane),
         SubwaySkaterConfig.laneChangeSpeed * dt,
       );
+      // Back on their feet, so they turn to face the way they are going. The
+      // spin carries on the way it was already turning until it arrives — see
+      // [_uprightFrom] for why it never winds backwards.
+      s.spin = _toward(
+        s.spin,
+        _uprightFrom(s.spin),
+        SubwaySkaterConfig.rightingSpeed * dt,
+      );
       if (s.graceFor > 0) s.graceFor = math.max(0, s.graceFor - dt);
       if (s.chargeFor > 0) s.chargeFor = math.max(0, s.chargeFor - dt);
     }
@@ -268,6 +276,20 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     s.riding = null;
     s.tumbleFor = 0;
     s.graceFor = SubwaySkaterConfig.graceSeconds;
+  }
+
+  /// The next angle at or after [spin] that faces up the corridor.
+  ///
+  /// Forward is every [SubwaySkaterConfig.facingAngle] plus a whole number of
+  /// turns, and this picks the first one the spin has not already passed — so
+  /// righting a skater always *finishes* the rotation it was in the middle of
+  /// rather than unwinding it, and [_Skater.spin] keeps only ever growing,
+  /// which is what stops an interpolated angle from spinning backwards across
+  /// a snapshot.
+  static double _uprightFrom(double spin) {
+    const turn = 2 * math.pi;
+    final turns = ((spin - SubwaySkaterConfig.facingAngle) / turn).ceil();
+    return SubwaySkaterConfig.facingAngle + turns * turn;
   }
 
   static double _toward(double value, double target, double step) {
@@ -679,7 +701,11 @@ class _Skater {
 
   /// Only ever grows, so interpolating it across a snapshot never has to cross
   /// a wrap and spin the circle backwards for a frame.
-  double spin = 0;
+  ///
+  /// Starts facing up the corridor, which is where it returns to after every
+  /// tumble: a skater is looking where they are going for all of the round
+  /// except the seconds they are being carried backwards.
+  double spin = SubwaySkaterConfig.facingAngle;
 
   bool present = true;
   double raw = 0;
