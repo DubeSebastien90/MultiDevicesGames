@@ -118,30 +118,90 @@ void main() {
       expect(anchorOf(sim, 'p0'), isNull);
     });
 
+    test('a finger resting on the glass draws nothing', () {
+      final sim = start(2);
+      touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
+      // A tap and a held block both start exactly like this, and neither is
+      // movement.
+      expect(anchorOf(sim, 'p0'), isNull);
+    });
+
+    test('a drag shorter than the dead zone draws nothing either', () {
+      final sim = start(2);
+      touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
+      touch(sim, 'p1', TouchPhase.move,
+          4.0 + ArenaConfig.minMoveDistance / 2, 5.0);
+      expect(anchorOf(sim, 'p0'), isNull);
+    });
+
     test('the anchor is where the finger landed, and stays put as it drags',
         () {
       final sim = start(2);
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      expect(anchorOf(sim, 'p0'), (x: 4.0, y: 5.0));
-      expect(knobOf(sim, 'p0'), (x: 4.0, y: 5.0));
-
       touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
       // The anchor does not chase the finger — that is the whole point of it.
       expect(anchorOf(sim, 'p0'), (x: 4.0, y: 5.0));
       expect(knobOf(sim, 'p0'), (x: 6.5, y: 5.0));
     });
 
-    test('a drag shorter than the dead zone still shows a tilt', () {
+    test('coming back to the middle puts the stick away and stops the fighter',
+        () {
       final sim = start(2);
+      run(sim, ArenaConfig.spawnInvincibility + 0.1);
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      final creep = ArenaConfig.minMoveDistance / 2;
-      touch(sim, 'p1', TouchPhase.move, 4.0 + creep, 5.0);
+      touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
+      run(sim, 0.2);
 
-      // No movement yet, by design — but the player can see how far they are
-      // from getting some, which is the reason the ring is drawn at all.
-      expect(knobOf(sim, 'p0')!.x, closeTo(4.0 + creep, 0.05));
+      touch(sim, 'p1', TouchPhase.move, 4.1, 5.0);
+      expect(anchorOf(sim, 'p0'), isNull);
+
+      final at = positionOf(sim, 0);
+      run(sim, 0.5);
+      expect(positionOf(sim, 0).x, closeTo(at.x, 0.001));
+    });
+  });
+
+  group('how far the stick is pushed is how fast the fighter goes', () {
+    test('the ramp starts at nothing and tops out at the walking speed', () {
+      expect(ArenaConfig.moveScaleFor(0), 0);
+      expect(ArenaConfig.moveScaleFor(ArenaConfig.minMoveDistance), 0);
+      expect(ArenaConfig.moveScaleFor(ArenaConfig.joystickRadius), 1);
+      // Past full tilt is still full tilt, never faster.
+      expect(ArenaConfig.moveScaleFor(ArenaConfig.joystickRadius * 10), 1);
+      expect(
+        ArenaConfig.moveScaleFor(
+            (ArenaConfig.minMoveDistance + ArenaConfig.joystickRadius) / 2),
+        closeTo(0.5, 1e-9),
+      );
     });
 
+    test('a gentle push crawls where a full one runs', () {
+      const seconds = 0.5;
+
+      double coveredPushing(double distance) {
+        final sim = start(2);
+        run(sim, ArenaConfig.spawnInvincibility + 0.1);
+        final from = positionOf(sim, 0);
+        touch(sim, 'p1', TouchPhase.down, from.x, from.y);
+        touch(sim, 'p1', TouchPhase.move, from.x + distance, from.y);
+        run(sim, seconds);
+        return positionOf(sim, 0).x - from.x;
+      }
+
+      final full = coveredPushing(ArenaConfig.joystickRadius);
+      final half = coveredPushing(
+          (ArenaConfig.minMoveDistance + ArenaConfig.joystickRadius) / 2);
+
+      // Full tilt is the old speed, unchanged: this made the stick finer, not
+      // the game slower.
+      expect(full, closeTo(ArenaConfig.moveSpeed * seconds, 0.2));
+      expect(half, closeTo(full / 2, 0.2));
+    });
+
+  });
+
+
+  group('the stick is put away when it stops meaning anything', () {
     test('it goes when the finger comes off', () {
       final sim = start(2);
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
@@ -171,7 +231,11 @@ void main() {
       // touch would turn into a block and reflect the attack.
       final at = positionOf(sim, 1);
       touch(sim, 'p2', TouchPhase.down, at.x, at.y);
+      touch(sim, 'p2', TouchPhase.move, at.x,
+          at.y + ArenaConfig.joystickRadius);
       expect(anchorOf(sim, 'p1'), isNotNull);
+      // Nothing is stepped, so they have not actually walked out of reach yet.
+      expect(positionOf(sim, 1).y, closeTo(at.y, 0.001));
 
       attack(sim, 'p1');
       expect(sim.sharedState['alive_p1'], isFalse);

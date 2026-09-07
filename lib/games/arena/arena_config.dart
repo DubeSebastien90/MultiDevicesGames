@@ -37,21 +37,34 @@ class ArenaConfig {
   static const int blockHoldMs = 350;
 
   // -- joystick ---------------------------------------------------------------
-  /// How far from the anchor the knob travels before it stops following the
-  /// finger. Past this the drag still steers — only the drawing stops moving,
-  /// so the ring reads as a stick at full tilt rather than a dot wandering off
-  /// across the floor.
-  static const double joystickRadius = 2.2; // cm
+  /// Full tilt: the distance from the anchor at which the fighter runs at
+  /// [moveSpeed], and where the drawn knob stops following the finger. Pushing
+  /// further still steers — it just cannot go faster or look more pushed.
+  static const double joystickRadius = 1.65; // cm
 
-  static const double joystickKnobRadius = 0.75; // cm
+  static const double joystickKnobRadius = 0.56; // cm
 
-  /// Semi-opaque throughout: the stick sits under the finger, on top of the
-  /// floor a fighter may be standing on, and it is feedback rather than
-  /// furniture.
-  static const int joystickWellAlpha = 40;
-  static const int joystickRingAlpha = 110;
-  static const int joystickDeadZoneAlpha = 70;
-  static const int joystickKnobAlpha = 190;
+  /// Faint throughout: the stick sits under the finger, over a floor somebody
+  /// may be fighting on, and it is feedback rather than furniture.
+  static const int joystickWellAlpha = 24;
+  static const int joystickRingAlpha = 70;
+  static const int joystickDeadZoneAlpha = 45;
+  static const int joystickKnobAlpha = 130;
+
+  /// How hard the stick is pushed, from a finger [distance] out of the anchor:
+  /// 0 inside the dead zone, 1 at [joystickRadius] and beyond.
+  ///
+  /// The ramp starts where the dead zone ends rather than at the anchor, so
+  /// the first distance that moves a fighter at all moves them slowly. A jump
+  /// straight to half speed the instant the dead zone is crossed is the thing
+  /// that makes an analogue stick feel like a digital one.
+  static double moveScaleFor(double distance) {
+    if (distance <= minMoveDistance) return 0;
+    final span = joystickRadius - minMoveDistance;
+    if (span <= 0) return 1;
+    final t = (distance - minMoveDistance) / span;
+    return t < 1 ? t : 1;
+  }
 
   // -- player colours (ARGB ints) ---------------------------------------------
   static const List<int> playerColors = [

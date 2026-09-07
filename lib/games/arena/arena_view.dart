@@ -224,8 +224,12 @@ class ArenaView extends GameView {
   /// Movement here is an angle from a point the player cannot see, which is a
   /// fine control and an invisible one — a finger drifting an inch during a
   /// scrap steers hard without ever feeling like it moved. The ring gives that
-  /// point a body: where the stick is centred, how far in it counts as still
-  /// (the dead zone), and which way it is currently pushed.
+  /// point a body: where the stick is centred, which way it is pushed, and how
+  /// far, now that how far is how fast.
+  ///
+  /// It appears only once the drag is actually steering. A finger sitting
+  /// still is a tap or a block being held, and a ring under it would be the
+  /// game saying "you are moving" to a player who is not.
   void _drawJoystick(Canvas canvas, Frame frame) {
     final key = _myKey(frame.sharedState);
     if (key == null) return;
@@ -264,8 +268,9 @@ class ArenaView extends GameView {
       ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.04);
     canvas.drawCircle(anchor, reach, _stroke);
 
-    // The dead zone, so a player can see the distance their finger has to
-    // cover before the fighter starts walking.
+    // The dead zone: where the fighter stops, and the edge the speed ramps up
+    // from — a knob sitting just outside this circle is a crawl, and out at
+    // the ring it is a run.
     _stroke
       ..color = ringColor.withAlpha(ArenaConfig.joystickDeadZoneAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
