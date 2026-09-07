@@ -37,11 +37,10 @@ class DodgeballView extends GameView {
   static const _walkingSpeed = 0.5;
 
   /// Which way the character is drawn, in the same convention as `angle`:
-  /// 0 is +x, `-pi / 2` is up the screen. The artboard is `UpView_Artboard`,
-  /// so the character walks up as drawn; everything is rotated by the
-  /// difference between where the player is heading and this. Flip the sign if
-  /// the character ends up walking backwards.
-  static const _characterFacing = -math.pi / 2;
+  /// 0 is +x, `pi / 2` is down the screen — which is how this one is drawn,
+  /// despite the artboard being called `UpView_Artboard`. Everything is rotated
+  /// by the difference between where the player is heading and this.
+  static const _characterFacing = math.pi / 2;
 
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
@@ -80,9 +79,9 @@ class DodgeballView extends GameView {
     final file = _riveFile;
     if (file == null) return null;
     try {
-      // `frameOrigin: true` centres the artboard on (0, 0), which is what
-      // makes the player's position the middle of the character and lets it
-      // rotate about its own centre.
+      // `frameOrigin: true` puts the artboard's top-left at (0, 0) — the
+      // centring is done by hand at draw time, which is the only version of it
+      // that behaves the same on every runtime.
       final artboard = file.defaultArtboard(frameOrigin: true);
       if (artboard == null) throw StateError('no artboard');
       final sm = artboard.stateMachine(_characterStateMachine) ??
@@ -196,12 +195,17 @@ class DodgeballView extends GameView {
             (here - before).distance / frame.dt > _walkingSpeed;
         if (moving) character.stateMachine?.advanceAndApply(frame.dt);
 
-        final height = character.artboard.bounds.height;
+        final bounds = character.artboard.bounds;
+        final height = bounds.height;
         final scale = height == 0 ? 1.0 : (radius * 3.0) / height;
         canvas.save();
         canvas.translate(e.x, e.y);
         canvas.rotate(e.angle - _characterFacing);
         canvas.scale(scale);
+        // The artboard draws from its top-left, so pull it back by half its
+        // size: the player's position is then the middle of the character, and
+        // the rotation above turns about that same point.
+        canvas.translate(-bounds.width / 2, -bounds.height / 2);
         character.artboard.draw(rive.Renderer.make(canvas));
         canvas.restore();
       } else {
