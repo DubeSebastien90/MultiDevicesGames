@@ -51,12 +51,22 @@ abstract class PlayerAnimation {
   /// time this frame was: a ticker of its own would keep walking through a
   /// pause, and would drift from the shared timeline everything else is drawn
   /// against.
+  ///
+  /// It is also the speed control, and deliberately the only one. A game whose
+  /// world speeds up hands over `frame.dt * rate` and the legs keep up with it;
+  /// there is no second knob to leave out of step with the first.
+  ///
+  /// [opacity] is here for the same reason it is on [PlayerArt.draw]: fading a
+  /// player out is something games keep needing — knocked over, out of the
+  /// round, not your turn — and the alternative is every caller wrapping this
+  /// in a `saveLayer`.
   void draw(
     Canvas canvas,
     Offset center, {
     required double worldSize,
     required double dt,
     double angle = 0,
+    double opacity = 1,
   });
 }
 
@@ -139,9 +149,15 @@ class _ShapeAnimation implements PlayerAnimation {
     required double worldSize,
     required double dt,
     double angle = 0,
+    double opacity = 1,
   }) {
-    PlayerArt.of(color, PlayerArtSlot.topdown)
-        .draw(canvas, center, worldSize: worldSize, angle: angle);
+    PlayerArt.of(color, PlayerArtSlot.topdown).draw(
+      canvas,
+      center,
+      worldSize: worldSize,
+      angle: angle,
+      opacity: opacity,
+    );
   }
 }
 
@@ -246,6 +262,7 @@ class _RiveAnimation implements PlayerAnimation {
     required double worldSize,
     required double dt,
     double angle = 0,
+    double opacity = 1,
   }) {
     // Standing still is not a state this file has — `UpView_SM` is one looping
     // `Walk` with no inputs — so it is the machine not being advanced. It holds
@@ -265,7 +282,11 @@ class _RiveAnimation implements PlayerAnimation {
     // [center] is then the middle of the character, and the rotation above
     // turns about that same point.
     canvas.translate(-bounds.width / 2, -bounds.height / 2);
-    artboard.draw(rive.Renderer.make(canvas));
+    // A fresh renderer each frame, so the modulation starts from full and does
+    // not accumulate over a fade.
+    final renderer = rive.Renderer.make(canvas);
+    if (opacity < 1) renderer.modulateOpacity(opacity);
+    artboard.draw(renderer);
     canvas.restore();
   }
 }

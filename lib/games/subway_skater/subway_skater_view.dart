@@ -265,15 +265,30 @@ class SubwaySkaterView extends GameView {
       canvas.drawCircle(center, r * 1.5, _paint);
     }
 
-    // The skater is whoever is riding it, drawn by the SDK. Today that is a
-    // circle in their colour — the same picture this game drew by hand until
-    // the roster arrived — and the day the characters are illustrated, this
-    // line starts drawing a fox without being touched.
+    // The skater is whoever is riding it, drawn by the SDK — the walking
+    // character in their colour, or the circle this game drew by hand until the
+    // roster arrived, on a phone where the animation could not load.
+    //
+    // Nobody in this corridor ever stands still: the floor is moving under all
+    // of them for the whole round, so the legs never stop. They keep up with
+    // it, too — the stride runs at the corridor's own speed, so the ramp from
+    // [SubwaySkaterConfig.obstacleSpeed] to [SubwaySkaterConfig.endSpeed] is
+    // something you can read off the players and not only off the blocks going
+    // past. `dt` is the only speed control there is, which is why the rate goes
+    // through it rather than through a setting of its own.
     if (player != null) {
-      player.topdown.draw(
+      final speed =
+          SubwaySkaterConfig.speedAt(frame.timeMs / 1000) /
+              SubwaySkaterConfig.obstacleSpeed;
+      final character = context.characters.of(player.color);
+      character.start();
+      character.draw(
         canvas,
         center,
         worldSize: r * 2,
+        // The same clock the corridor scrolls on, so the legs and the floor
+        // cannot drift apart.
+        dt: frame.dt * speed,
         angle: s.angle,
         // Carried away: still theirs, and visibly not in control of it.
         opacity: down ? 0.55 : 1,
