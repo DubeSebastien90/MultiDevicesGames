@@ -45,6 +45,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Gradle's own build output — reports, intermediates — regenerated on every
+# build. A stray `add -A` committed a report from here once already; this
+# stops it happening again.
+/android/build/
+
 # Kotlin/Gradle build cache
 .kotlin/
 android/.kotlin/
