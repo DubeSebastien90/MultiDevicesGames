@@ -72,3 +72,12 @@ superpowers/
 # Real RevenueCat keys, passed in with --dart-define-from-file. The example
 # beside it is tracked and shows the shape; this one is filled in per machine.
 /env/revenuecat.json
+
+# Figma mockups referenced while restyling screens — reference material for
+# whoever is doing that work, not part of the app.
+/MOCKUP SCREENSHOTS/
+
+# Xcode's resolved Swift Package Manager pins, regenerated locally whenever it
+# resolves the RevenueCat SPM dependency. No other iOS lockfile is tracked
+# here, so this follows the same rule as .swiftpm/ above.
+**/xcshareddata/swiftpm/

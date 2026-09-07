@@ -1,11 +1,17 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 // JOIN CODE DISABLED — the keypad's digits-only formatter lived here.
 // import 'package:flutter/services.dart';
 
+import '../model/device_metrics.dart';
 import '../net/discovery.dart';
 import '../net/discovery_stack.dart';
 import '../net/host_address.dart';
+import 'lobby_flow_style.dart';
 import 'scan_sheet.dart';
+import 'settings_screen.dart';
 
 /// Everything needed to get into a game: where, and the code to prove you were
 /// asked along.
@@ -29,11 +35,20 @@ class JoinRequest {
 /// traffic that guest networks and locked-down platforms drop, and the game has
 /// to stay playable when that happens.
 class JoinSheet extends StatefulWidget {
-  const JoinSheet({super.key, this.seatFingerprint});
+  const JoinSheet({
+    super.key,
+    this.seatFingerprint,
+    required this.metrics,
+    required this.onMetricsChanged,
+  });
 
   /// How this phone appears in a host's list of empty seats, so a game already
   /// under way can tell whether it is still this phone's game.
   final String? seatFingerprint;
+
+  /// Carried only so the gear in the header can open settings from here.
+  final DeviceMetrics metrics;
+  final ValueChanged<DeviceMetrics> onMetricsChanged;
 
   @override
   State<JoinSheet> createState() => _JoinSheetState();
@@ -93,24 +108,15 @@ class _JoinSheetState extends State<JoinSheet> {
     // Navigator.of(context).pop(JoinRequest(target.uri, code));
   }
 
-  Future<void> _typeAddress() async {
-    final raw = await showDialog<String>(
-      context: context,
-      builder: (_) => const _AddressDialog(),
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(
+          metrics: widget.metrics,
+          onMetricsChanged: widget.onMetricsChanged,
+        ),
+      ),
     );
-    if (raw == null || raw.trim().isEmpty || !mounted) return;
-
-    final target = parseHostTarget(raw);
-    if (target == null) {
-      _snack('Could not read "$raw" as an address.');
-      return;
-    }
-    // JOIN CODE DISABLED
-    Navigator.of(context).pop(JoinRequest(target.uri, target.code ?? ''));
-
-    // final code = target.code ?? await _askForCode(null);
-    // if (code == null || !mounted) return;
-    // Navigator.of(context).pop(JoinRequest(target.uri, code));
   }
 
   /// Is one of the empty seats in [game] this phone's?
@@ -131,76 +137,61 @@ class _JoinSheetState extends State<JoinSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final games = _listener.games;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Join a game'),
-        actions: [
-          IconButton(
-            tooltip: 'Look again',
-            onPressed: () => setState(_listener.refresh),
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
+            child: Column(
               children: [
-                if (games.isEmpty)
-                  _Searching(failure: _listener.failure)
-                else
-                  for (final game in games)
-                    _GameTile(
-                      game: game,
-                      mine: _hasASeatIn(game),
-                      // A game under way is worth tapping only if this phone
-                      // left a seat in it. Letting anyone tap meant strangers
-                      // walked into a rejection screen; refusing everyone meant
-                      // somebody whose battery died could not get back to their
-                      // own game.
-                      onTap: game.open || _hasASeatIn(game)
-                          ? () => _joinDiscovered(game)
-                          : null,
-                    ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    if (qrScanSupported) ...[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _scan,
-                          icon: const Icon(Icons.qr_code_scanner),
-                          label: const Text('Scan QR'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
+                LobbyHeader(
+                  title: 'Find Lobby',
+                  onBack: () => Navigator.of(context).pop(),
+                  onSettings: _openSettings,
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                    children: [
+                      if (games.isEmpty)
+                        _Searching(failure: _listener.failure)
+                      else
+                        for (final game in games)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: _GameTile(
+                              game: game,
+                              mine: _hasASeatIn(game),
+                              // A game under way is worth tapping only if this
+                              // phone left a seat in it. Letting anyone tap
+                              // meant strangers walked into a rejection screen;
+                              // refusing everyone meant somebody whose battery
+                              // died could not get back to their own game.
+                              onTap: game.open || _hasASeatIn(game)
+                                  ? () => _joinDiscovered(game)
+                                  : null,
+                            ),
+                          ),
                     ],
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _typeAddress,
-                        icon: const Icon(Icons.keyboard),
-                        label: const Text('Type address'),
+                  ),
+                ),
+                if (qrScanSupported)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    child: LobbyPillButton.big(
+                      label: 'Scan QR Code',
+                      icon: Icons.qr_code_2,
+                      background: LobbyFlowColors.yellow,
+                      onPressed: _scan,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 22,
+                        horizontal: 30,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Games show up on their own when both phones are on the same '
-                  'WiFi. If yours is missing, the network is probably blocking '
-                  'device-to-device traffic — scan the QR on the host screen, '
-                  'or type its address.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  textAlign: TextAlign.center,
-                ),
               ],
             ),
           ),
@@ -225,72 +216,120 @@ class _GameTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final players = game.players == 1 ? '1 phone' : '${game.players} phones';
+    // A game under way that isn't this phone's cannot be tapped, and says so by
+    // going gray rather than by wearing a colour it cannot deliver on.
+    final locked = !game.open && !mine;
+    // Somebody is hosting it, so somebody is in it — a beacon that says
+    // otherwise is stale, not empty.
+    final players = math.max(1, game.players);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: onTap != null
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surfaceContainerHighest,
-          child: Icon(
-            game.open
-                ? Icons.videogame_asset
-                : (mine ? Icons.replay : Icons.lock_clock),
-            size: 20,
-            color: onTap != null
-                ? theme.colorScheme.onPrimaryContainer
-                : theme.colorScheme.onSurfaceVariant,
+    return LobbyCard(
+      onTap: onTap,
+      dimmed: locked,
+      color: locked
+          ? LobbyFlowColors.field
+          : LobbyFlowColors.colorForLobby(game.name),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              game.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: LobbyText.label,
+            ),
           ),
-        ),
-        title: Text(game.name),
-        subtitle: Text(
-          game.open
-              ? '$players in · tap to join'
-              : mine
-                  ? '$players · under way — tap to take your place back'
-                  : '$players · already started',
-          style: theme.textTheme.bodySmall,
-        ),
-        trailing: onTap == null ? null : const Icon(Icons.chevron_right),
+          if (!game.open && mine) ...[
+            Text(
+              'Join Back Lobby',
+              style: LobbyText.button.copyWith(fontSize: 12),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.refresh, size: 17, color: LobbyFlowColors.ink),
+            const SizedBox(width: 10),
+          ],
+          Text('$players', style: LobbyText.count),
+          const SizedBox(width: 4),
+          const Icon(Icons.person, size: 20, color: LobbyFlowColors.ink),
+        ],
       ),
     );
   }
 }
 
-class _Searching extends StatelessWidget {
+class _Searching extends StatefulWidget {
   const _Searching({required this.failure});
 
   final String? failure;
 
   @override
+  State<_Searching> createState() => _SearchingState();
+}
+
+const _searchingStyle = TextStyle(
+  color: LobbyFlowColors.muted,
+  fontSize: 19,
+  fontWeight: FontWeight.w800,
+);
+
+class _SearchingState extends State<_Searching> {
+  static const _kDots = 3;
+
+  Timer? _timer;
+  int _dots = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.failure == null) {
+      _timer = Timer.periodic(const Duration(milliseconds: 450), (_) {
+        setState(() => _dots = _dots % _kDots + 1);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final failure = widget.failure;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 28),
+      padding: const EdgeInsets.symmetric(vertical: 120),
       child: Column(
         children: [
           if (failure == null) ...[
-            const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
+            // All three dots are always laid out; only their opacity changes.
+            // The line's width never moves, so it can neither reflow nor
+            // shuffle as the animation runs.
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Flexible(
+                  child: Text(
+                    'Searching for lobbies',
+                    style: _searchingStyle,
+                    maxLines: 1,
+                  ),
+                ),
+                for (var i = 1; i <= _kDots; i++)
+                  Opacity(
+                    opacity: i <= _dots ? 1 : 0,
+                    child: const Text('.', style: _searchingStyle),
+                  ),
+              ],
             ),
-            const SizedBox(height: 14),
-            Text(
-              'Looking for games nearby…',
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Ask your friend to tap “Host a game”.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            const SizedBox(height: 8),
+            const Text(
+              'Ask your friend to tap “Create a Lobby”.',
+              style: LobbyText.body,
+              textAlign: TextAlign.center,
             ),
           ] else ...[
             Icon(Icons.wifi_find, size: 30, color: theme.colorScheme.error),
@@ -302,7 +341,7 @@ class _Searching extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Use the QR or the address instead.',
+              'Scan the QR code on the host screen instead.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -405,47 +444,3 @@ class _CodeDialogState extends State<_CodeDialog> {
 }
 */
 
-/// The typed-address fallback, unchanged in spirit from v1.
-class _AddressDialog extends StatefulWidget {
-  const _AddressDialog();
-
-  @override
-  State<_AddressDialog> createState() => _AddressDialogState();
-}
-
-class _AddressDialogState extends State<_AddressDialog> {
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Host address'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        keyboardType: TextInputType.url,
-        onSubmitted: (v) => Navigator.of(context).pop(v),
-        decoration: const InputDecoration(
-          hintText: '192.168.1.42:8080',
-          border: OutlineInputBorder(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text('Next'),
-        ),
-      ],
-    );
-  }
-}
