@@ -9,6 +9,7 @@ import '../model/player_name.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
+import '../model/name_drop_status.dart';
 import '../platform/native_dpi_channel.dart';
 import 'join_sheet.dart';
 import 'metrics_card.dart';
@@ -193,6 +194,16 @@ class _RoleScreenState extends State<RoleScreen> {
     return name.isEmpty ? 'phone' : name;
   }
 
+  /// Debug-only: forgets whatever this phone answered about NameDrop, so
+  /// [NameDropGate] asks again the next time the lobby opens.
+  Future<void> _reloadNameDropState() async {
+    await NameDropPref.save(NameDropStatus.waiting);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('NameDrop status reset to waiting')),
+    );
+  }
+
   void _editScreenSize() {
     final metrics = _metrics;
     if (metrics == null) return;
@@ -359,6 +370,16 @@ class _RoleScreenState extends State<RoleScreen> {
                         ),
                       ],
                     ),
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: _reloadNameDropState,
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Reload state'),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Text(
                     'Both phones must be on the same WiFi, and that network '
