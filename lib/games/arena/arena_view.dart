@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
+import '../../sdk/render/player_animation.dart';
 import 'arena_config.dart';
 
 /// Renders the arena: fighters, HP bars, attack cones, block shields, stun
@@ -16,15 +18,36 @@ Color _greyed(Color c) {
 }
 
 class ArenaView extends GameView {
-  ArenaView({required this.phoneId});
+  ArenaView({
+    required this.phoneId,
+    this.characters = PlayerAnimations.none,
+    this.roster = Roster.empty,
+  });
 
   final String phoneId;
 
+  /// Everyone's walking character, loaded and coloured by the platform.
+  final PlayerAnimations characters;
+
+  /// Everyone in the round, for their platform colour — the one they were
+  /// shown in the lobby, rather than the sim's own palette.
+  final Roster roster;
+
   static const _floorColor = Color(0xFF16213E);
+
+  /// World units per second below which a fighter counts as standing still.
+  ///
+  /// Not zero: positions are interpolated, so a stationary fighter still
+  /// jitters by a hair between frames and an exact test would flicker the walk
+  /// on and off.
+  static const _walkingSpeed = 0.5;
 
   // Reusable paint objects.
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
+
+  /// Where each fighter was last frame, to tell walking from standing.
+  final _lastSeen = <String, Offset>{};
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -106,28 +129,37 @@ class ArenaView extends GameView {
         canvas.restore();
       }
 
-      // Fighter body. A player who has dropped out goes grey — still there,
-      // still hittable, plainly nobody home.
-      final away = frame.sharedState['away_p${e.propInt('index', 0)}'] == true;
-      final body = away ? _greyed(color) : color;
-      _fill.color = isStunned ? body.withAlpha(140) : body;
-      canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+      // Fighter body. `RenderEntity` carries no velocity, so movement is the
+      // distance covered since the last frame; a stunned fighter is being
+      // knocked about rather than walking, so they hold still.
+      final here = Offset(e.x, e.y);
+      final before = _lastSeen[e.id];
+      _lastSeen[e.id] = here;
+      final moving = !isStunned &&
+          before != null &&
+          frame.dt > 0 &&
+          (here - before).distance / frame.dt > _walkingSpeed;
 
-      // Direction indicator (small triangle).
-      if (!isStunned) {
-        _fill.color = const Color(0xDDFFFFFF);
-        canvas.save();
-        canvas.translate(e.x, e.y);
-        canvas.rotate(e.angle);
-        final tip = radius * 1.15;
-        final base = radius * 0.3;
-        final dirPath = ui.Path()
-          ..moveTo(tip, 0)
-          ..lineTo(radius * 0.7, -base)
-          ..lineTo(radius * 0.7, base)
-          ..close();
-        canvas.drawPath(dirPath, _fill);
-        canvas.restore();
+      // A player who has dropped out goes grey — still there, still hittable,
+      // plainly nobody home. That is a colour the character cannot be, so they
+      // go back to being a circle, which is the point: they should not look
+      // like somebody who is playing.
+      final away = frame.sharedState['away_p${e.propInt('index', 0)}'] == true;
+      final seated = roster.byPhone(e.props['phoneId'] as String? ?? '');
+      if (away || seated == null) {
+        final body = away ? _greyed(color) : color;
+        _fill.color = isStunned ? body.withAlpha(140) : body;
+        canvas.drawCircle(here, radius, _fill);
+      } else {
+        final character = characters.of(seated.color);
+        moving ? character.start() : character.stop();
+        character.draw(
+          canvas,
+          here,
+          worldSize: radius * 3,
+          dt: frame.dt,
+          angle: e.angle,
+        );
       }
 
       // HP bar.
