@@ -14,6 +14,7 @@ import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
 import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
+import 'package:multiscreen_slingshot/sdk/render/shape_view.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
 PhoneSpec phone(String id, {PlayerColor? color}) => PhoneSpec(
@@ -340,11 +341,14 @@ void main() {
       expect(sim.sharedState['pullY'], closeTo(car.y, 1e-3));
     });
 
-    test('a touch far from the current car is ignored', () {
+    test('a touch far from the current car aims from where it landed', () {
       final started = start(2);
       final sim = started.sim;
       final before = sim.entities.firstWhere((e) => e.id == sim.currentTurn);
 
+      // Nowhere near the car — which is the point. The car may be jammed
+      // against a screen edge or straddling a seam, so the draw is allowed to
+      // happen anywhere and is measured from where the finger went down.
       sim.onTouch(TouchEvent(
         phoneId: 'p1',
         worldX: before.x + 100,
@@ -353,14 +357,116 @@ void main() {
       ));
       sim.onTouch(TouchEvent(
         phoneId: 'p1',
-        worldX: before.x + 90,
+        worldX: before.x + 99,
         worldY: before.y + 100,
         phase: TouchPhase.move,
       ));
 
+      // The car still doesn't budge while aiming...
       final after = sim.entities.firstWhere((e) => e.id == sim.currentTurn);
       expect(after.x, closeTo(before.x, 1e-6));
       expect(after.y, closeTo(before.y, 1e-6));
+      // ...but the finger's one-unit displacement became a one-unit pull off
+      // the car, not an aim point a hundred units away.
+      expect(sim.sharedState['pullX'], closeTo(before.x - 1, 1e-3));
+      expect(sim.sharedState['pullY'], closeTo(before.y, 1e-3));
+      // And the pivot is published so the view can put a crosshair on it,
+      // since nothing else on the board marks that spot.
+      expect(sim.sharedState['anchorX'], closeTo(before.x + 100, 1e-3));
+      expect(sim.sharedState['anchorY'], closeTo(before.y + 100, 1e-3));
+    });
+
+    test('a drag started on the car publishes no anchor to mark', () {
+      final started = start(2);
+      final sim = started.sim;
+      final car = sim.entities.firstWhere((e) => e.id == sim.currentTurn);
+
+      sim.onTouch(TouchEvent(
+        phoneId: 'p1',
+        worldX: car.x,
+        worldY: car.y,
+        phase: TouchPhase.down,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: 'p1',
+        worldX: car.x - 1,
+        worldY: car.y,
+        phase: TouchPhase.move,
+      ));
+
+      // The car is standing on the pivot; a crosshair would only sit on top
+      // of it.
+      expect(sim.sharedState['anchorX'], isNull);
+      expect(sim.sharedState['anchorY'], isNull);
+    });
+
+    test('the aim anchor is dropped once the shot is released', () {
+      final started = start(2);
+      final sim = started.sim;
+      final car = sim.entities.firstWhere((e) => e.id == sim.currentTurn);
+      final awayX = car.x + 50;
+      final awayY = car.y + 50;
+
+      sim.onTouch(TouchEvent(
+        phoneId: 'p1',
+        worldX: awayX,
+        worldY: awayY,
+        phase: TouchPhase.down,
+      ));
+      expect(sim.sharedState['anchorX'], isNotNull);
+
+      sim.onTouch(TouchEvent(
+        phoneId: 'p1',
+        worldX: awayX - PitchCarsConfig.maxPull,
+        worldY: awayY,
+        phase: TouchPhase.move,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: 'p1',
+        worldX: awayX - PitchCarsConfig.maxPull,
+        worldY: awayY,
+        phase: TouchPhase.up,
+      ));
+
+      expect(sim.sharedState['anchorX'], isNull);
+      expect(sim.sharedState['anchorY'], isNull);
+    });
+
+    test('a drag too short to clear the cancel zone consumes no turn', () {
+      final started = start(2);
+      final sim = started.sim;
+      final firstTurn = sim.currentTurn;
+      final car = sim.entities.firstWhere((e) => e.id == firstTurn);
+
+      // Inside the dead zone, measured the way the sim measures it.
+      final nudge =
+          sim.scale.maxPull * PitchCarsConfig.cancelPullFraction * 0.5;
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x,
+        worldY: car.y,
+        phase: TouchPhase.down,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x - nudge,
+        worldY: car.y,
+        phase: TouchPhase.move,
+      ));
+      sim.onTouch(TouchEvent(
+        phoneId: firstTurn,
+        worldX: car.x - nudge,
+        worldY: car.y,
+        phase: TouchPhase.up,
+      ));
+
+      sim.step(1 / PlatformConfig.simHz);
+
+      expect(sim.currentTurn, firstTurn);
+      final after = sim.entities.firstWhere((e) => e.id == firstTurn);
+      expect(after.x, closeTo(car.x, 1e-6));
+      expect(after.y, closeTo(car.y, 1e-6));
+      expect(sim.sharedState['moving'], isFalse);
     });
 
     test('a real pull-and-release launches the car and eventually advances the turn', () {
@@ -639,6 +745,20 @@ void main() {
   });
 
   group('PitchCarsSim — the starting grid', () {
+    test('every car says whose it is', () {
+      // What turns the disc into that player's character on the board:
+      // `ShapeView` draws a plain shape for anybody it has not been told
+      // about, so a car that loses this prop silently goes back to being a
+      // coloured dot.
+      final cars =
+          start(3).sim.entities.where((e) => e.kind == 'car').toList();
+      expect(cars, hasLength(3));
+      for (final car in cars) {
+        expect(car.props[ShapeProps.player], car.id,
+            reason: 'a car that names nobody is drawn as a plain circle');
+      }
+    });
+
     for (final count in [2, 3, 4]) {
       test('$count cars never spawn touching each other', () {
         for (final started in [start(count)]) {

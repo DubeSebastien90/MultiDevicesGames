@@ -24,14 +24,13 @@ class SubwaySkaterView extends GameView {
   static const _laneMark = Color(0x40C7E0FF);
   static const _hazard = Color(0xFFFF6B3D);
   static const _hazardCore = Color(0xFF7A2410);
-  static const _me = Color(0xFFFFFFFF);
   static const _charge = Color(0xFFFFD166);
 
   final _paint = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
 
-  /// Who is mid-tumble, and who is standing where, unpacked from shared state
-  /// only when it changes.
+  /// Who is mid-tumble and who is charging, unpacked from shared state only
+  /// when it changes.
   ///
   /// The wire carries joined strings — see the sim for why they are not lists —
   /// and splitting them sixty times a second to answer questions whose answers
@@ -40,10 +39,6 @@ class SubwaySkaterView extends GameView {
   Set<String> _tumbling = const {};
   String _chargingRaw = '';
   Set<String> _charging = const {};
-  String _orderRaw = '';
-  List<String> _order = const [];
-  String _phonesRaw = '';
-  List<String> _phones = const [];
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -57,13 +52,8 @@ class SubwaySkaterView extends GameView {
       _drawBurst(canvas, frame, b);
     }
 
-    // The circle this phone's swipes move: the one standing in this phone's
-    // place in the line, whoever it belongs to. Not the one that shares this
-    // phone's id — that one is somewhere else the moment the order churns, and
-    // ringing it would point every player at the wrong screen.
-    final mine = postOf(frame.me.phoneId, _phones, _order).owner;
     for (final s in frame.ofKind('skater')) {
-      _drawSkater(canvas, frame, s, steered: s.props['phone'] == mine);
+      _drawSkater(canvas, frame, s);
     }
   }
 
@@ -97,18 +87,6 @@ class SubwaySkaterView extends GameView {
     if (charging != _chargingRaw) {
       _chargingRaw = charging;
       _charging = charging.isEmpty ? const {} : charging.split(',').toSet();
-    }
-
-    final order = frame.sharedState['order'] as String? ?? '';
-    if (order != _orderRaw) {
-      _orderRaw = order;
-      _order = order.isEmpty ? const [] : order.split(',');
-    }
-
-    final phones = frame.sharedState['phones'] as String? ?? '';
-    if (phones != _phonesRaw) {
-      _phonesRaw = phones;
-      _phones = phones.isEmpty ? const [] : phones.split(',');
     }
   }
 
@@ -240,12 +218,7 @@ class SubwaySkaterView extends GameView {
     }
   }
 
-  void _drawSkater(
-    Canvas canvas,
-    Frame frame,
-    RenderEntity s, {
-    required bool steered,
-  }) {
+  void _drawSkater(Canvas canvas, Frame frame, RenderEntity s) {
     final r = s.propDouble('r', SubwaySkaterConfig.skaterRadius);
     final phoneId = s.props['phone'] as String?;
     final down = phoneId != null && _tumbling.contains(phoneId);
@@ -265,15 +238,30 @@ class SubwaySkaterView extends GameView {
       canvas.drawCircle(center, r * 1.5, _paint);
     }
 
-    // The skater is whoever is riding it, drawn by the SDK. Today that is a
-    // circle in their colour — the same picture this game drew by hand until
-    // the roster arrived — and the day the characters are illustrated, this
-    // line starts drawing a fox without being touched.
+    // The skater is whoever is riding it, drawn by the SDK — the walking
+    // character in their colour, or the circle this game drew by hand until the
+    // roster arrived, on a phone where the animation could not load.
+    //
+    // Nobody in this corridor ever stands still: the floor is moving under all
+    // of them for the whole round, so the legs never stop. They keep up with
+    // it, too — the stride runs at the corridor's own speed, so the ramp from
+    // [SubwaySkaterConfig.obstacleSpeed] to [SubwaySkaterConfig.endSpeed] is
+    // something you can read off the players and not only off the blocks going
+    // past. `dt` is the only speed control there is, which is why the rate goes
+    // through it rather than through a setting of its own.
     if (player != null) {
-      player.topdown.draw(
+      final speed =
+          SubwaySkaterConfig.speedAt(frame.timeMs / 1000) /
+              SubwaySkaterConfig.obstacleSpeed;
+      final character = context.characters.of(player.color);
+      character.start();
+      character.draw(
         canvas,
         center,
         worldSize: r * 2,
+        // The same clock the corridor scrolls on, so the legs and the floor
+        // cannot drift apart.
+        dt: frame.dt * speed,
         angle: s.angle,
         // Carried away: still theirs, and visibly not in control of it.
         opacity: down ? 0.55 : 1,
@@ -285,30 +273,6 @@ class SubwaySkaterView extends GameView {
       canvas.drawCircle(center, r, _paint);
     }
 
-    // Spokes, turned by the entity's own angle. Still on a skater standing up,
-    // spinning on one being carried away — which is how a tumble reads from the
-    // far end of the table, where the circle is too small to show anything else.
-    _stroke
-      ..color = const Color(0x66000000)
-      ..strokeWidth = frame.onePixel * 1.5;
-    for (var i = 0; i < 3; i++) {
-      final a = s.angle + i * math.pi / 3;
-      canvas.drawLine(
-        center + Offset(math.cos(a), math.sin(a)) * (r * 0.35),
-        center + Offset(math.cos(a), math.sin(a)) * (r * 0.92),
-        _stroke,
-      );
-    }
-
-    if (!steered) return;
-    // The circle this screen's swipes move. Ordinarily it is standing right
-    // here — the ring is on your own glass — and it follows the circle away
-    // while that one is being carried off, which is the clearest way to say
-    // "this is still the one you are driving".
-    _stroke
-      ..color = _me
-      ..strokeWidth = frame.onePixel * 2.5;
-    canvas.drawCircle(center, r * 1.45, _stroke);
   }
 
   @override

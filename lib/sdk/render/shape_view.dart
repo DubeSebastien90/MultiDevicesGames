@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import '../contract/entity.dart';
 import '../contract/view.dart';
+import '../model/player.dart';
+import 'player_art.dart';
 
 /// Prop keys [ShapeView] understands. A game using it declares these when it
 /// creates an entity; anything else is ignored.
@@ -13,6 +15,14 @@ class ShapeProps {
   static const height = 'h';
   static const color = 'color'; // ARGB int
   static const spin = 'spin'; // bool: draw a rotation tell
+
+  /// Whose piece this is: a `phoneId`. An entity that names a player at the
+  /// table is drawn as that player's character rather than as a flat shape —
+  /// see [ShapeView.roster].
+  ///
+  /// Still declare [shape] alongside it. It is what the entity falls back to,
+  /// and what every phone that has not got a roster yet draws.
+  static const player = 'player';
 }
 
 class ShapeKind {
@@ -34,6 +44,7 @@ class ShapeView extends GameView {
     this.playfield = const Color(0xFF141C33),
     this.grid = true,
     this.showSeams = false,
+    this.roster = Roster.empty,
   });
 
   /// Outside the board.
@@ -49,6 +60,22 @@ class ShapeView extends GameView {
 
   /// Mark where this screen's coverage ends and the gap begins.
   final bool showSeams;
+
+  /// Who is at the table, for entities that carry [ShapeProps.player].
+  ///
+  /// Given rather than looked up because a renderer has no session to ask: a
+  /// game hands over `context.roster` when it builds the view. Left empty —
+  /// the default — every entity is a shape, which is what a test and a phone
+  /// mid-join both get.
+  final Roster roster;
+
+  /// How much bigger the character is drawn than the disc it stands in for.
+  ///
+  /// Three, the same as the fighters in Arena, so a player is the same size
+  /// relative to their own body in every game that draws one. The artboard
+  /// carries margins, so filling the disc exactly would draw a character
+  /// noticeably smaller than the circle everybody had been aiming at.
+  static const double _characterScale = 3;
 
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
@@ -101,6 +128,21 @@ class ShapeView extends GameView {
           e.x - reach > view.right ||
           e.y + reach < view.top ||
           e.y - reach > view.bottom) {
+        continue;
+      }
+
+      // Somebody's piece, and we know who: draw them instead of a shape.
+      // Unknown phone, empty roster, art still decoding — every one of those
+      // falls through to the shape below, which is the same rule the art layer
+      // lives by.
+      final player = roster.byPhone(e.props[ShapeProps.player] as String? ?? '');
+      if (player != null) {
+        PlayerArt.of(player.color, PlayerArtSlot.topdown).draw(
+          canvas,
+          Offset(e.x, e.y),
+          worldSize: e.propDouble(ShapeProps.radius) * _characterScale,
+          angle: e.angle,
+        );
         continue;
       }
 

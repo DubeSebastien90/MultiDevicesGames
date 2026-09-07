@@ -9,6 +9,7 @@ import '../model/player_name.dart';
 
 import '../app_controller.dart';
 import '../model/device_metrics.dart';
+import '../model/name_drop_status.dart';
 import '../platform/native_dpi_channel.dart';
 import 'join_sheet.dart';
 import 'lobby_flow_style.dart';
@@ -78,7 +79,8 @@ class _RoleScreenState extends State<RoleScreen> {
     // typed name can predate the gate — an install from before this existed, or
     // a phone an adult set up and handed over. Either way the name is replaced
     // here, before anything has had a chance to put it on the wire.
-    final usable = saved != null &&
+    final usable =
+        saved != null &&
         saved.isNotEmpty &&
         (!_isChild || PlayerNames.isGenerated(saved));
 
@@ -194,6 +196,16 @@ class _RoleScreenState extends State<RoleScreen> {
     return name.isEmpty ? 'phone' : name;
   }
 
+  /// Debug-only: forgets whatever this phone answered about NameDrop, so
+  /// [NameDropGate] asks again the next time the lobby opens.
+  Future<void> _reloadNameDropState() async {
+    await NameDropPref.save(NameDropStatus.waiting);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('NameDrop status reset to waiting')),
+    );
+  }
+
   void _openSettings() {
     final metrics = _metrics;
     if (metrics == null) return;
@@ -242,8 +254,11 @@ class _RoleScreenState extends State<RoleScreen> {
       ),
     );
     if (request == null || !mounted) return;
-    await widget.controller
-        .joinHost(request.uri, _metrics!, code: request.code);
+    await widget.controller.joinHost(
+      request.uri,
+      _metrics!,
+      code: request.code,
+    );
   }
 
   @override
@@ -270,6 +285,7 @@ class _RoleScreenState extends State<RoleScreen> {
                         ..._banners(),
                         const SizedBox(height: 26),
                         _actions(),
+                        if (kDebugMode) _debugReload(),
                       ],
                     ),
                   ),
@@ -361,6 +377,18 @@ class _RoleScreenState extends State<RoleScreen> {
       ],
     );
   }
+
+  /// A hidden reset so testing NameDrop repeatedly doesn't mean reinstalling.
+  Widget _debugReload() => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: _reloadNameDropState,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Reload state'),
+          ),
+        ),
+      );
 }
 
 /// The player name as a fact rather than a field, with a dice to change it.
@@ -483,9 +511,7 @@ class _NameDialogState extends State<_NameDialog> {
     return Dialog(
       backgroundColor: LobbyFlowColors.paper,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
         child: Column(
@@ -496,8 +522,10 @@ class _NameDialogState extends State<_NameDialog> {
             const SizedBox(height: 20),
             if (widget.locked)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 20,
+                ),
                 decoration: BoxDecoration(
                   color: LobbyFlowColors.field,
                   borderRadius: BorderRadius.circular(999),

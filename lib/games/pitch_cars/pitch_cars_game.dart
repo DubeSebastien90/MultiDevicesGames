@@ -42,5 +42,5 @@ class PitchCarsGame implements MultiscreenGame {
 
   @override
   GameView createView(ViewContext context) =>
-      PitchCarsView(phoneId: context.phoneId);
+      PitchCarsView(phoneId: context.phoneId, roster: context.roster);
 }

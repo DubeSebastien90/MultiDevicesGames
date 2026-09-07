@@ -90,16 +90,28 @@ class DodgeballSim implements GameSim {
       p.invincibleLeft = math.max(0, p.invincibleLeft - dt);
       if (p.touchDown) p.touchHeldTime += dt;
 
-      // Movement.
-      if (p.moveAngle != null) {
-        final isDashing = p.dashTimeLeft > 0;
-        final speed =
-            isDashing ? DodgeballConfig.dashSpeed : DodgeballConfig.moveSpeed;
-        final dx = math.cos(p.moveAngle!) * speed * dt;
-        final dy = math.sin(p.moveAngle!) * speed * dt;
-        p.x += dx;
-        p.y += dy;
-        p.facingAngle = p.moveAngle!;
+      // Movement. A dash runs on its own angle and its own clock, which is
+      // what keeps it separable from the finger: the stick can be released,
+      // re-aimed or left alone mid-dash without any of it changing where the
+      // burst ends up, and the burst ending changes nothing about the stick.
+      //
+      // Walking speed is how far the finger is from the anchor, up to
+      // [DodgeballConfig.moveSpeed] at full tilt — edging around a ball and
+      // breaking for open floor are different intentions, and a drag that only
+      // ever means "go" cannot tell them apart.
+      final double? heading;
+      final double speed;
+      if (p.dashTimeLeft > 0) {
+        heading = p.dashAngle;
+        speed = DodgeballConfig.dashSpeed;
+      } else {
+        heading = p.moveAngle;
+        speed = DodgeballConfig.moveSpeed * p.moveScale;
+      }
+      if (heading != null) {
+        p.x += math.cos(heading) * speed * dt;
+        p.y += math.sin(heading) * speed * dt;
+        p.facingAngle = heading;
       }
 
       // Kept on a real screen rather than inside a rectangle drawn around
@@ -157,6 +169,13 @@ class DodgeballSim implements GameSim {
         if (dist < DodgeballConfig.characterRadius + DodgeballConfig.ballRadius) {
           p.alive = false;
           p.moveAngle = null;
+          p.moveScale = 0;
+          p.dashTimeLeft = 0;
+          // Their finger is still on the glass, but [onTouch] turns an
+          // eliminated player away — so the up that would have cleared this
+          // never arrives, and without it their joystick would be left painted
+          // on the floor.
+          p.touchDown = false;
           break;
         }
       }
@@ -209,8 +228,10 @@ class DodgeballSim implements GameSim {
     p.dashCooldownLeft = DodgeballConfig.dashCooldown;
     p.invincibleLeft = DodgeballConfig.dashInvincibility;
 
-    // If not moving, dash in facing direction.
-    p.moveAngle ??= p.facingAngle;
+    // Where they were heading, or where they are facing if they were standing
+    // still. Latched here and never read from the finger again — a dash is a
+    // committed burst, not a thing you steer.
+    p.dashAngle = p.moveAngle ?? p.facingAngle;
   }
 
   void _checkWinCondition() {
@@ -236,18 +257,30 @@ class DodgeballSim implements GameSim {
       case TouchPhase.down:
         p.touchDownX = touch.worldX;
         p.touchDownY = touch.worldY;
+        p.touchX = touch.worldX;
+        p.touchY = touch.worldY;
         p.touchMoved = false;
         p.touchDown = true;
         p.touchHeldTime = 0;
 
       case TouchPhase.move:
         if (!p.touchDown) return;
+        p.touchX = touch.worldX;
+        p.touchY = touch.worldY;
         final dx = touch.worldX - p.touchDownX;
         final dy = touch.worldY - p.touchDownY;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist >= DodgeballConfig.minMoveDistance) {
           p.touchMoved = true;
           p.moveAngle = math.atan2(dy, dx);
+          p.moveScale = DodgeballConfig.moveScaleFor(dist);
+        } else {
+          // Back inside the dead zone, which on a stick is the middle: stop.
+          // [touchMoved] deliberately stays set — this was a drag, and letting
+          // it turn back into a tap would fire a dash the player never asked
+          // for when they lifted their finger.
+          p.moveAngle = null;
+          p.moveScale = 0;
         }
 
       case TouchPhase.up:
@@ -265,10 +298,17 @@ class DodgeballSim implements GameSim {
           _tryDash(p);
         }
 
-        // Stop moving on finger up (unless mid-dash).
-        if (p.dashTimeLeft <= 0) {
-          p.moveAngle = null;
-        }
+        // Stop moving on finger up — including on the tap that just started a
+        // dash.
+        //
+        // This used to be skipped while a dash was in flight, to keep the
+        // burst from being cancelled by the very touch-up that launched it.
+        // But the finger was already off the glass by then, so nothing would
+        // ever clear the heading again: the dash ended and the player carried
+        // on walking that way until they next dragged and released. The dash
+        // keeps its own angle now, so stopping the walk here costs it nothing.
+        p.moveAngle = null;
+        p.moveScale = 0;
     }
   }
 
@@ -332,6 +372,19 @@ class DodgeballSim implements GameSim {
       map['dashing_$key'] = p.dashTimeLeft > 0;
       map['dashCd_$key'] = _quantize(p.dashCooldownLeft);
       map['invincible_$key'] = p.invincibleLeft > 0;
+
+      // The stick, and only while it is actually steering — a finger resting
+      // inside the dead zone is a dash being aimed, and drawing a ring under
+      // it would say "you are moving" to a player who is not. Absent keys are
+      // how the view is told there is nothing to draw, which also keeps four
+      // dead numbers per player off the wire for the whole of every round
+      // nobody is dragging anything.
+      if (p.touchDown && p.alive && p.moveAngle != null) {
+        map['stickX_$key'] = _quantize(p.touchDownX);
+        map['stickY_$key'] = _quantize(p.touchDownY);
+        map['stickToX_$key'] = _quantize(p.touchX);
+        map['stickToY_$key'] = _quantize(p.touchY);
+      }
     }
     return map;
   }
@@ -374,12 +427,16 @@ class DodgeballSim implements GameSim {
       p.facingAngle = 0;
       p.alive = true;
       p.moveAngle = null;
+      p.moveScale = 0;
+      p.dashAngle = 0;
       p.dashCooldownLeft = 0;
       p.dashTimeLeft = 0;
       p.invincibleLeft = 0;
       p.touchDown = false;
       p.touchMoved = false;
       p.touchHeldTime = 0;
+      p.touchX = p.x;
+      p.touchY = p.y;
     }
   }
 
@@ -407,7 +464,13 @@ class _Player {
   // Movement direction (null = stopped).
   double? moveAngle;
 
-  // Dash.
+  /// How far the stick is pushed, 0..1, as a fraction of
+  /// [DodgeballConfig.moveSpeed].
+  double moveScale = 0;
+
+  // Dash. Its own heading, held for the length of the burst, so a dash and a
+  // finger are never the same variable.
+  double dashAngle = 0;
   double dashCooldownLeft = 0;
   double dashTimeLeft = 0;
   double invincibleLeft = 0;
@@ -418,6 +481,12 @@ class _Player {
   double touchDownY = 0;
   bool touchMoved = false;
   double touchHeldTime = 0;
+
+  /// Where the finger is right now, as against [touchDownX]/[touchDownY] where
+  /// it landed. Only the drawn joystick needs it — steering is an angle and a
+  /// scale — but the stick cannot show a tilt it has not been told about.
+  double touchX = 0;
+  double touchY = 0;
 }
 
 class _Ball {

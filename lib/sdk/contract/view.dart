@@ -4,6 +4,7 @@ import '../audio/game_audio.dart';
 import '../model/coverage_map.dart';
 import '../model/phone_layout.dart';
 import '../model/player.dart';
+import '../render/player_animation.dart';
 import '../model/world_rect.dart';
 import '../score/scoreboard.dart';
 import 'entity.dart';
@@ -61,6 +62,7 @@ class ViewContext {
     required this.board,
     this.roster = Roster.empty,
     this.audio = const SilentLocalAudio(),
+    this.characters = PlayerAnimations.none,
   });
 
   final String phoneId;
@@ -73,6 +75,18 @@ class ViewContext {
   /// a list that never changes has no business being rebuilt sixty times a
   /// second. A view that wants a player's picture reads it once, at build time.
   final Roster roster;
+
+  /// Everyone's walking character, already loaded and already the right
+  /// colour. Ask for one with `characters.of(player.color)`, tell it to
+  /// [PlayerAnimation.start] or [PlayerAnimation.stop] from whatever the game
+  /// knows about movement, and draw it.
+  ///
+  /// Owned by the platform and thrown away with the view, which is why a game
+  /// never loads or disposes anything here. Defaults to
+  /// [PlayerAnimations.none], the geometry from `PlayerArt` — so a view built
+  /// in a test, or on a phone where the animation did not load, draws the same
+  /// thing it always did.
+  final PlayerAnimations characters;
 
   /// A sound on this phone alone. Nothing the table should hear goes through
   /// here — that is the sim's to decide.

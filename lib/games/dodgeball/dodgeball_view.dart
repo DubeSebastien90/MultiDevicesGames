@@ -4,21 +4,45 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
+import '../../sdk/render/player_animation.dart';
 import 'dodgeball_config.dart';
 
 /// Renders the dodgeball game: players, bouncing balls, dash effects, and
 /// countdown/game-over overlays.
 class DodgeballView extends GameView {
-  DodgeballView({required this.phoneId});
+  DodgeballView({
+    required this.phoneId,
+    this.characters = PlayerAnimations.none,
+    this.roster = Roster.empty,
+  });
 
   final String phoneId;
+
+  /// Everyone's walking character, loaded and coloured by the platform.
+  final PlayerAnimations characters;
+
+  /// Everyone in the round, for their platform colour. The sim ships a colour
+  /// of its own on the entity, but the one a player recognises across the table
+  /// is the one the lobby gave them.
+  final Roster roster;
 
   static const _floorColor = Color(0xFF161B22);
   static const _ballColor = Color(0xFFFF4444);
   static const _ballGlowColor = Color(0x44FF4444);
 
+  /// World units per second below which a player counts as standing still.
+  ///
+  /// Not zero: positions are interpolated, so a stationary player still jitters
+  /// by a hair between frames and an exact test would flicker the walk on and
+  /// off.
+  static const _walkingSpeed = 0.5;
+
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
+
+  /// Where each player was last frame, to tell walking from standing.
+  final _lastSeen = <String, Offset>{};
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -59,7 +83,13 @@ class DodgeballView extends GameView {
     for (final e in frame.ofKind('player')) {
       final idx = e.propInt('index');
       final key = 'p$idx';
-      final color = Color(e.propInt('color', 0xFFFFFFFF));
+      // The platform's colour for whoever is in this seat, which is the one
+      // they were shown in the lobby. The sim's own palette is the fallback,
+      // for a seat nobody is sitting in yet.
+      final phone = frame.sharedState['phoneId_$key'] as String?;
+      final seated = phone == null ? null : roster.byPhone(phone);
+      final color =
+          seated?.color.value ?? Color(e.propInt('color', 0xFFFFFFFF));
       final radius = e.propDouble('radius', DodgeballConfig.characterRadius);
       final alive = frame.sharedState['alive_$key'] == true;
       if (!alive) continue;
@@ -93,25 +123,42 @@ class DodgeballView extends GameView {
         );
       }
 
-      // Player body.
-      _fill.color = isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
-      canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+      // Player body. The character walks only while the player is actually
+      // moving; `RenderEntity` carries no velocity, so movement is the distance
+      // covered since the last frame.
+      final here = Offset(e.x, e.y);
+      final before = _lastSeen[e.id];
+      _lastSeen[e.id] = here;
+      final moving = before != null &&
+          frame.dt > 0 &&
+          (here - before).distance / frame.dt > _walkingSpeed;
 
-      // Direction indicator.
-      _fill.color = const Color(0xDDFFFFFF);
-      canvas.save();
-      canvas.translate(e.x, e.y);
-      canvas.rotate(e.angle);
-      final tip = radius * 1.15;
-      final base = radius * 0.3;
-      final dirPath = ui.Path()
-        ..moveTo(tip, 0)
-        ..lineTo(radius * 0.7, -base)
-        ..lineTo(radius * 0.7, base)
-        ..close();
-      canvas.drawPath(dirPath, _fill);
-      canvas.restore();
+      // A seat nobody is sitting in yet has no platform colour to ask for a
+      // character with, so it stays the sim's own circle.
+      if (seated == null) {
+        _fill.color =
+            isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
+        canvas.drawCircle(here, radius, _fill);
+      } else {
+        final character = characters.of(seated.color);
+        moving ? character.start() : character.stop();
+        character.draw(
+          canvas,
+          here,
+          worldSize: radius * 3,
+          dt: frame.dt,
+          angle: e.angle,
+        );
+      }
     }
+
+    // The player's own stick, drawn last so a body walking over their own
+    // anchor does not cut a hole in it.
+    //
+    // Only this phone's: a joystick is a picture of what one pair of hands is
+    // doing, and drawing everybody's would litter a floor that already has
+    // balls crossing it.
+    _drawJoystick(canvas, frame);
 
     // Countdown overlay.
     if (frame.sharedState['phase'] == 'countdown') {
@@ -124,6 +171,85 @@ class DodgeballView extends GameView {
     if (frame.sharedState['phase'] == 'finished') {
       _drawCenteredText(canvas, frame, 'OUT!', frame.board.height * 0.12);
     }
+  }
+
+  /// The anchor the drag is measured from, under the finger that set it.
+  ///
+  /// Movement here is an angle from a point the player cannot see, which is a
+  /// fine control and an invisible one — a finger drifting an inch while
+  /// threading between two balls steers hard without ever feeling like it
+  /// moved. The ring gives that point a body: where the stick is centred,
+  /// which way it is pushed, and how far, now that how far is how fast.
+  ///
+  /// It appears only once the drag is actually steering. A finger sitting
+  /// still is a dash being aimed, and a ring under it would be the game saying
+  /// "you are moving" to a player who is not.
+  void _drawJoystick(Canvas canvas, Frame frame) {
+    final key = _myKey(frame.sharedState);
+    if (key == null) return;
+
+    final ax = (frame.sharedState['stickX_$key'] as num?)?.toDouble();
+    final ay = (frame.sharedState['stickY_$key'] as num?)?.toDouble();
+    // Absent means no finger is steering. Nothing to draw, and nothing else in
+    // here is worth reading.
+    if (ax == null || ay == null) return;
+    final tx = (frame.sharedState['stickToX_$key'] as num?)?.toDouble() ?? ax;
+    final ty = (frame.sharedState['stickToY_$key'] as num?)?.toDouble() ?? ay;
+
+    final anchor = Offset(ax, ay);
+    final pushed = Offset(tx - ax, ty - ay);
+    final reach = DodgeballConfig.joystickRadius;
+    // Past the ring the knob stops travelling but the drag keeps steering, so
+    // full tilt looks like full tilt however far the hand has wandered.
+    final tilt = pushed.distance > reach
+        ? pushed * (reach / pushed.distance)
+        : pushed;
+    final knob = anchor + tilt;
+
+    const white = Color(0xFFFFFFFF);
+
+    _fill.color = white.withAlpha(DodgeballConfig.joystickWellAlpha);
+    canvas.drawCircle(anchor, reach, _fill);
+
+    _stroke
+      ..color = white.withAlpha(DodgeballConfig.joystickRingAlpha)
+      ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.04);
+    canvas.drawCircle(anchor, reach, _stroke);
+
+    // The dead zone: where the player stops, and the edge the speed ramps up
+    // from — a knob sitting just outside this circle is a crawl, and out at
+    // the ring it is a run.
+    _stroke
+      ..color = white.withAlpha(DodgeballConfig.joystickDeadZoneAlpha)
+      ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
+    canvas.drawCircle(anchor, DodgeballConfig.minMoveDistance, _stroke);
+
+    if (tilt.distance > 0) {
+      _stroke
+        ..color = white.withAlpha(DodgeballConfig.joystickDeadZoneAlpha)
+        ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.03);
+      canvas.drawLine(anchor, knob, _stroke);
+    }
+
+    // The knob in the player's own colour — the one their body is wearing, so
+    // at a glance the ring belongs to somebody.
+    final me = roster.byPhone(phoneId);
+    _fill.color =
+        (me?.color.value ?? white).withAlpha(DodgeballConfig.joystickKnobAlpha);
+    canvas.drawCircle(knob, DodgeballConfig.joystickKnobRadius, _fill);
+    _stroke
+      ..color = white.withAlpha(DodgeballConfig.joystickRingAlpha)
+      ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
+    canvas.drawCircle(knob, DodgeballConfig.joystickKnobRadius, _stroke);
+  }
+
+  /// Which player is this phone's, as `p0`..`p7`. Null before the sim has
+  /// seated anybody, and on a phone that is watching rather than playing.
+  String? _myKey(Map<String, Object?> sharedState) {
+    for (var i = 0; i < 8; i++) {
+      if (sharedState['phoneId_p$i'] == phoneId) return 'p$i';
+    }
+    return null;
   }
 
   void _drawCenteredText(
@@ -154,16 +280,9 @@ class DodgeballView extends GameView {
   Widget? buildHud(BuildContext context, HudFrame frame) {
     final phase = frame.sharedState['phase'] as String?;
 
-    int? myIndex;
-    for (var i = 0; i < 8; i++) {
-      if (frame.sharedState['phoneId_p$i'] == phoneId) {
-        myIndex = i;
-        break;
-      }
-    }
-    if (myIndex == null) return null;
+    final key = _myKey(frame.sharedState);
+    if (key == null) return null;
 
-    final key = 'p$myIndex';
     final alive = frame.sharedState['alive_$key'] == true;
     final dashCd =
         (frame.sharedState['dashCd_$key'] as num?)?.toDouble() ?? 0;

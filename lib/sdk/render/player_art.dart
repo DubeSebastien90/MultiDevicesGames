@@ -19,9 +19,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:rive/rive.dart' as rive;
 
 import '../model/player_character.dart';
 import '../model/player_color.dart';
+import '../ui/intro_animation.dart';
 
 /// Which picture of a character.
 ///
@@ -52,7 +54,13 @@ abstract class PlayerArt {
   /// so a game may call this in a render loop.
   factory PlayerArt.of(PlayerColor color, PlayerArtSlot slot) {
     final key = '${color.id}/${slot.name}';
-    return _cache[key] ??= _ShapeArt(color, slot);
+    return _cache[key] ??= switch (slot) {
+      // The piece on the board is one vector character, coloured per player
+      // from its view model — see [_TopdownArt]. The portrait is still one
+      // drawn image per colour.
+      PlayerArtSlot.topdown => _TopdownArt(color),
+      PlayerArtSlot.face => _ShapeArt(color, slot),
+    };
   }
 
   static final _cache = <String, PlayerArt>{};
@@ -247,6 +255,238 @@ class _ShapeArt implements PlayerArt {
       // require whoever drew it to be listening.
       child: CustomPaint(painter: _ShapeArtPainter(this, _arrived)),
     );
+  }
+}
+
+/// The piece on the board: one `.riv` character, painted in a player's colours.
+///
+/// One file for the whole cast rather than an image per colour, because the
+/// character is the same drawing eight times over and the only thing that
+/// differs is three fills. Those come off [PlayerColor] — [PlayerColor.value],
+/// [PlayerColor.skinLight] and [PlayerColor.skinDark] — and are bound to the
+/// artboard's own view model, so re-tinting the cast is editing the palette
+/// rather than re-exporting eight images.
+///
+/// **It is a ladder, not a replacement.** Rive does not render on every
+/// platform this is developed on — Windows takes the process down, see
+/// [IntroAnimation.platformSupportsRive] — and a file can always fail to
+/// parse. Either way this falls through to [_ShapeArt], which is the drawn
+/// topdown image and, under that, the flat geometry. Every rung paints
+/// something, which is the rule this class exists inside of: art never decides
+/// whether a round starts.
+class _TopdownArt implements PlayerArt {
+  _TopdownArt(this.color);
+
+  final PlayerColor color;
+
+  /// The drawn image, and the geometry under it. Built up front rather than on
+  /// failure: it is what paints every frame until the artboard is ready, and
+  /// on a platform without Rive it is what paints for the whole session.
+  late final _fallback = _ShapeArt(color, PlayerArtSlot.topdown);
+
+  /// Which way the character is drawn, in the same convention as an entity's
+  /// angle: 0 is +x, `pi / 2` is down the screen — which is how this one is
+  /// drawn. Everything is turned by the difference between where the player is
+  /// heading and this.
+  static const _facing = 1.5707963267948966; // pi / 2
+
+  /// Repainted when the artboard lands, so a widget drawn before the file
+  /// arrived does not sit on the fallback forever. The canvas path needs no
+  /// such signal — it is already redrawing sixty times a second.
+  final _arrived = ValueNotifier<int>(0);
+
+  rive.Artboard? _artboard;
+  bool _started = false;
+
+  @override
+  bool get isLoaded => _artboard != null || _fallback.isLoaded;
+
+  @override
+  void beginLoading() {
+    _fallback.beginLoading();
+    if (_started) return;
+    _started = true;
+    // Not awaited by anyone, exactly like the image decode below it.
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final file = await _RiveCast.file();
+    if (file == null) return;
+    try {
+      // `frameOrigin: true` puts the artboard's top-left at (0, 0). The
+      // centring is done by hand in [_paint], which is the only version of it
+      // that behaves the same on every runtime.
+      final artboard = file.defaultArtboard(frameOrigin: true);
+      if (artboard == null) throw StateError('no artboard');
+      final machine = artboard.defaultStateMachine();
+      _bind(file, artboard, machine);
+      // Once, and only ever once: this is a still. Advancing by zero is what
+      // applies the binding, and never advancing again is what keeps the
+      // character from walking off on its own clock.
+      machine?.advanceAndApply(0);
+      _artboard = artboard;
+      _arrived.value++;
+    } on Object catch (e) {
+      debugPrint('[player art] no topdown character for ${color.id}: $e');
+    }
+  }
+
+  /// Put a player's three shades on their character.
+  ///
+  /// By name, unlike the walking character's single fill, because there are
+  /// three of them and position in the list is not a contract. A property that
+  /// is not there is said out loud and skipped: two shades on a character is
+  /// worth more than none.
+  void _bind(rive.File file, rive.Artboard artboard, rive.StateMachine? machine) {
+    final viewModel = file.defaultArtboardViewModel(artboard);
+    final instance = viewModel?.createDefaultInstance();
+    if (viewModel == null || instance == null) {
+      debugPrint('[player art] ${_RiveCast.asset} has no view model — '
+          'characters keep the colours they were drawn');
+      return;
+    }
+    // Each artboard binds its *own* instance: a shared one would repaint every
+    // character on the table the colour of whoever was coloured last.
+    artboard.bindViewModelInstance(instance);
+    machine?.bindViewModelInstance(instance);
+    const skins = {
+      'SkinPrincipal': 'value',
+      'SkinLight': 'skinLight',
+      'SkinDark': 'skinDark',
+    };
+    final shades = <String, Color>{
+      'SkinPrincipal': color.value,
+      'SkinLight': color.skinLight,
+      'SkinDark': color.skinDark,
+    };
+    for (final entry in shades.entries) {
+      final property = instance.color(entry.key);
+      if (property == null) {
+        debugPrint('[player art] ${viewModel.name} has no ${entry.key} '
+            '(expected the ${skins[entry.key]} shade)');
+        continue;
+      }
+      property.value = entry.value;
+    }
+  }
+
+  @override
+  void draw(
+    Canvas canvas,
+    Offset center, {
+    required double worldSize,
+    double angle = 0,
+    double opacity = 1,
+  }) {
+    // The first draw is also what starts the load, so a game that never
+    // preloads still ends up with characters — a frame or two later.
+    beginLoading();
+
+    final artboard = _artboard;
+    if (artboard == null) {
+      _fallback.draw(canvas, center,
+          worldSize: worldSize, angle: angle, opacity: opacity);
+      return;
+    }
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle - _facing);
+    _paint(canvas, artboard, worldSize, opacity);
+    canvas.restore();
+  }
+
+  /// Paints the artboard centred on the origin, its longest side filling
+  /// [size].
+  void _paint(
+      Canvas canvas, rive.Artboard artboard, double size, double opacity) {
+    final bounds = artboard.bounds;
+    final longest = bounds.width > bounds.height ? bounds.width : bounds.height;
+    if (longest == 0) return;
+
+    canvas.save();
+    canvas.scale(size / longest);
+    // The artboard draws from its top-left, so pull it back by half its size:
+    // the origin is then the middle of the character, and the rotation above
+    // turns about that same point.
+    canvas.translate(-bounds.width / 2, -bounds.height / 2);
+    // A fresh renderer each frame, so the modulation starts from full and does
+    // not accumulate over a fade.
+    final renderer = rive.Renderer.make(canvas);
+    if (opacity < 1) renderer.modulateOpacity(opacity);
+    artboard.draw(renderer);
+    canvas.restore();
+  }
+
+  @override
+  Widget widget({double size = 48}) {
+    beginLoading();
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _TopdownArtPainter(this, _arrived)),
+    );
+  }
+}
+
+/// Drawn upright, not turned to [_TopdownArt._facing]: a piece on the board
+/// points where the player is heading, but a picture in a HUD points at the
+/// person reading it.
+class _TopdownArtPainter extends CustomPainter {
+  const _TopdownArtPainter(this.art, Listenable repaint)
+      : super(repaint: repaint);
+
+  final _TopdownArt art;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = size.shortestSide;
+    final artboard = art._artboard;
+    canvas.translate(size.width / 2, size.height / 2);
+    if (artboard == null) {
+      art._fallback._paint(canvas, side);
+      return;
+    }
+    art._paint(canvas, artboard, side, 1);
+  }
+
+  @override
+  bool shouldRepaint(_TopdownArtPainter old) => !identical(old.art, art);
+}
+
+/// The one character file, opened once for the whole app.
+///
+/// Static because the cast it feeds is: [PlayerArt._cache] holds its artboards
+/// for the life of the process, and a file per colour would be eight parses of
+/// the same kilobyte. Nothing here throws — a platform that cannot render Rive
+/// and a file that will not parse both resolve to null, which is a topdown
+/// image on the board rather than an error anybody sees.
+class _RiveCast {
+  const _RiveCast._();
+
+  static const asset = 'assets/sdk/players/smallcharacter.riv';
+
+  static Future<rive.File?>? _opening;
+
+  static Future<rive.File?> file() => _opening ??= _open();
+
+  static Future<rive.File?> _open() async {
+    // Same gate as the intro and the walking cast: on a platform where
+    // `rive_native` takes the process down there is nothing to catch, so do
+    // not even load. See [IntroAnimation.platformSupportsRive].
+    if (!IntroAnimation.available) return null;
+    try {
+      return await rive.File.asset(
+        asset,
+        // The Flutter renderer, not Rive's: this is drawn into the game's own
+        // canvas alongside everything else, not into a surface of its own.
+        riveFactory: rive.Factory.flutter,
+      );
+    } on Object catch (e) {
+      debugPrint('[player art] $asset did not load: $e');
+      return null;
+    }
   }
 }
 

@@ -6,6 +6,7 @@ import '../catalog.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
 import '../model/player_color.dart';
+import '../render/player_art.dart';
 import 'game_picker.dart';
 import 'standings_card.dart';
 import 'table_notice.dart';
@@ -265,7 +266,7 @@ class _ColorPicker extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text('Your colour', style: theme.textTheme.titleSmall),
+                Text('Who you are', style: theme.textTheme.titleSmall),
                 const Spacer(),
                 if (mine != null)
                   Text(
@@ -299,6 +300,17 @@ class _ColorPicker extends StatelessWidget {
   }
 }
 
+/// One character to pick, in their own colours.
+///
+/// The character rather than a disc of paint, because the disc was a promise
+/// about something nobody had seen yet: a player chose Green in the lobby and
+/// then had to find out, once the round started, which of the eight animals on
+/// the board was theirs. This is the same picture they will be looking for a
+/// minute later.
+///
+/// Until the art loads it is [PlayerArt]'s flat geometry, in the same colour
+/// the swatch used to be — so on a platform without it, or in the second
+/// before it lands, this is the screen it always was.
 class _Swatch extends StatelessWidget {
   const _Swatch({
     required this.color,
@@ -317,6 +329,8 @@ class _Swatch extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Semantics(
+      // The colour, still: it is the word people say out loud across a table,
+      // and a screen reader has no picture to go on.
       label: color.name,
       selected: selected,
       button: !taken,
@@ -324,21 +338,34 @@ class _Swatch extends StatelessWidget {
         onTap: taken ? null : onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          width: 46,
-          height: 46,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
-            color: taken ? color.value.withValues(alpha: 0.28) : color.value,
+            // A tint of their own colour rather than the flat fill: the
+            // character is the colour now, and a saturated disc behind it left
+            // the two fighting each other.
+            color: color.value.withValues(alpha: taken ? 0.10 : 0.22),
             shape: BoxShape.circle,
             border: Border.all(
               color: selected ? scheme.onSurface : Colors.transparent,
               width: 3,
             ),
           ),
-          child: taken
-              ? Icon(Icons.close, size: 20, color: scheme.onSurfaceVariant)
-              : selected
-                  ? Icon(Icons.check, size: 22, color: color.onColor)
-                  : null,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Faded rather than hidden when somebody else has them: which
+              // characters are gone is worth seeing, and an empty circle says
+              // less than a greyed-out one.
+              Opacity(
+                opacity: taken ? 0.3 : 1,
+                child: PlayerArt.of(color, PlayerArtSlot.topdown)
+                    .widget(size: 40),
+              ),
+              if (taken)
+                Icon(Icons.close, size: 22, color: scheme.onSurfaceVariant),
+            ],
+          ),
         ),
       ),
     );

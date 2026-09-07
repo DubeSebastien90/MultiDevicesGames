@@ -119,12 +119,18 @@ class HungryHipposSim extends Forge2DGameSim {
         BodyDef(
           type: BodyType.kinematic,
           position: Vector2(restX, restY),
+          // Facing the dish they are all leaning into. Nothing in the physics
+          // reads this — the fixture is a circle — but the character drawn on
+          // top of it does, and a hippo turned away from the marbles would be
+          // a picture that disagrees with the lunge.
+          angle: math.atan2(-aim.awayY, -aim.awayX),
         ),
         props: {
           ShapeProps.shape: ShapeKind.circle,
           ShapeProps.radius: HungryHipposConfig.hippoRadius,
           ShapeProps.color: context.colorOf(slice.phoneId)?.value.toARGB32() ??
               HungryHipposConfig.colorHippoFallback,
+          ShapeProps.player: slice.phoneId,
         },
       );
       body.createFixture(

@@ -4,27 +4,53 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
+import '../../sdk/render/player_animation.dart';
 import 'arena_config.dart';
 
 /// Renders the arena: fighters, HP bars, attack cones, block shields, stun
 /// stars, invincibility pulses, and the countdown overlay.
-/// The same colour drained of it: kept dark enough to read against the floor,
-/// light enough to see the fighter is still standing there.
-Color _greyed(Color c) {
-  final grey = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) * 0.7;
-  return Color.from(alpha: c.a, red: grey, green: grey, blue: grey);
-}
+// Kept as reference, not used: the sim no longer tracks who has dropped out.
+// See the commented presence block in `ArenaSim`.
+//
+// /// The same colour drained of it: kept dark enough to read against the
+// /// floor, light enough to see the fighter is still standing there.
+// Color _greyed(Color c) {
+//   final grey = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) * 0.7;
+//   return Color.from(alpha: c.a, red: grey, green: grey, blue: grey);
+// }
 
 class ArenaView extends GameView {
-  ArenaView({required this.phoneId});
+  ArenaView({
+    required this.phoneId,
+    this.characters = PlayerAnimations.none,
+    this.roster = Roster.empty,
+  });
 
   final String phoneId;
 
+  /// Everyone's walking character, loaded and coloured by the platform.
+  final PlayerAnimations characters;
+
+  /// Everyone in the round, for their platform colour — the one they were
+  /// shown in the lobby, rather than the sim's own palette.
+  final Roster roster;
+
   static const _floorColor = Color(0xFF16213E);
+
+  /// World units per second below which a fighter counts as standing still.
+  ///
+  /// Not zero: positions are interpolated, so a stationary fighter still
+  /// jitters by a hair between frames and an exact test would flicker the walk
+  /// on and off.
+  static const _walkingSpeed = 0.5;
 
   // Reusable paint objects.
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
+
+  /// Where each fighter was last frame, to tell walking from standing.
+  final _lastSeen = <String, Offset>{};
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -106,28 +132,39 @@ class ArenaView extends GameView {
         canvas.restore();
       }
 
-      // Fighter body. A player who has dropped out goes grey — still there,
-      // still hittable, plainly nobody home.
-      final away = frame.sharedState['away_p${e.propInt('index', 0)}'] == true;
-      final body = away ? _greyed(color) : color;
-      _fill.color = isStunned ? body.withAlpha(140) : body;
-      canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+      // Fighter body. `RenderEntity` carries no velocity, so movement is the
+      // distance covered since the last frame; a stunned fighter is being
+      // knocked about rather than walking, so they hold still.
+      final here = Offset(e.x, e.y);
+      final before = _lastSeen[e.id];
+      _lastSeen[e.id] = here;
+      final moving = !isStunned &&
+          before != null &&
+          frame.dt > 0 &&
+          (here - before).distance / frame.dt > _walkingSpeed;
 
-      // Direction indicator (small triangle).
-      if (!isStunned) {
-        _fill.color = const Color(0xDDFFFFFF);
-        canvas.save();
-        canvas.translate(e.x, e.y);
-        canvas.rotate(e.angle);
-        final tip = radius * 1.15;
-        final base = radius * 0.3;
-        final dirPath = ui.Path()
-          ..moveTo(tip, 0)
-          ..lineTo(radius * 0.7, -base)
-          ..lineTo(radius * 0.7, base)
-          ..close();
-        canvas.drawPath(dirPath, _fill);
-        canvas.restore();
+      // A fighter with no seat at the roster has no platform colour to ask a
+      // character for, so they stay the sim's own circle.
+      //
+      // A player who had dropped out used to go grey here — still there, still
+      // hittable, plainly nobody home. Kept as reference, not implemented:
+      //
+      // final away = frame.sharedState['away_p${e.propInt('index', 0)}'] == true;
+      // final body = away ? _greyed(color) : color;
+      final seated = roster.byPhone(e.props['phoneId'] as String? ?? '');
+      if (seated == null) {
+        _fill.color = isStunned ? color.withAlpha(140) : color;
+        canvas.drawCircle(here, radius, _fill);
+      } else {
+        final character = characters.of(seated.color);
+        moving ? character.start() : character.stop();
+        character.draw(
+          canvas,
+          here,
+          worldSize: radius * 3,
+          dt: frame.dt,
+          angle: e.angle,
+        );
       }
 
       // HP bar.
@@ -161,6 +198,14 @@ class ArenaView extends GameView {
       }
     }
 
+    // The player's own stick, drawn last so a fighter walking over their own
+    // anchor does not cut a hole in it.
+    //
+    // Only this phone's: a joystick is a picture of what one pair of hands is
+    // doing, and drawing everybody's would litter the table with rings nobody
+    // can act on — and quietly leak which way each opponent is about to break.
+    _drawJoystick(canvas, frame);
+
     // Countdown overlay.
     if (frame.sharedState['phase'] == 'countdown') {
       final cd = (frame.sharedState['countdown'] as num?)?.toDouble() ?? 0;
@@ -172,6 +217,92 @@ class ArenaView extends GameView {
     if (frame.sharedState['phase'] == 'finished') {
       _drawCenteredText(canvas, frame, 'K.O.', frame.board.height * 0.12);
     }
+  }
+
+  /// The anchor the drag is measured from, under the finger that set it.
+  ///
+  /// Movement here is an angle from a point the player cannot see, which is a
+  /// fine control and an invisible one — a finger drifting an inch during a
+  /// scrap steers hard without ever feeling like it moved. The ring gives that
+  /// point a body: where the stick is centred, which way it is pushed, and how
+  /// far, now that how far is how fast.
+  ///
+  /// It appears only once the drag is actually steering. A finger sitting
+  /// still is a tap or a block being held, and a ring under it would be the
+  /// game saying "you are moving" to a player who is not.
+  void _drawJoystick(Canvas canvas, Frame frame) {
+    final key = _myKey(frame.sharedState);
+    if (key == null) return;
+
+    final ax = (frame.sharedState['stickX_$key'] as num?)?.toDouble();
+    final ay = (frame.sharedState['stickY_$key'] as num?)?.toDouble();
+    // Absent means no finger is down. Nothing to draw, and nothing else in
+    // here is worth reading.
+    if (ax == null || ay == null) return;
+    final tx = (frame.sharedState['stickToX_$key'] as num?)?.toDouble() ?? ax;
+    final ty = (frame.sharedState['stickToY_$key'] as num?)?.toDouble() ?? ay;
+
+    final anchor = Offset(ax, ay);
+    final pushed = Offset(tx - ax, ty - ay);
+    final reach = ArenaConfig.joystickRadius;
+    // Past the ring the knob stops travelling but the drag keeps steering, so
+    // full tilt looks like full tilt however far the hand has wandered.
+    final tilt = pushed.distance > reach
+        ? pushed * (reach / pushed.distance)
+        : pushed;
+    final knob = anchor + tilt;
+
+    final blocking = frame.sharedState['blocking_$key'] == true;
+    // Held still long enough to be blocking: the stick says so in the shield's
+    // own colour, because a player holding a block is doing it by *not*
+    // moving, and an unlit ring looks identical to a dead one.
+    final ringColor =
+        blocking ? const Color(0xFF4488FF) : const Color(0xFFFFFFFF);
+
+    _fill.color = const Color(0xFFFFFFFF)
+        .withAlpha(ArenaConfig.joystickWellAlpha);
+    canvas.drawCircle(anchor, reach, _fill);
+
+    _stroke
+      ..color = ringColor.withAlpha(ArenaConfig.joystickRingAlpha)
+      ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.04);
+    canvas.drawCircle(anchor, reach, _stroke);
+
+    // The dead zone: where the fighter stops, and the edge the speed ramps up
+    // from — a knob sitting just outside this circle is a crawl, and out at
+    // the ring it is a run.
+    _stroke
+      ..color = ringColor.withAlpha(ArenaConfig.joystickDeadZoneAlpha)
+      ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
+    canvas.drawCircle(anchor, ArenaConfig.minMoveDistance, _stroke);
+
+    if (tilt.distance > 0) {
+      _stroke
+        ..color = ringColor.withAlpha(ArenaConfig.joystickDeadZoneAlpha)
+        ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.03);
+      canvas.drawLine(anchor, knob, _stroke);
+    }
+
+    // The knob in the player's own colour — the one their fighter is wearing,
+    // so at a glance the ring belongs to somebody.
+    final me = roster.byPhone(phoneId);
+    final knobColor = me?.color.value ?? const Color(0xFFFFFFFF);
+    _fill.color = knobColor.withAlpha(ArenaConfig.joystickKnobAlpha);
+    canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _fill);
+    _stroke
+      ..color = const Color(0xFFFFFFFF)
+          .withAlpha(ArenaConfig.joystickRingAlpha)
+      ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
+    canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _stroke);
+  }
+
+  /// Which fighter is this phone's, as `p0`..`p7`. Null before the sim has
+  /// seated anybody, and on a phone that is watching rather than playing.
+  String? _myKey(Map<String, Object?> sharedState) {
+    for (var i = 0; i < 8; i++) {
+      if (sharedState['phoneId_p$i'] == phoneId) return 'p$i';
+    }
+    return null;
   }
 
   void _drawStar(Canvas canvas, double cx, double cy, double r, Paint paint) {
@@ -222,18 +353,9 @@ class ArenaView extends GameView {
   Widget? buildHud(BuildContext context, HudFrame frame) {
     final phase = frame.sharedState['phase'] as String?;
 
-    // Find our fighter index via phoneId mapping in sharedState.
-    int? myIndex;
-    for (var i = 0; i < 8; i++) {
-      if (frame.sharedState['phoneId_p$i'] == phoneId) {
-        myIndex = i;
-        break;
-      }
-    }
+    final key = _myKey(frame.sharedState);
+    if (key == null) return null;
 
-    if (myIndex == null) return null;
-
-    final key = 'p$myIndex';
     final alive = frame.sharedState['alive_$key'] == true;
     final hp = (frame.sharedState['hp_$key'] as num?)?.toInt() ?? 0;
     final stunned = frame.sharedState['stunned_$key'] == true;

@@ -63,5 +63,9 @@ class ArenaGame implements MultiscreenGame {
   GameSim createSim(BoardContext context) => ArenaSim(context);
 
   @override
-  GameView createView(ViewContext context) => ArenaView(phoneId: context.phoneId);
+  GameView createView(ViewContext context) => ArenaView(
+        phoneId: context.phoneId,
+        characters: context.characters,
+        roster: context.roster,
+      );
 }

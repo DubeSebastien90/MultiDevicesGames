@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/render/shape_view.dart';
 import 'pitch_cars_config.dart';
@@ -9,13 +10,25 @@ import 'pitch_cars_config.dart';
 /// Pitch Cars' look: the default shapes for cars and track segments, plus a
 /// turn/progress readout.
 class PitchCarsView extends ShapeView {
-  PitchCarsView({required this.phoneId})
+  PitchCarsView({required this.phoneId, super.roster})
     : super(grid: false, playfield: const Color(0xFF141C33));
 
   final String phoneId;
 
   final _aim = Paint()..style = PaintingStyle.stroke;
   final _finishedFill = Paint();
+  final _anchorDot = Paint();
+
+  /// How fast the aim crosshair spins, in full turns per second. Slow: it is
+  /// there to say "your drag is anchored here", not to demand attention while
+  /// somebody is trying to line up a shot.
+  static const double _anchorTurnsPerSecond = 0.2;
+
+  /// The cool end of the aim arrow's own gradient, so the crosshair and the
+  /// shot it is producing read as one gesture. Flat rather than
+  /// strength-tinted: the anchor means the same thing at every draw length,
+  /// and a colour that moved would suggest otherwise.
+  static const Color _anchorColor = Color(0xCC7FD1C4);
 
   /// The road surface.
   ///
@@ -128,9 +141,15 @@ class PitchCarsView extends ShapeView {
         (frame.sharedState['maxPull'] as num?)?.toDouble() ??
         PitchCarsConfig.maxPull;
 
-    // Not enough to read as a real pull yet — as a fraction of the draw, so
-    // the arrow appears at the same point in the gesture on any board.
-    if (pulled < maxPull * 0.02) return;
+    // Below the sim's own cancel threshold nothing is drawn at all — no
+    // arrow, and no anchor crosshair either. Everything the aim puts on the
+    // screen appears and vanishes together on this one line, so what is drawn
+    // is exactly the promise that letting go will fire a shot. Drag back into
+    // the dead zone and the whole aim disappears, which is the clearest way to
+    // say the release has become a no-op.
+    if (pulled < maxPull * PitchCarsConfig.cancelPullFraction) return;
+
+    _drawAimAnchor(canvas, frame, car);
 
     final strength = (pulled / maxPull).clamp(0.0, 1.0);
     final direction = -pullVector / pulled; // opposite the pull = the shot
@@ -177,6 +196,55 @@ class PitchCarsView extends ShapeView {
         _finishedFill,
       );
     }
+  }
+
+  /// A spinning crosshair on the point an off-car drag is aiming from.
+  ///
+  /// Only ever drawn for a drag that started away from the car, because that
+  /// is precisely when the pivot is invisible: the draw is being measured from
+  /// a patch of empty board, and with nothing marking it there is no way to
+  /// read how far you have pulled or which way. A drag that started on the car
+  /// needs none of this — the car is standing on its own anchor.
+  ///
+  /// Called only once the draw has cleared the cancel zone, so the crosshair
+  /// keeps exactly the same company as the arrow: both are on screen when the
+  /// release would fire, and both are gone when it would not.
+  ///
+  /// The spin is phased off [Frame.timeMs] — the host's clock, identical on
+  /// every phone — and never a local one. An anchor can sit right on the seam
+  /// between two screens with half the crosshair drawn on each, and two
+  /// devices animating from their own clocks would tear it in half.
+  void _drawAimAnchor(Canvas canvas, Frame frame, RenderEntity car) {
+    final ax = (frame.sharedState['anchorX'] as num?)?.toDouble();
+    final ay = (frame.sharedState['anchorY'] as num?)?.toDouble();
+    if (ax == null || ay == null) return;
+
+    // Sized off the car rather than a constant, so the crosshair is the same
+    // mark relative to everything else on a two-phone table and an eight.
+    final r = car.propDouble(ShapeProps.radius) * 2.2;
+    final center = Offset(ax, ay);
+    final spin = frame.timeMs * 0.001 * _anchorTurnsPerSecond * 2 * math.pi;
+
+    _aim
+      ..color = _anchorColor
+      ..strokeWidth = 1.5 * frame.onePixel;
+    canvas.drawCircle(center, r, _aim);
+
+    // Four ticks straddling the ring, quartered — so the figure reads as a
+    // crosshair rather than a target, and its rotation is legible.
+    for (var i = 0; i < 4; i++) {
+      final a = spin + i * math.pi / 2;
+      final dir = Offset(math.cos(a), math.sin(a));
+      canvas.drawLine(
+        center + dir * (r * 0.55),
+        center + dir * (r * 1.45),
+        _aim,
+      );
+    }
+
+    // The pivot itself. The ring says roughly where; this says exactly.
+    _anchorDot.color = _anchorColor;
+    canvas.drawCircle(center, 2 * frame.onePixel, _anchorDot);
   }
 
   void _drawTurnHighlight(Canvas canvas, Frame frame) {

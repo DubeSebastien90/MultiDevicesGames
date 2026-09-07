@@ -27,6 +27,8 @@ class PlayerColor {
     required this.name,
     required this.value,
     required this.onColor,
+    required this.skinLight,
+    required this.skinDark,
   });
 
   /// Stable and wire-visible: 'green'. Never derived from the swatch.
@@ -43,6 +45,19 @@ class PlayerColor {
   /// derived from luminance, because the two light swatches here sit close
   /// enough to the threshold that an automatic answer flips between them.
   final Color onColor;
+
+  /// The highlight and the shadow of [value] — 'reflet lumineux' and 'ombre'
+  /// on the palette sheet, and `SkinLight` / `SkinDark` on the character's
+  /// view model.
+  ///
+  /// Given per entry rather than computed from [value] by lightening and
+  /// darkening it. A uniform shift in HSL reads wrong across a palette this
+  /// wide: the same step that flatters the blue turns the yellow to mustard
+  /// and the brown to mud, because how far a hue can travel before it stops
+  /// being that colour is a property of the hue. These are the swatches that
+  /// were drawn, so they are the swatches that ship.
+  final Color skinLight;
+  final Color skinDark;
 
   @override
   String toString() => 'PlayerColor($id)';
@@ -68,6 +83,8 @@ class PlayerPalette {
     name: 'Green',
     value: Color(0xFF31B83C),
     onColor: Color(0xFF0B280D),
+    skinLight: Color(0xFF4EE45A),
+    skinDark: Color(0xFF258C2E),
   );
 
   static const orange = PlayerColor(
@@ -75,6 +92,8 @@ class PlayerPalette {
     name: 'Orange',
     value: Color(0xFFFE7013),
     onColor: Color(0xFF381904),
+    skinLight: Color(0xFFFF944E),
+    skinDark: Color(0xFFCC5E17),
   );
 
   static const blue = PlayerColor(
@@ -82,6 +101,8 @@ class PlayerPalette {
     name: 'Blue',
     value: Color(0xFF14AEEF),
     onColor: Color(0xFF042635),
+    skinLight: Color(0xFF4EC4F6),
+    skinDark: Color(0xFF1B87B5),
   );
 
   static const pink = PlayerColor(
@@ -89,6 +110,8 @@ class PlayerPalette {
     name: 'Pink',
     value: Color(0xFFFB48C4),
     onColor: Color(0xFF37102B),
+    skinLight: Color(0xFFFF6CD2),
+    skinDark: Color(0xFFD23DA5),
   );
 
   static const yellow = PlayerColor(
@@ -96,6 +119,8 @@ class PlayerPalette {
     name: 'Yellow',
     value: Color(0xFFF3C61A),
     onColor: Color(0xFF352C06),
+    skinLight: Color(0xFFFFDA4C),
+    skinDark: Color(0xFFD5AF1B),
   );
 
   static const purple = PlayerColor(
@@ -103,6 +128,8 @@ class PlayerPalette {
     name: 'Purple',
     value: Color(0xFF8D13FF),
     onColor: Color(0xFF1F0438),
+    skinLight: Color(0xFFAE58FF),
+    skinDark: Color(0xFF6D19BB),
   );
 
   static const brown = PlayerColor(
@@ -110,6 +137,8 @@ class PlayerPalette {
     name: 'Brown',
     value: Color(0xFFBA6C24),
     onColor: Color(0xFF291808),
+    skinLight: Color(0xFFD2843C),
+    skinDark: Color(0xFFA15D1E),
   );
 
   static const red = PlayerColor(
@@ -117,6 +146,8 @@ class PlayerPalette {
     name: 'Red',
     value: Color(0xFFD23131),
     onColor: Color(0xFF2E0B0B),
+    skinLight: Color(0xFFE05D5D),
+    skinDark: Color(0xFF932323),
   );
 
   /// Every colour, in hand-out order.
