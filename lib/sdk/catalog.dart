@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../games/arena/arena_game.dart';
 import '../games/chronometer/chronometer_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
@@ -8,6 +10,7 @@ import '../games/pitch_cars/pitch_cars_game.dart';
 import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/reaction/reaction_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
+import '../games/test_interruption/test_interruption_game.dart';
 import 'contract/game.dart';
 
 /// Every game, and the order they are played in.
@@ -33,6 +36,9 @@ class GameCatalog {
     ChronometerGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
+    // TEMPORARY — dev tool for testing NameDrop detection. Remove along with
+    // lib/games/test_interruption/ once done.
+    if (kDebugMode) TestInterruptionGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

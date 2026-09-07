@@ -48,14 +48,19 @@ Progress is tracked as arclength along the centerline from the start. Line
 finishes at `arclength >= trackLength`; loop finishes at one full circuit
 (`arclength >= ringCircumference`).
 
-## Turns & input — proximity-gated, not phone-gated
+## Turns & input — never phone-gated
 
 Because the board spans multiple phones and a car can end up physically under
 a different phone's screen than the one its owner joined from, turn-taking
-must not gate on `TouchEvent.phoneId`. It gates on distance from the touch to
-the current turn's car body — the same pattern `SlingshotSim` already uses
-for its single shared bird (proximity decides who may *grab*; `phoneId` is
-only remembered afterward, to route the rest of that one drag):
+must not gate on `TouchEvent.phoneId`. `phoneId` is only remembered after the
+touch goes down, to route the rest of that one drag.
+
+Nor does it gate on *where* the touch lands. It originally did — proximity to
+the car, the pattern `SlingshotSim` uses for its single shared bird — but a
+car that comes to rest against the edge of a screen, or on the seam between
+two phones, then has no room to drag towards: half the draw would land on a
+neighbour's glass. So a touch anywhere starts an aim, and proximity only picks
+which point the draw is measured from:
 
 ```dart
 void onTouch(TouchEvent touch) {
@@ -64,12 +69,15 @@ void onTouch(TouchEvent touch) {
   switch (touch.phase) {
     case down:
       if (_draggingPhoneId != null) return;
-      if (p.distanceTo(car.position) > reach) return;   // proximity to the chip
+      // On the car: the car follows the finger, as a slingshot does.
+      // Anywhere else: the finger's displacement from here is the draw.
+      _dragOrigin =
+          p.distanceTo(car.position) <= reach ? _preTurnPosition : p;
       _draggingPhoneId = touch.phoneId;                  // routes this one drag
       ...
     case move:
       if (_draggingPhoneId != touch.phoneId) return;
-      ...
+      _pull = clamp(_preTurnPosition + (p - _dragOrigin));
     case up:
       if (_draggingPhoneId != touch.phoneId) return;
       _launch();
@@ -79,7 +87,10 @@ void onTouch(TouchEvent touch) {
 
 Input is pull-back-and-release, reusing Slingshot's aiming interaction
 (drag away from the car, release to launch toward it, magnitude scales
-impulse).
+impulse). A draw under `PitchCarsConfig.cancelPullFraction` of the maximum is
+a tap rather than a shot: nothing fires and the turn is not consumed. The aim
+arrow uses that same threshold to appear, so an arrow on screen means the
+release will fire.
 
 ## Physics & the off-track rule
 

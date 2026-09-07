@@ -13,8 +13,7 @@ import UIKit
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-    // engineBridge is the FlutterViewController in the implicit-engine path.
-    guard let messenger = engineBridge as? FlutterBinaryMessenger else { return }
+    let messenger = engineBridge.applicationRegistrar.messenger()
     let channel = FlutterMethodChannel(
       name: "com.multidevicesgames/display_metrics",
       binaryMessenger: messenger

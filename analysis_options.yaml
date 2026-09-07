@@ -14,6 +14,13 @@ analyzer:
     # Retired games. Not compiled, not tested, not shipped — and their imports
     # no longer resolve from where they sit. See archive/README.md.
     - archive/**
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   # The lint rules applied to this project can be customized in the

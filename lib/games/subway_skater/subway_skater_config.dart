@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../../sdk/model/world_rect.dart';
 
 /// Subway Skater's tunables, all in one place.
@@ -152,6 +154,22 @@ class SubwaySkaterConfig {
   /// How fast the line closes up when somebody ahead is knocked out — a whole
   /// phone in about a third of a second.
   static const double climbSpeed = 48;
+
+  /// Which way is up the corridor, as an entity angle.
+  ///
+  /// Obstacles travel towards `+x` and the front of the line is the low end, so
+  /// facing the way you are going means facing `-x`. Everybody stands like this
+  /// for the whole round; the only time an angle is anything else is mid-tumble.
+  static const double facingAngle = math.pi;
+
+  /// How fast a skater turns back to [facingAngle] once a tumble lets go —
+  /// about half a turn in a quarter of a second.
+  ///
+  /// A spin that simply stopped left the character looking at a wall for the
+  /// rest of the round, and one that snapped back on the frame it landed threw
+  /// away the end of the tumble. This finishes the spin the way it was going,
+  /// only decelerating into forward.
+  static const double rightingSpeed = 12;
 
   /// A tumble lasts until the obstacle carrying it passes the back of the line,
   /// but never less than this. Without a floor, the player already *at* the back
