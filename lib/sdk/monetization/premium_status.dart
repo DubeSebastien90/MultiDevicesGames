@@ -50,6 +50,15 @@ class PremiumStatus extends ChangeNotifier {
   /// that never got that far may configure.
   bool _configured = false;
 
+  /// Whether [Purchases.configure] has succeeded — false if the API key was
+  /// missing or the store never answered.
+  ///
+  /// Screens that call into [Purchases] directly (the paywall, for its own
+  /// offerings/purchase/restore calls) must check this first: the native SDK
+  /// crashes rather than throwing a catchable error when it is asked to do
+  /// anything before it has been configured.
+  bool get isConfigured => debugUnlocked || _configured;
+
   /// How long to wait on the store before giving up and saying so.
   ///
   /// **Not an optimisation — the thing that stops "we are still checking" from
@@ -78,26 +87,63 @@ class PremiumStatus extends ChangeNotifier {
   /// on a shipped binary — that turns this on in the build customers get.
   ///
   /// `--dart-define=LOCK_PREMIUM=true` puts the real gate back while staying in
-  /// debug. Without that escape hatch the padlocks, the paywall and the retry
-  /// banner become unreachable in the one mode you can attach a debugger to,
-  /// which would trade a testing convenience for a testing hole.
+  /// debug: [isPremium] then falls through to whatever RevenueCat's servers
+  /// actually say about the local anonymous customer. That is *not* the same
+  /// as "not premium" — an anonymous ID that was ever granted the entitlement
+  /// (a leftover sandbox purchase, most often) keeps answering "premium"
+  /// forever, on every machine that shares that install's local identity,
+  /// until it is revoked in the dashboard. Use [debugForcedLocked] to bypass
+  /// RevenueCat's answer entirely instead of relying on account state.
   static const bool debugUnlocked =
       kDebugMode && !bool.fromEnvironment('LOCK_PREMIUM');
+
+  /// Whether this build shows the locked/paywall state no matter what
+  /// RevenueCat's servers say about the local customer.
+  ///
+  /// `--dart-define=FORCE_NOT_PREMIUM=true` sets this. Unlike [debugUnlocked]
+  /// going `false`, this does not depend on the anonymous customer actually
+  /// lacking the entitlement — it skips asking entirely, so a device that
+  /// picked up `premium` once (a sandbox purchase, an old test) still shows
+  /// every padlock. [kDebugMode]-gated for the same reason as
+  /// [debugUnlocked]: folds away in release, no runtime path turns it on in a
+  /// shipped binary.
+  static const bool debugForcedLocked =
+      kDebugMode && bool.fromEnvironment('FORCE_NOT_PREMIUM');
+
+  /// Whether this build hands out Premium without asking the store, in *any*
+  /// build mode — including release.
+  ///
+  /// `--dart-define=FORCE_PREMIUM=true` sets this. Unlike [debugUnlocked],
+  /// this is **not** [kDebugMode]-gated, so it survives into a real release
+  /// binary — deliberately, for installing a release build on your own
+  /// devices before the App Store Connect / RevenueCat offering chain is
+  /// fully wired up. That is also exactly why it is dangerous: whoever runs
+  /// `flutter build`/`flutter run` controls this flag, an installed app's
+  /// user never can (dart-define is baked in at compile time, there is no
+  /// runtime way to set it), but a build made with this flag on must never
+  /// be the one that reaches App Store Connect or a real customer. Leave it
+  /// off for every archive/upload; only ever pass it for a build going
+  /// straight onto a device you hold.
+  static const bool forcedPremium = bool.fromEnvironment('FORCE_PREMIUM');
 
   /// True once [CustomerInfo] has been fetched at least once. Before that,
   /// [isPremium] is a guess (false) rather than an answer — screens that gate
   /// on Premium should treat "not ready" as "don't show a locked badge yet"
   /// where that distinction matters, and as "not premium" everywhere it is
   /// simpler not to.
-  bool get isReady => debugUnlocked || _ready;
+  bool get isReady => debugUnlocked || debugForcedLocked || forcedPremium || _ready;
 
-  bool get isPremium => debugUnlocked || _isPremium;
+  bool get isPremium =>
+      forcedPremium || (!debugForcedLocked && (debugUnlocked || _isPremium));
 
-  /// Silent under [debugUnlocked]: with nothing locked there are no padlocks
-  /// for a failure banner to caution about, and on a machine with no
-  /// `env/revenuecat.json` the missing-key [StateError] would otherwise put a
-  /// red banner over every debug run of the games sheet.
-  String? get error => debugUnlocked ? null : _error;
+  /// Silent under [debugUnlocked]/[debugForcedLocked]/[forcedPremium]: with
+  /// the state pinned either way there are no padlocks for a failure banner
+  /// to caution about, and on a machine with no `env/revenuecat.json` the
+  /// missing-key
+  /// [StateError] would otherwise put a red banner over every debug run of
+  /// the games sheet.
+  String? get error =>
+      (debugUnlocked || debugForcedLocked || forcedPremium) ? null : _error;
 
   /// Configures the RevenueCat SDK and loads the current entitlement state.
   /// Call once, before the first frame that might ask [isPremium].

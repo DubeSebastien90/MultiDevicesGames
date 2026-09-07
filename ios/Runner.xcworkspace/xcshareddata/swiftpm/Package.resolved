@@ -1,5 +1,4 @@
 {
-  "originHash" : "5c80fb055a47ac38302ce5a71b75602a1943f7fd61b0093ab122248c22be9e14",
   "pins" : [
     {
       "identity" : "purchases-hybrid-common",
@@ -20,5 +19,5 @@
       }
     }
   ],
-  "version" : 3
+  "version" : 2
 }

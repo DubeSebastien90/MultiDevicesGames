@@ -1,5 +1,12 @@
 # Multiscreen game engine v1
 
+> ⚠️ **Before archiving/uploading a build for the App Store or Play Store:**
+> make sure `--dart-define=FORCE_PREMIUM=true` is **not** part of that build
+> command. It hard-unlocks Premium regardless of purchase state and must
+> never ship — see the `forcedPremium` doc comment in
+> `lib/sdk/monetization/premium_status.dart` for why it's safe for local
+> testing but unsafe to ship.
+
 Several phones laid side by side on a table become **one shared game world**. One
 phone runs the authoritative simulation; every phone is a viewport onto it.
 
