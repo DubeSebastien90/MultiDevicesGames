@@ -12,7 +12,8 @@ import '../model/device_metrics.dart';
 import '../model/name_drop_status.dart';
 import '../platform/native_dpi_channel.dart';
 import 'join_sheet.dart';
-import 'metrics_card.dart';
+import 'lobby_flow_style.dart';
+import 'settings_screen.dart';
 
 /// Pick a role. One app, two jobs: run the world, or be a window onto it.
 class RoleScreen extends StatefulWidget {
@@ -78,7 +79,8 @@ class _RoleScreenState extends State<RoleScreen> {
     // typed name can predate the gate — an install from before this existed, or
     // a phone an adult set up and handed over. Either way the name is replaced
     // here, before anything has had a chance to put it on the wire.
-    final usable = saved != null &&
+    final usable =
+        saved != null &&
         saved.isNotEmpty &&
         (!_isChild || PlayerNames.isGenerated(saved));
 
@@ -204,25 +206,15 @@ class _RoleScreenState extends State<RoleScreen> {
     );
   }
 
-  void _editScreenSize() {
+  void _openSettings() {
     final metrics = _metrics;
     if (metrics == null) return;
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Screen size'),
-        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-        content: MetricsCard(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(
           metrics: metrics,
-          onChanged: _onMetricsChanged,
-          initiallyExpanded: true,
+          onMetricsChanged: _onMetricsChanged,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Done'),
-          ),
-        ],
       ),
     );
   }
@@ -256,149 +248,147 @@ class _RoleScreenState extends State<RoleScreen> {
       MaterialPageRoute(
         builder: (_) => JoinSheet(
           seatFingerprint: widget.controller.seatFingerprint,
+          metrics: _metrics!,
+          onMetricsChanged: _onMetricsChanged,
         ),
       ),
     );
     if (request == null || !mounted) return;
-    await widget.controller
-        .joinHost(request.uri, _metrics!, code: request.code);
+    await widget.controller.joinHost(
+      request.uri,
+      _metrics!,
+      code: request.code,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final metrics = _metrics;
-    final error = widget.controller.error;
-
     return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 620),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'MultiDevicesGame',
-                    style: theme.textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Lay the phones together on a table. They become one '
-                    'board, and each game arranges them its own way.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 18),
-                  if (_isChild)
-                    // Not a read-only TextField. That still draws a box that
-                    // asks to be tapped, and a field that does nothing when
-                    // tapped reads as broken rather than as closed. This is a
-                    // name being shown, with a dice next to it.
-                    _IssuedNameField(
-                      name: _nameController.text,
-                      onRoll: _rollName,
-                    )
-                  else
-                    TextField(
-                      controller: _nameController,
-                      onChanged: _onNameChanged,
-                      textCapitalization: TextCapitalization.words,
-                      maxLength: 30,
-                      decoration: InputDecoration(
-                        labelText: 'Your name',
-                        prefixIcon: const Icon(Icons.person_outline),
-                        // Rolling for another is quicker than thinking of one,
-                        // and quicker still than typing it on a phone.
-                        suffixIcon: IconButton(
-                          tooltip: 'Roll another name',
-                          onPressed: _rollName,
-                          icon: const Icon(Icons.casino_outlined),
-                        ),
-                        border: const OutlineInputBorder(),
-                        counterText: '',
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-                  if (_surfaceIsLandscape) ...[
-                    _LandscapeWarning(),
-                    const SizedBox(height: 14),
-                  ],
-                  if (metrics != null)
-                    _ScreenSizeRow(
-                      metrics: metrics,
-                      onEdit: _editScreenSize,
-                    ),
-                  const SizedBox(height: 18),
-                  if (error != null) ...[
-                    _ErrorBanner(
-                      message: error,
-                      onDismiss: widget.controller.clearError,
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (widget.controller.busy)
-                    const Center(child: CircularProgressIndicator())
-                  else
-                    Row(
+        child: Column(
+          children: [
+            _gear(),
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 620),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: metrics == null ? null : _host,
-                            icon: const Icon(Icons.podcasts),
-                            label: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Host a game'),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: metrics == null ? null : _join,
-                            icon: const Icon(Icons.search),
-                            label: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Join a game'),
-                            ),
-                          ),
-                        ),
+                        const LobbyTitle('Bubble Games !', fontSize: 38),
+                        const SizedBox(height: 48),
+                        _nameField(),
+                        const SizedBox(height: 14),
+                        ..._banners(),
+                        const SizedBox(height: 26),
+                        _actions(),
+                        if (kDebugMode) _debugReload(),
                       ],
                     ),
-                  if (kDebugMode) ...[
-                    const SizedBox(height: 8),
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: _reloadNameDropState,
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('Reload state'),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Text(
-                    'Both phones must be on the same WiFi, and that network '
-                    'must let devices talk to each other. Guest and public '
-                    'networks often block exactly that — if the join hangs, '
-                    'use a hotspot from one phone instead.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    textAlign: TextAlign.center,
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
+
+  /// Pinned to the top, so it lines up with the gear on the other screens
+  /// instead of riding the centred content down the page.
+  Widget _gear() => Padding(
+        padding: const EdgeInsets.only(right: 12, top: 4),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: LobbyIconButton(
+            icon: Icons.settings,
+            size: 30,
+            tooltip: 'Settings',
+            onPressed: _metrics == null ? null : _openSettings,
+          ),
+        ),
+      );
+
+  Widget _nameField() {
+    // A child gets the name as a fact rather than a field: not a read-only
+    // TextField, which still draws a box that asks to be tapped and reads as
+    // broken when tapping does nothing.
+    if (_isChild) {
+      return _IssuedNameField(name: _nameController.text, onRoll: _rollName);
+    }
+    return LobbyChipField(
+      controller: _nameController,
+      onChanged: _onNameChanged,
+      maxLength: 30,
+      hintText: 'Enter Your Username',
+      // Rolling for another is quicker than thinking of one, and quicker still
+      // than typing it on a phone.
+      suffixIcon: Icons.casino_outlined,
+      onSuffixTap: _rollName,
+    );
+  }
+
+  List<Widget> _banners() {
+    final error = widget.controller.error;
+    return [
+      if (_surfaceIsLandscape) ...[
+        _LandscapeWarning(),
+        const SizedBox(height: 14),
+      ],
+      if (error != null) ...[
+        _ErrorBanner(
+          message: error,
+          onDismiss: widget.controller.clearError,
+        ),
+        const SizedBox(height: 14),
+      ],
+    ];
+  }
+
+  Widget _actions() {
+    if (widget.controller.busy) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    // Nothing can start until this screen knows how big it is.
+    final ready = _metrics != null;
+    return Row(
+      children: [
+        Expanded(
+          child: LobbyPillButton.big(
+            label: 'Create a Lobby',
+            icon: Icons.podcasts,
+            background: LobbyFlowColors.green,
+            onPressed: ready ? _host : null,
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: LobbyPillButton.big(
+            label: 'Join a Lobby',
+            icon: Icons.search,
+            background: LobbyFlowColors.pink,
+            onPressed: ready ? _join : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A hidden reset so testing NameDrop repeatedly doesn't mean reinstalling.
+  Widget _debugReload() => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: _reloadNameDropState,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Reload state'),
+          ),
+        ),
+      );
 }
 
 /// The player name as a fact rather than a field, with a dice to change it.
@@ -416,52 +406,26 @@ class _IssuedNameField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: 'Your name',
-        prefixIcon: const Icon(Icons.person_outline),
-        suffixIcon: IconButton(
-          tooltip: 'Roll another name',
-          onPressed: onRoll,
-          icon: const Icon(Icons.casino_outlined),
-        ),
-        border: const OutlineInputBorder(),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 16, 8, 16),
+      decoration: BoxDecoration(
+        color: LobbyFlowColors.field,
+        borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(name, style: theme.textTheme.bodyLarge),
-    );
-  }
-}
-
-class _ScreenSizeRow extends StatelessWidget {
-  const _ScreenSizeRow({required this.metrics, required this.onEdit});
-
-  final DeviceMetrics metrics;
-  final VoidCallback onEdit;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Icon(
-          Icons.straighten,
-          size: 16,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            '${metrics.widthMm.toStringAsFixed(0)} × '
-            '${metrics.heightMm.toStringAsFixed(0)} mm  ·  '
-            '${metrics.dpi.toStringAsFixed(0)} dpi',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+      child: Row(
+        children: [
+          Expanded(child: Text(name, style: LobbyText.field)),
+          IconButton(
+            tooltip: 'Roll another name',
+            onPressed: onRoll,
+            icon: const Icon(
+              Icons.casino_outlined,
+              color: LobbyFlowColors.ink,
+              size: 20,
             ),
           ),
-        ),
-        TextButton(onPressed: onEdit, child: const Text('Edit screen')),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -544,53 +508,61 @@ class _NameDialogState extends State<_NameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return AlertDialog(
-      title: const Text('Name your game'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.locked)
-            InputDecorator(
-              decoration: const InputDecoration(
-                labelText: 'Game name',
-                border: OutlineInputBorder(),
+    return Dialog(
+      backgroundColor: LobbyFlowColors.paper,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const LobbyTitle('Create Lobby', fontSize: 24),
+            const SizedBox(height: 20),
+            if (widget.locked)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 20,
+                ),
+                decoration: BoxDecoration(
+                  color: LobbyFlowColors.field,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(widget.initialName, style: LobbyText.field),
+              )
+            else
+              LobbyChipField(
+                controller: _controller,
+                autofocus: true,
+                maxLength: 40,
+                hintText: 'Enter Lobby Name',
+                onSubmitted: (_) => _submit(),
               ),
-              child: Text(widget.initialName, style: theme.textTheme.bodyLarge),
-            )
-          else
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              maxLength: 40,
-              textCapitalization: TextCapitalization.words,
-              onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                labelText: 'Game name',
-                counterText: '',
-                border: OutlineInputBorder(),
-              ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                LobbyIconButton(
+                  icon: Icons.arrow_back,
+                  background: LobbyFlowColors.coral,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: LobbyPillButton(
+                    label: 'Create Lobby',
+                    background: LobbyFlowColors.green,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 16,
+                    onPressed: _submit,
+                  ),
+                ),
+              ],
             ),
-          const SizedBox(height: 8),
-          Text(
-            // JOIN CODE DISABLED — second sentence was: 'You will get a
-            // 5-digit code to let them in.'
-            'This is how your friends will spot your game in their list.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          ],
         ),
-        FilledButton(onPressed: _submit, child: const Text('Open lobby')),
-      ],
+      ),
     );
   }
 }
