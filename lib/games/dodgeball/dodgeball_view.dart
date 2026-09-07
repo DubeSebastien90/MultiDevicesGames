@@ -2,8 +2,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:rive/rive.dart' as rive;
 
 import '../../sdk/contract/view.dart';
+import '../../sdk/ui/intro_animation.dart';
 import 'dodgeball_config.dart';
 
 /// Renders the dodgeball game: players, bouncing balls, dash effects, and
@@ -17,8 +19,53 @@ class DodgeballView extends GameView {
   static const _ballColor = Color(0xFFFF4444);
   static const _ballGlowColor = Color(0x44FF4444);
 
+  /// The walking character that stands in for the player's body.
+  ///
+  /// One artboard for the whole table: every player walks in step, which is
+  /// wrong but cheap, and the point right now is seeing the character move at
+  /// all rather than six independent state machines.
+  static const _characterAsset = 'assets/sdk/animations/bottomDownView.riv';
+  static const _characterStateMachine = 'UpView_SM';
+
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
+
+  rive.File? _riveFile;
+  rive.Artboard? _character;
+  rive.StateMachine? _characterSm;
+
+  @override
+  Future<void> load() async {
+    // Same gate as the intro: on a platform where `rive_native` takes the
+    // process down there is nothing to catch, so do not even load.
+    if (!IntroAnimation.available) return;
+    try {
+      final file = await rive.File.asset(
+        _characterAsset,
+        riveFactory: rive.Factory.flutter,
+      );
+      if (file == null) throw StateError('not found');
+      final artboard = file.defaultArtboard();
+      if (artboard == null) throw StateError('no artboard');
+      _characterSm = artboard.stateMachine(_characterStateMachine) ??
+          artboard.defaultStateMachine();
+      _riveFile = file;
+      _character = artboard;
+    } on Object catch (e) {
+      // Falls back to the sphere. A missing character is a uglier game, not a
+      // broken one.
+      debugPrint('[dodgeball] $_characterAsset did not load: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _riveFile?.dispose();
+    _riveFile = null;
+    _character = null;
+    _characterSm = null;
+    super.dispose();
+  }
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -54,6 +101,11 @@ class DodgeballView extends GameView {
         _fill,
       );
     }
+
+    // One advance per frame, before anybody is drawn — every player shares the
+    // artboard, so advancing per player would run the walk cycle six times as
+    // fast.
+    _characterSm?.advanceAndApply(frame.dt);
 
     // Draw players.
     for (final e in frame.ofKind('player')) {
@@ -93,9 +145,23 @@ class DodgeballView extends GameView {
         );
       }
 
-      // Player body.
-      _fill.color = isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
-      canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+      // Player body: the walking character, or the old sphere when the file
+      // is not there.
+      final character = _character;
+      if (character != null) {
+        final bounds = character.bounds;
+        final height = bounds.height;
+        final scale = height == 0 ? 1.0 : (radius * 3.0) / height;
+        canvas.save();
+        canvas.translate(e.x, e.y);
+        canvas.scale(scale);
+        character.draw(rive.Renderer.make(canvas));
+        canvas.restore();
+      } else {
+        _fill.color =
+            isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
+        canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+      }
 
       // Direction indicator.
       _fill.color = const Color(0xDDFFFFFF);
