@@ -20,9 +20,10 @@ part 'sim_contact.dart';
 /// Flick your car around a randomized track. Turn-based: exactly one
 /// player's car may be flicked at a time, in join order.
 ///
-/// Input is gated by proximity to the current turn's car, never by
-/// [TouchEvent.phoneId] — the board spans multiple phones, so a car can end
-/// up under a different phone's screen than the one its owner joined from.
+/// Input is never gated by [TouchEvent.phoneId] — the board spans multiple
+/// phones, so a car can end up under a different phone's screen than the one
+/// its owner joined from. Nor is it gated by where the touch lands: proximity
+/// to the car only picks *which* point the draw is measured from.
 class PitchCarsSim extends Forge2DGameSim {
   PitchCarsSim(super.context, {math.Random? random})
     : _random = random ?? math.Random() {
@@ -84,6 +85,15 @@ class PitchCarsSim extends Forge2DGameSim {
   late Vector2 _preTurnPosition;
 
   String? _draggingPhoneId;
+
+  /// Where an *off-car* aim is being drawn from, in world coordinates: the
+  /// pull is the finger's displacement from here, added to [_preTurnPosition],
+  /// which is what lets a drag that began nowhere near the car still aim it.
+  ///
+  /// Null means the finger came down on the car and the draw is measured from
+  /// the car itself — so this doubles as "is there a pivot the player cannot
+  /// see", which is exactly when the view draws a crosshair on it.
+  Vector2? _dragOrigin;
   Vector2? _pull;
   bool _moving = false;
   Duration _sinceLaunch = Duration.zero;
@@ -111,14 +121,28 @@ class PitchCarsSim extends Forge2DGameSim {
     switch (touch.phase) {
       case TouchPhase.down:
         if (_draggingPhoneId != null) return;
+        // Anywhere on the board starts an aim. A finger that lands *on* the
+        // car pulls it directly, as before — the car follows the finger, which
+        // is the gesture that reads as a slingshot. A finger that lands
+        // anywhere else aims from where it landed, so the draw is the same
+        // gesture measured from there.
+        //
+        // The car is regularly somewhere a finger cannot comfortably drag
+        // from: pinned against the edge of a screen, or sitting on the seam
+        // between two phones where half the draw would land on a neighbour's
+        // glass. Requiring the gesture to *start* on the car made those
+        // positions unplayable; nothing about aiming actually needs it to.
         final reach = scale.carRadius + scale.grabSlack;
-        if (p.distanceTo(car.position) > reach) return;
+        _dragOrigin = p.distanceTo(car.position) <= reach ? null : p.clone();
         _draggingPhoneId = touch.phoneId;
-        _pull = car.position.clone();
+        _pull = _preTurnPosition.clone();
 
       case TouchPhase.move:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
-        _pull = _clampPull(p);
+        // Aiming from the car makes the pull point the finger itself; aiming
+        // from off it carries the same displacement back onto the car.
+        final origin = _dragOrigin ?? _preTurnPosition;
+        _pull = _clampPull(_preTurnPosition + (p - origin));
 
       case TouchPhase.up:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
@@ -242,6 +266,15 @@ class PitchCarsSim extends Forge2DGameSim {
     // the view draws the launch arrow from this to the current car.
     'pullX': _pull == null ? null : double.parse(_pull!.x.toStringAsFixed(3)),
     'pullY': _pull == null ? null : double.parse(_pull!.y.toStringAsFixed(3)),
+    // The point an off-car drag is pivoting around, for the view to mark.
+    // Null whenever the draw is measured from the car, which needs no mark:
+    // the car is already standing on the spot.
+    'anchorX': _dragOrigin == null
+        ? null
+        : double.parse(_dragOrigin!.x.toStringAsFixed(3)),
+    'anchorY': _dragOrigin == null
+        ? null
+        : double.parse(_dragOrigin!.y.toStringAsFixed(3)),
     'moving': _moving,
   };
 
@@ -252,6 +285,7 @@ class PitchCarsSim extends Forge2DGameSim {
   void reset() {
     _currentIndex = 0;
     _draggingPhoneId = null;
+    _dragOrigin = null;
     _pull = null;
     _moving = false;
     _finished.clear();

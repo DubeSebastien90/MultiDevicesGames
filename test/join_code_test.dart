@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
+import 'package:multiscreen_slingshot/games/subway_skater/subway_skater_game.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
@@ -623,11 +624,11 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      // Arena, and played rather than left on the placement screen: a phone
-      // leaving *during* placement re-lays the board, and a game that has not
-      // asked to hear about it ends the round. Neither leaves a round to walk
-      // back into.
-      host.startGame(const ArenaGame());
+      // Subway Skater, and played rather than left on the placement screen: a
+      // phone leaving *during* placement re-lays the board, and a game that has
+      // not asked to hear about it ends the round. Neither leaves a round to
+      // walk back into.
+      host.startGame(const SubwaySkaterGame());
       await waitFor('placing', () => host.phase == HostPhase.placing);
       ada.confirmPlacement();
       bob.confirmPlacement();
@@ -899,9 +900,9 @@ void main() {
     });
 
     test('a game that has asked is told, and keeps playing', () async {
-      // Arena implements PlayerPresence, so it decides what a missing player
-      // means — the round carries on with their fighter left standing.
-      final table = await aRoundOf(const ArenaGame());
+      // Subway Skater implements PlayerPresence, so it decides what a missing
+      // player means — the line closes up around them and the round carries on.
+      final table = await aRoundOf(const SubwaySkaterGame());
       final bobsSeat = host.phones[1].phoneId;
 
       table.bob.dispose();
@@ -912,9 +913,9 @@ void main() {
           reason: 'the round was ended for a game that can handle this');
 
       // Read off Ada's phone rather than the host: what matters is that the
-      // other screens are told, since that is what greys the fighter out.
-      await waitFor('Ada sees him greyed',
-          () => table.ada.sharedState['away_p1'] == true);
+      // other screens are told, since that is what takes him out of the line.
+      await waitFor('Ada sees the line close up',
+          () => !'${table.ada.sharedState['order']}'.contains(bobsSeat));
 
       // And back again, mid-round.
       final again = joiner(deviceId: table.bobsPhone, label: 'Bob');
@@ -922,8 +923,8 @@ void main() {
       await waitFor('back in', () => host.phones[1].connected);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      await waitFor('Ada sees him back',
-          () => table.ada.sharedState['away_p1'] == false);
+      await waitFor('Ada sees him back in the line',
+          () => '${table.ada.sharedState['order']}'.contains(bobsSeat));
       expect(again.phoneId, bobsSeat);
 
       table.ada.dispose();

@@ -15,6 +15,7 @@ import '../model/player_color.dart';
 import '../model/world_rect.dart';
 import '../net/protocol.dart';
 import '../net/transport.dart';
+import '../render/player_animation.dart';
 import '../render/player_art.dart';
 import '../catalog.dart';
 import '../contract/entity.dart';
@@ -865,18 +866,35 @@ class ClientSession extends ChangeNotifier {
       _viewWantedAgain = true;
       return;
     }
-    if (_view != null) return;
+    // A view built for the previous round holds that round's roster — and
+    // seats are re-dealt between rounds, so the colours it is painting people
+    // in may no longer be theirs. Reuse it only while the roster it was given
+    // still matches.
+    final wanted = roster;
+    if (_view != null) {
+      if (listEquals(_viewRoster, wanted.players)) return;
+      _disposeView();
+    }
 
     _viewLoading = true;
     try {
+      // Awaited here, in placement, rather than on the first frame: this is
+      // dead time — people are pushing phones together — and it is the one
+      // moment where a decode costs nobody anything. It cannot fail the round;
+      // a file that does not load comes back as `PlayerAnimations.none`.
+      final characters = await PlayerAnimations.load(
+        [for (final p in wanted.players) p.color],
+      );
+
       final view = game.createView(
         ViewContext(
           phoneId: layout.phoneId,
           board: layout.board,
+          characters: characters,
           // Built here rather than passed per frame: the roster is fixed for
           // the round, and the slices it comes from arrived with the layout
           // that triggered this build.
-          roster: roster,
+          roster: wanted,
           audio: audio,
         ),
       );
@@ -886,9 +904,12 @@ class ClientSession extends ChangeNotifier {
       // now would render the previous game's artwork over the current one.
       if (!identical(_game, game)) {
         view.dispose();
+        characters.dispose();
         return;
       }
       _view = view;
+      _viewRoster = wanted.players;
+      _viewCharacters = characters;
     } catch (e) {
       _message = 'Could not load ${game.manifest.title}: $e';
     } finally {
@@ -905,9 +926,19 @@ class ClientSession extends ChangeNotifier {
   /// happen again once this one lets go.
   bool _viewWantedAgain = false;
 
+  /// The roster [_view] was built with, to notice when it goes stale.
+  List<Player>? _viewRoster;
+
+  /// The animations handed to [_view]. Native memory: it goes when the view
+  /// that was drawing it goes.
+  PlayerAnimations? _viewCharacters;
+
   void _disposeView() {
     _view?.dispose();
     _view = null;
+    _viewRoster = null;
+    _viewCharacters?.dispose();
+    _viewCharacters = null;
   }
 
   @override

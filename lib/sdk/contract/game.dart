@@ -29,6 +29,7 @@ class GameManifest {
     this.players = const PlayerCount.range(min: 1),
     this.supportsIpad = false,
     this.tier = GameTier.free,
+    this.skipNameDropOptimizer = false,
   });
 
   /// Stable and wire-visible: every device resolves this to the same game.
@@ -67,6 +68,11 @@ class GameManifest {
   final GameTier tier;
 
   bool get isPremium => tier == GameTier.premium;
+
+  /// Dev-only escape hatch: skip [NameDropOptimizer] when planting this game's
+  /// board, so a plan that deliberately puts two phones top to top stays that
+  /// way instead of being turned safe. Not for real games.
+  final bool skipNameDropOptimizer;
 
   bool fits(int phoneCount) => players.fits(phoneCount);
 

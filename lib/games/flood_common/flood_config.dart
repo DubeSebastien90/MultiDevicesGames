@@ -24,6 +24,18 @@ class FloodConfig {
   /// looks up from placing their phone, short enough not to be a wait.
   static const double countdownSeconds = 3.0;
 
+  /// How long the briefing has the screen to itself before the count starts.
+  ///
+  /// Flood explains itself in one sentence, and that sentence has to be read
+  /// while nothing else is happening. Counting from six instead would put a
+  /// number on the screen for the whole time the message is up, and a ticking
+  /// number is the only thing anybody looks at.
+  static const double briefingSeconds = 3.0;
+
+  /// The whole pre-round: read the message, then count in. Taps are swallowed
+  /// for all of it — [countdownSeconds] alone is no longer the wait.
+  static const double preRoundSeconds = briefingSeconds + countdownSeconds;
+
   /// Hard backstop. A perfectly even 1v1 could otherwise run past the point
   /// where anyone is enjoying it, so at this mark whoever is even marginally
   /// ahead takes it. Both READMEs specify the same 45s.
@@ -50,7 +62,6 @@ class FloodConfig {
 
   static const int colorBlue = 0xFF2F6FED;
   static const int colorRed = 0xFFED4B2F;
-  static const int colorNeutral = 0xFF0B1020;
 }
 
 /// Option A's one knob.

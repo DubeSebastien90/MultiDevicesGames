@@ -59,9 +59,9 @@ void advance(FloodSim sim, double seconds) {
   }
 }
 
-/// Past the countdown, so taps count.
+/// Past the briefing and the countdown both, so taps count.
 void goLive(FloodSim sim) =>
-    advance(sim, FloodConfig.countdownSeconds + 1 / 60);
+    advance(sim, FloodConfig.preRoundSeconds + 1 / 60);
 
 void tap(FloodSim sim, String phoneId) => sim.onTouch(
       TouchEvent(
@@ -277,8 +277,33 @@ void main() {
       expect(sim.boundary, lessThan(0), reason: 'and now it counts');
     });
 
+    test('holds the number back until the briefing has been read', () {
+      final sim = start(const FloodGame(), 2).sim;
+
+      // Null, not zero: there is no number to show yet, and zero is the
+      // instant the wait ends. A count ticking down over the message would be
+      // the only thing anybody looked at.
+      expect(sim.sharedState[FloodState.countdown], isNull);
+      expect(sim.phase, FloodPhase.countdown);
+
+      // Still nothing a hair before the briefing is up.
+      advance(sim, FloodConfig.briefingSeconds - 0.1);
+      expect(sim.sharedState[FloodState.countdown], isNull);
+
+      // And then the count appears, at its full value rather than partway in.
+      advance(sim, 0.2);
+      expect(
+        sim.sharedState[FloodState.countdown],
+        FloodConfig.countdownSeconds.ceil(),
+      );
+    });
+
     test('reports itself so every phone can draw the same number', () {
       final sim = start(const FloodGame(), 2).sim;
+      // One tick past the briefing rather than exactly on its end: a whole
+      // number of ticks does not land exactly on 3.0 seconds, and on the
+      // instant itself the count is legitimately still the briefing's null.
+      advance(sim, FloodConfig.briefingSeconds + 1 / 60);
       expect(
         sim.sharedState[FloodState.countdown],
         FloodConfig.countdownSeconds.ceil(),
@@ -500,7 +525,7 @@ void main() {
       expect(sim.boundary, 0);
       expect(sim.outcome, isNull);
       expect(sim.phase, FloodPhase.countdown);
-      expect(sim.elapsed, -FloodConfig.countdownSeconds);
+      expect(sim.elapsed, -FloodConfig.preRoundSeconds);
     });
 
     test('a rate limit keeps an autoclicker from outrunning a thumb', () {

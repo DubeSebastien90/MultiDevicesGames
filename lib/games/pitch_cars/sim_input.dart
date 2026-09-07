@@ -1,6 +1,8 @@
 part of 'pitch_cars_sim.dart';
 
-/// Pull-and-release aiming: dragging never moves the car, only `_pull`.
+/// Pull-and-release aiming: dragging never moves the car, only `_pull` — and
+/// `_pull` is the finger's displacement from `_dragOrigin`, not the finger
+/// itself, so a draw started away from the car aims it just the same.
 extension _Input on PitchCarsSim {
   Vector2 _clampPull(Vector2 p) {
     final delta = p - _preTurnPosition;
@@ -15,13 +17,12 @@ extension _Input on PitchCarsSim {
   void _launch() {
     final pullBack = _preTurnPosition - _pull!;
     _draggingPhoneId = null;
+    _dragOrigin = null;
     _pull = null;
     final car = carOf(currentTurn);
 
-    // A tap, not a shot. Measured against the pull this table allows rather
-    // than a fixed distance, so the dead zone stays the same *gesture* whether
-    // the road is narrow or wide.
-    if (pullBack.length < scale.maxPull * 0.05) {
+    // A tap, not a shot — see [PitchCarsConfig.cancelPullFraction].
+    if (pullBack.length < scale.maxPull * PitchCarsConfig.cancelPullFraction) {
       car.setTransform(_preTurnPosition.clone(), car.angle);
       return; // the turn is not consumed
     }

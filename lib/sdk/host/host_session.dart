@@ -1258,7 +1258,9 @@ class HostSession extends ChangeNotifier {
     final BoardPlan plan;
     try {
       final rawPlan = game.planBoard(lobby);
-      plan = NameDropOptimizer.optimize(rawPlan, lobby);
+      plan = game.manifest.skipNameDropOptimizer
+          ? rawPlan
+          : NameDropOptimizer.optimize(rawPlan, lobby);
       solved = const BoardCompiler().compile(plan, lobby);
     } on BoardPlanError catch (e) {
       // The game's plan is unusable. Nobody is asked to rearrange a table for

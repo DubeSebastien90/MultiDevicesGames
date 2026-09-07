@@ -35,11 +35,22 @@ class _NameDropGateState extends State<NameDropGate> {
   }
 
   Future<void> _maybeAsk() async {
-    if (!await NameDropSupport.onThisDevice()) return;
-    if (await NameDropPref.load() != NameDropStatus.waiting) return;
-    if (!mounted) return;
+    final supported = await NameDropSupport.onThisDevice();
+    debugPrint('[namedrop] onThisDevice=$supported');
+    if (!supported) return;
 
+    final status = await NameDropPref.load();
+    debugPrint('[namedrop] stored status=$status');
+    if (status != NameDropStatus.waiting) return;
+
+    if (!mounted) {
+      debugPrint('[namedrop] gate unmounted before dialog could show');
+      return;
+    }
+
+    debugPrint('[namedrop] showing notice');
     final answer = await showNameDropNotice(context);
+    debugPrint('[namedrop] answer=$answer');
     // A no-answer stays unwritten, so the question survives to the next lobby.
     if (answer != NameDropStatus.waiting) await NameDropPref.save(answer);
   }
