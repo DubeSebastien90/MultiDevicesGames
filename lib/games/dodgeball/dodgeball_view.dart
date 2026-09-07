@@ -80,11 +80,18 @@ class DodgeballView extends GameView {
 
   /// The character for one player, or null while the file is missing.
   ///
-  /// Made once and kept: [color] is written into the artboard here, at birth,
-  /// and a player's colour does not change for the length of a round.
+  /// Made once and kept, but repainted whenever [color] changes: a seat can
+  /// change hands between rounds, and a character still wearing the last
+  /// round's colour is how somebody ends up chasing the wrong body.
   _Character? _characterFor(String id, Color color) {
     final existing = _characters[id];
-    if (existing != null) return existing;
+    if (existing != null) {
+      if (existing.color != color) {
+        existing.color = color;
+        existing.skin?.value = color;
+      }
+      return existing;
+    }
     final file = _riveFile;
     if (file == null) return null;
     try {
@@ -95,11 +102,12 @@ class DodgeballView extends GameView {
       if (artboard == null) throw StateError('no artboard');
       final sm = artboard.stateMachine(_characterStateMachine) ??
           artboard.defaultStateMachine();
-      _paint(file, artboard, sm, color);
+      final skin = _colorProperty(file, artboard, sm);
+      skin?.value = color;
       // Once, so the artboard holds the first frame of the walk rather than
       // whatever pose it was exported in.
       sm?.advanceAndApply(0);
-      final character = _Character(artboard, sm);
+      final character = _Character(artboard, sm, skin, color);
       _characters[id] = character;
       return character;
     } on Object catch (e) {
@@ -108,7 +116,7 @@ class DodgeballView extends GameView {
     }
   }
 
-  /// Put a player's colour on their character.
+  /// The skin colour of one character's artboard, ready to be written to.
   ///
   /// The property is found by type rather than by name — the file's view model
   /// carries exactly one colour — so renaming `skinOne` in the editor costs
@@ -116,30 +124,32 @@ class DodgeballView extends GameView {
   /// eight characters in the colour they were drawn, which is a duller game
   /// rather than a broken one, and the log line is the only way anybody would
   /// know why.
-  void _paint(
+  rive.ViewModelInstanceColor? _colorProperty(
     rive.File file,
     rive.Artboard artboard,
     rive.StateMachine? stateMachine,
-    Color color,
   ) {
     try {
       final viewModel = file.defaultArtboardViewModel(artboard);
+      // Its own instance, per artboard: a shared one would repaint every
+      // character on the table the colour of whoever was coloured last.
       final instance = viewModel?.createDefaultInstance();
       if (viewModel == null || instance == null) {
         debugPrint('[dodgeball] $_characterAsset has no view model — '
             'characters keep the colour they were drawn');
-        return;
+        return null;
       }
       artboard.bindViewModelInstance(instance);
       stateMachine?.bindViewModelInstance(instance);
       for (final property in viewModel.properties) {
         if (property.type != rive.DataType.color) continue;
-        instance.color(property.name)?.value = color;
-        return;
+        return instance.color(property.name);
       }
       debugPrint('[dodgeball] no colour property on ${viewModel.name}');
+      return null;
     } on Object catch (e) {
       debugPrint('[dodgeball] could not colour the character: $e');
+      return null;
     }
   }
 
@@ -404,8 +414,14 @@ class DodgeballView extends GameView {
 
 /// One player's own copy of the walking character.
 class _Character {
-  _Character(this.artboard, this.stateMachine);
+  _Character(this.artboard, this.stateMachine, this.skin, this.color);
 
   final rive.Artboard artboard;
   final rive.StateMachine? stateMachine;
+
+  /// The view model's colour property, or null in a file without one.
+  final rive.ViewModelInstanceColor? skin;
+
+  /// What [skin] was last set to, so an unchanged colour costs nothing.
+  Color color;
 }

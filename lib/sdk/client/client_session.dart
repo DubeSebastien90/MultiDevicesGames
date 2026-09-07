@@ -865,7 +865,15 @@ class ClientSession extends ChangeNotifier {
       _viewWantedAgain = true;
       return;
     }
-    if (_view != null) return;
+    // A view built for the previous round holds that round's roster — and
+    // seats are re-dealt between rounds, so the colours it is painting people
+    // in may no longer be theirs. Reuse it only while the roster it was given
+    // still matches.
+    final wanted = roster;
+    if (_view != null) {
+      if (listEquals(_viewRoster, wanted.players)) return;
+      _disposeView();
+    }
 
     _viewLoading = true;
     try {
@@ -876,7 +884,7 @@ class ClientSession extends ChangeNotifier {
           // Built here rather than passed per frame: the roster is fixed for
           // the round, and the slices it comes from arrived with the layout
           // that triggered this build.
-          roster: roster,
+          roster: wanted,
           audio: audio,
         ),
       );
@@ -889,6 +897,7 @@ class ClientSession extends ChangeNotifier {
         return;
       }
       _view = view;
+      _viewRoster = wanted.players;
     } catch (e) {
       _message = 'Could not load ${game.manifest.title}: $e';
     } finally {
@@ -905,9 +914,13 @@ class ClientSession extends ChangeNotifier {
   /// happen again once this one lets go.
   bool _viewWantedAgain = false;
 
+  /// The roster [_view] was built with, to notice when it goes stale.
+  List<Player>? _viewRoster;
+
   void _disposeView() {
     _view?.dispose();
     _view = null;
+    _viewRoster = null;
   }
 
   @override
