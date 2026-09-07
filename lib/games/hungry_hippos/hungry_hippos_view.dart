@@ -13,7 +13,7 @@ import 'hungry_hippos_config.dart';
 /// thing in the simulation at all, only a force, and would otherwise be
 /// invisible.
 class HungryHipposView extends ShapeView {
-  HungryHipposView(this.context);
+  HungryHipposView(this.context) : super(roster: context.roster);
 
   final ViewContext context;
 

@@ -41,9 +41,45 @@ void main() {
         name: 'Chartreuse',
         value: Color(0xFF7FFF00),
         onColor: Color(0xFF203000),
+        skinLight: Color(0xFFA8FF4D),
+        skinDark: Color(0xFF5FBF00),
       );
       expect(Cast.byColorId(unknown.id), isNull);
       expect(Cast.of(unknown), isNotNull);
+    });
+  });
+
+  group('skins', () {
+    test('every colour carries a lighter reflet and a darker ombre', () {
+      // Sixteen hand-copied hex values off the palette sheet, and a swapped
+      // pair is invisible until somebody looks at a character on a table: the
+      // highlight would sit where the shadow belongs and the piece would read
+      // inside out.
+      for (final color in PlayerPalette.all) {
+        expect(
+          color.skinLight.computeLuminance(),
+          greaterThan(color.value.computeLuminance()),
+          reason: '${color.id}: the reflet is not lighter than the principale',
+        );
+        expect(
+          color.skinDark.computeLuminance(),
+          lessThan(color.value.computeLuminance()),
+          reason: '${color.id}: the ombre is not darker than the principale',
+        );
+      }
+    });
+
+    test('no two players share a shade', () {
+      // Colour is identity here, and a character is mostly its shades — so two
+      // players sharing one is two players who look alike from across a table,
+      // which is the one thing the palette exists to prevent.
+      final seen = <int>{};
+      for (final color in PlayerPalette.all) {
+        for (final shade in [color.value, color.skinLight, color.skinDark]) {
+          expect(seen.add(shade.toARGB32()), isTrue,
+              reason: '${color.id} repeats a shade another player already has');
+        }
+      }
     });
   });
 

@@ -10,7 +10,7 @@ import 'pitch_cars_config.dart';
 /// Pitch Cars' look: the default shapes for cars and track segments, plus a
 /// turn/progress readout.
 class PitchCarsView extends ShapeView {
-  PitchCarsView({required this.phoneId})
+  PitchCarsView({required this.phoneId, super.roster})
     : super(grid: false, playfield: const Color(0xFF141C33));
 
   final String phoneId;

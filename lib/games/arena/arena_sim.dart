@@ -100,10 +100,15 @@ class ArenaSim implements GameSim {
         }
       }
 
-      // Movement (not while stunned).
+      // Movement (not while stunned). How fast is how far the finger is from
+      // the anchor, up to [ArenaConfig.moveSpeed] at full tilt — a fighter
+      // edging into range and one charging across the floor are different
+      // intentions, and a drag that only ever means "go" cannot tell them
+      // apart.
       if (!f.isStunned && f.moveAngle != null) {
-        final dx = math.cos(f.moveAngle!) * ArenaConfig.moveSpeed * dt;
-        final dy = math.sin(f.moveAngle!) * ArenaConfig.moveSpeed * dt;
+        final speed = ArenaConfig.moveSpeed * f.moveScale;
+        final dx = math.cos(f.moveAngle!) * speed * dt;
+        final dy = math.sin(f.moveAngle!) * speed * dt;
         f.x += dx;
         f.y += dy;
         f.facingAngle = f.moveAngle!;
@@ -158,6 +163,7 @@ class ArenaSim implements GameSim {
         // Block reflects: attacker gets stunned.
         attacker.stunLeft = ArenaConfig.stunDuration;
         attacker.moveAngle = null;
+        attacker.moveScale = 0;
         return; // Attack is negated.
       }
 
@@ -168,6 +174,12 @@ class ArenaSim implements GameSim {
         target.hp = 0;
         target.alive = false;
         target.moveAngle = null;
+        target.moveScale = 0;
+        // Their finger is still on the glass, but [onTouch] turns a dead
+        // fighter away — so the up that would have cleared this never arrives,
+        // and without it their joystick would be left painted on the floor.
+        target.touchDown = false;
+        target.blocking = false;
         context.scores.award(attacker.phoneId, ArenaConfig.pointsPerKill);
       }
     }
@@ -236,6 +248,8 @@ class ArenaSim implements GameSim {
       case TouchPhase.down:
         f.touchDownX = touch.worldX;
         f.touchDownY = touch.worldY;
+        f.touchX = touch.worldX;
+        f.touchY = touch.worldY;
         f.touchDownTime = 0;
         f.touchMoved = false;
         f.touchDown = true;
@@ -243,6 +257,8 @@ class ArenaSim implements GameSim {
 
       case TouchPhase.move:
         if (!f.touchDown) return;
+        f.touchX = touch.worldX;
+        f.touchY = touch.worldY;
         final dx = touch.worldX - f.touchDownX;
         final dy = touch.worldY - f.touchDownY;
         final dist = math.sqrt(dx * dx + dy * dy);
@@ -250,7 +266,15 @@ class ArenaSim implements GameSim {
           f.touchMoved = true;
           if (!f.isStunned) {
             f.moveAngle = math.atan2(dy, dx);
+            f.moveScale = ArenaConfig.moveScaleFor(dist);
           }
+        } else {
+          // Back inside the dead zone, which on a stick is the middle: stop.
+          // [touchMoved] deliberately stays set — this was a drag, and letting
+          // it turn back into a hold would have a player who is steering
+          // suddenly raise their shield.
+          f.moveAngle = null;
+          f.moveScale = 0;
         }
 
       case TouchPhase.up:
@@ -275,6 +299,7 @@ class ArenaSim implements GameSim {
 
         // Stop moving on finger up.
         f.moveAngle = null;
+        f.moveScale = 0;
     }
 
     // Accumulate touch-down time in step(), not here.
@@ -327,6 +352,19 @@ class ArenaSim implements GameSim {
       map['blkCd_$key'] = _quantize(f.blockCooldownLeft);
       map['invincible_$key'] = f.invincibleLeft > 0;
       map['alive_$key'] = f.alive;
+
+      // The stick, and only while it is actually steering — a finger resting
+      // inside the dead zone is a tap or a block being held, and drawing a
+      // ring under it would say "you are moving" to a player who is not.
+      // Absent keys are how the view is told there is nothing to draw, which
+      // also keeps four dead numbers per fighter off the wire for the whole of
+      // every round nobody is dragging anything.
+      if (f.touchDown && f.alive && f.moveAngle != null) {
+        map['stickX_$key'] = _quantize(f.touchDownX);
+        map['stickY_$key'] = _quantize(f.touchDownY);
+        map['stickToX_$key'] = _quantize(f.touchX);
+        map['stickToY_$key'] = _quantize(f.touchY);
+      }
     }
     return map;
   }
@@ -379,6 +417,7 @@ class ArenaSim implements GameSim {
       f.hp = ArenaConfig.maxHp;
       f.alive = true;
       f.moveAngle = null;
+      f.moveScale = 0;
       f.attackCooldownLeft = 0;
       f.attackActiveLeft = 0;
       f.blockCooldownLeft = 0;
@@ -389,6 +428,8 @@ class ArenaSim implements GameSim {
       f.touchDown = false;
       f.touchMoved = false;
       f.touchHeldTime = 0;
+      f.touchX = f.x;
+      f.touchY = f.y;
     }
   }
 
@@ -417,6 +458,9 @@ class _Fighter {
   // Movement direction (null = stopped).
   double? moveAngle;
 
+  /// How far the stick is pushed, 0..1, as a fraction of [ArenaConfig.moveSpeed].
+  double moveScale = 0;
+
   // Timers.
   double attackCooldownLeft = 0;
   double attackActiveLeft = 0;
@@ -435,4 +479,11 @@ class _Fighter {
   double touchDownTime = 0;
   bool touchMoved = false;
   double touchHeldTime = 0;
+
+  /// Where the finger is right now, as against [touchDownX]/[touchDownY] where
+  /// it landed. Only the drawn joystick needs it — steering is an angle, and an
+  /// angle does not care how far the drag went — but the stick cannot show a
+  /// tilt it has not been told about.
+  double touchX = 0;
+  double touchY = 0;
 }
