@@ -14,6 +14,7 @@ import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
 import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
+import 'package:multiscreen_slingshot/sdk/render/shape_view.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
 PhoneSpec phone(String id, {PlayerColor? color}) => PhoneSpec(
@@ -744,6 +745,20 @@ void main() {
   });
 
   group('PitchCarsSim — the starting grid', () {
+    test('every car says whose it is', () {
+      // What turns the disc into that player's character on the board:
+      // `ShapeView` draws a plain shape for anybody it has not been told
+      // about, so a car that loses this prop silently goes back to being a
+      // coloured dot.
+      final cars =
+          start(3).sim.entities.where((e) => e.kind == 'car').toList();
+      expect(cars, hasLength(3));
+      for (final car in cars) {
+        expect(car.props[ShapeProps.player], car.id,
+            reason: 'a car that names nobody is drawn as a plain circle');
+      }
+    });
+
     for (final count in [2, 3, 4]) {
       test('$count cars never spawn touching each other', () {
         for (final started in [start(count)]) {

@@ -36,6 +36,9 @@ extension _TrackBuilding on PitchCarsSim {
           ShapeProps.radius: scale.carVisualRadius,
           ShapeProps.color: _colorOf[_order[i]]!.value.toARGB32(),
           ShapeProps.spin: true,
+          // The entity id is the phone id, so a car already knows whose it is;
+          // this says it in the one place `ShapeView` looks.
+          ShapeProps.player: _order[i],
         },
       ).createFixture(
         FixtureDef(

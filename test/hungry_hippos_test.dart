@@ -8,6 +8,7 @@ import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
+import 'package:multiscreen_slingshot/sdk/render/shape_view.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
 /// Marbles in a dish and everyone lunging at once. Driven through the SDK
@@ -239,6 +240,36 @@ void main() {
           expect(h.x, lessThanOrEqualTo(rect.right + 0.01));
           expect(h.y, greaterThanOrEqualTo(rect.top - 0.01));
           expect(h.y, lessThanOrEqualTo(rect.bottom + 0.01));
+        }
+      }
+    });
+
+    test('every hippo says whose it is, and faces the dish', () {
+      // Two halves of one picture. The prop is what makes the piece a player's
+      // character rather than a coloured disc — `ShapeView` draws nobody it
+      // has not been told about — and the angle is which way that character is
+      // turned. A hippo facing out of the bowl would be leaning away from the
+      // marbles it is about to lunge at.
+      for (final count in [2, 4, 6]) {
+        final started = start(count);
+        final centre = Offset(
+          started.board.board.centerX,
+          started.board.board.centerY,
+        );
+
+        for (final h in started.sim.entities.where((e) => e.kind == 'hippo')) {
+          expect(
+            h.props[ShapeProps.player],
+            h.id.substring('hippo_'.length),
+            reason: 'a hippo that names nobody is drawn as a plain circle',
+          );
+
+          final toCentre = centre - Offset(h.x, h.y);
+          final facing = Offset(math.cos(h.angle), math.sin(h.angle));
+          final aim = toCentre / toCentre.distance;
+          // The dot product of two unit vectors: 1 is dead on.
+          expect(facing.dx * aim.dx + facing.dy * aim.dy, closeTo(1, 0.01),
+              reason: 'hippo ${h.id} is turned away from the dish');
         }
       }
     });
