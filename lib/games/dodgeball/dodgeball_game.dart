@@ -63,5 +63,5 @@ class DodgeballGame implements MultiscreenGame {
 
   @override
   GameView createView(ViewContext context) =>
-      DodgeballView(phoneId: context.phoneId);
+      DodgeballView(phoneId: context.phoneId, roster: context.roster);
 }

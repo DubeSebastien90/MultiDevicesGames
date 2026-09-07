@@ -5,15 +5,21 @@ import 'package:flutter/widgets.dart';
 import 'package:rive/rive.dart' as rive;
 
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
 import '../../sdk/ui/intro_animation.dart';
 import 'dodgeball_config.dart';
 
 /// Renders the dodgeball game: players, bouncing balls, dash effects, and
 /// countdown/game-over overlays.
 class DodgeballView extends GameView {
-  DodgeballView({required this.phoneId});
+  DodgeballView({required this.phoneId, this.roster = Roster.empty});
 
   final String phoneId;
+
+  /// Everyone in the round, for their platform colour. The sim ships a colour
+  /// of its own on the entity, but the one a player recognises across the table
+  /// is the one the lobby gave them.
+  final Roster roster;
 
   static const _floorColor = Color(0xFF161B22);
   static const _ballColor = Color(0xFFFF4444);
@@ -73,7 +79,10 @@ class DodgeballView extends GameView {
   }
 
   /// The character for one player, or null while the file is missing.
-  _Character? _characterFor(String id) {
+  ///
+  /// Made once and kept: [color] is written into the artboard here, at birth,
+  /// and a player's colour does not change for the length of a round.
+  _Character? _characterFor(String id, Color color) {
     final existing = _characters[id];
     if (existing != null) return existing;
     final file = _riveFile;
@@ -86,6 +95,7 @@ class DodgeballView extends GameView {
       if (artboard == null) throw StateError('no artboard');
       final sm = artboard.stateMachine(_characterStateMachine) ??
           artboard.defaultStateMachine();
+      _paint(file, artboard, sm, color);
       // Once, so the artboard holds the first frame of the walk rather than
       // whatever pose it was exported in.
       sm?.advanceAndApply(0);
@@ -95,6 +105,41 @@ class DodgeballView extends GameView {
     } on Object catch (e) {
       debugPrint('[dodgeball] no character for $id: $e');
       return null;
+    }
+  }
+
+  /// Put a player's colour on their character.
+  ///
+  /// The property is found by type rather than by name — the file's view model
+  /// carries exactly one colour — so renaming `skinOne` in the editor costs
+  /// nothing here. Never fatal: a file exported without its view model means
+  /// eight characters in the colour they were drawn, which is a duller game
+  /// rather than a broken one, and the log line is the only way anybody would
+  /// know why.
+  void _paint(
+    rive.File file,
+    rive.Artboard artboard,
+    rive.StateMachine? stateMachine,
+    Color color,
+  ) {
+    try {
+      final viewModel = file.defaultArtboardViewModel(artboard);
+      final instance = viewModel?.createDefaultInstance();
+      if (viewModel == null || instance == null) {
+        debugPrint('[dodgeball] $_characterAsset has no view model — '
+            'characters keep the colour they were drawn');
+        return;
+      }
+      artboard.bindViewModelInstance(instance);
+      stateMachine?.bindViewModelInstance(instance);
+      for (final property in viewModel.properties) {
+        if (property.type != rive.DataType.color) continue;
+        instance.color(property.name)?.value = color;
+        return;
+      }
+      debugPrint('[dodgeball] no colour property on ${viewModel.name}');
+    } on Object catch (e) {
+      debugPrint('[dodgeball] could not colour the character: $e');
     }
   }
 
@@ -146,7 +191,13 @@ class DodgeballView extends GameView {
     for (final e in frame.ofKind('player')) {
       final idx = e.propInt('index');
       final key = 'p$idx';
-      final color = Color(e.propInt('color', 0xFFFFFFFF));
+      // The platform's colour for whoever is in this seat, which is the one
+      // they were shown in the lobby. The sim's own palette is the fallback,
+      // for a seat nobody is sitting in yet.
+      final phone = frame.sharedState['phoneId_$key'] as String?;
+      final seated = phone == null ? null : roster.byPhone(phone);
+      final color =
+          seated?.color.value ?? Color(e.propInt('color', 0xFFFFFFFF));
       final radius = e.propDouble('radius', DodgeballConfig.characterRadius);
       final alive = frame.sharedState['alive_$key'] == true;
       if (!alive) continue;
@@ -182,7 +233,7 @@ class DodgeballView extends GameView {
 
       // Player body: the walking character, or the old sphere when the file
       // is not there.
-      final character = _characterFor(e.id);
+      final character = _characterFor(e.id, color);
       if (character != null) {
         // Walk only while actually moving. With no input on the state machine,
         // 'idle' is the machine not being advanced — it holds whatever frame of
@@ -213,21 +264,6 @@ class DodgeballView extends GameView {
             isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
         canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
       }
-
-      // Direction indicator.
-      _fill.color = const Color(0xDDFFFFFF);
-      canvas.save();
-      canvas.translate(e.x, e.y);
-      canvas.rotate(e.angle);
-      final tip = radius * 1.15;
-      final base = radius * 0.3;
-      final dirPath = ui.Path()
-        ..moveTo(tip, 0)
-        ..lineTo(radius * 0.7, -base)
-        ..lineTo(radius * 0.7, base)
-        ..close();
-      canvas.drawPath(dirPath, _fill);
-      canvas.restore();
     }
 
     // Countdown overlay.
