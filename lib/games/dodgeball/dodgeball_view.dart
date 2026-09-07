@@ -36,6 +36,13 @@ class DodgeballView extends GameView {
   /// off.
   static const _walkingSpeed = 0.5;
 
+  /// Which way the character is drawn, in the same convention as `angle`:
+  /// 0 is +x, `-pi / 2` is up the screen. The artboard is `UpView_Artboard`,
+  /// so the character walks up as drawn; everything is rotated by the
+  /// difference between where the player is heading and this. Flip the sign if
+  /// the character ends up walking backwards.
+  static const _characterFacing = -math.pi / 2;
+
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
 
@@ -73,7 +80,10 @@ class DodgeballView extends GameView {
     final file = _riveFile;
     if (file == null) return null;
     try {
-      final artboard = file.defaultArtboard();
+      // `frameOrigin: true` centres the artboard on (0, 0), which is what
+      // makes the player's position the middle of the character and lets it
+      // rotate about its own centre.
+      final artboard = file.defaultArtboard(frameOrigin: true);
       if (artboard == null) throw StateError('no artboard');
       final sm = artboard.stateMachine(_characterStateMachine) ??
           artboard.defaultStateMachine();
@@ -190,6 +200,7 @@ class DodgeballView extends GameView {
         final scale = height == 0 ? 1.0 : (radius * 3.0) / height;
         canvas.save();
         canvas.translate(e.x, e.y);
+        canvas.rotate(e.angle - _characterFacing);
         canvas.scale(scale);
         character.artboard.draw(rive.Renderer.make(canvas));
         canvas.restore();
