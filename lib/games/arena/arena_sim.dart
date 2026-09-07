@@ -168,6 +168,11 @@ class ArenaSim implements GameSim {
         target.hp = 0;
         target.alive = false;
         target.moveAngle = null;
+        // Their finger is still on the glass, but [onTouch] turns a dead
+        // fighter away — so the up that would have cleared this never arrives,
+        // and without it their joystick would be left painted on the floor.
+        target.touchDown = false;
+        target.blocking = false;
         context.scores.award(attacker.phoneId, ArenaConfig.pointsPerKill);
       }
     }
@@ -236,6 +241,8 @@ class ArenaSim implements GameSim {
       case TouchPhase.down:
         f.touchDownX = touch.worldX;
         f.touchDownY = touch.worldY;
+        f.touchX = touch.worldX;
+        f.touchY = touch.worldY;
         f.touchDownTime = 0;
         f.touchMoved = false;
         f.touchDown = true;
@@ -243,6 +250,8 @@ class ArenaSim implements GameSim {
 
       case TouchPhase.move:
         if (!f.touchDown) return;
+        f.touchX = touch.worldX;
+        f.touchY = touch.worldY;
         final dx = touch.worldX - f.touchDownX;
         final dy = touch.worldY - f.touchDownY;
         final dist = math.sqrt(dx * dx + dy * dy);
@@ -327,6 +336,17 @@ class ArenaSim implements GameSim {
       map['blkCd_$key'] = _quantize(f.blockCooldownLeft);
       map['invincible_$key'] = f.invincibleLeft > 0;
       map['alive_$key'] = f.alive;
+
+      // The stick, and only while a finger is actually down: absent keys are
+      // how the view is told there is nothing to draw, which keeps four dead
+      // numbers per fighter off the wire for the whole of every round nobody
+      // is touching anything.
+      if (f.touchDown && f.alive) {
+        map['stickX_$key'] = _quantize(f.touchDownX);
+        map['stickY_$key'] = _quantize(f.touchDownY);
+        map['stickToX_$key'] = _quantize(f.touchX);
+        map['stickToY_$key'] = _quantize(f.touchY);
+      }
     }
     return map;
   }
@@ -389,6 +409,8 @@ class ArenaSim implements GameSim {
       f.touchDown = false;
       f.touchMoved = false;
       f.touchHeldTime = 0;
+      f.touchX = f.x;
+      f.touchY = f.y;
     }
   }
 
@@ -435,4 +457,11 @@ class _Fighter {
   double touchDownTime = 0;
   bool touchMoved = false;
   double touchHeldTime = 0;
+
+  /// Where the finger is right now, as against [touchDownX]/[touchDownY] where
+  /// it landed. Only the drawn joystick needs it — steering is an angle, and an
+  /// angle does not care how far the drag went — but the stick cannot show a
+  /// tilt it has not been told about.
+  double touchX = 0;
+  double touchY = 0;
 }

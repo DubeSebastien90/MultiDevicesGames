@@ -36,6 +36,23 @@ class ArenaConfig {
   static const int tapMaxMs = 250;
   static const int blockHoldMs = 350;
 
+  // -- joystick ---------------------------------------------------------------
+  /// How far from the anchor the knob travels before it stops following the
+  /// finger. Past this the drag still steers — only the drawing stops moving,
+  /// so the ring reads as a stick at full tilt rather than a dot wandering off
+  /// across the floor.
+  static const double joystickRadius = 2.2; // cm
+
+  static const double joystickKnobRadius = 0.75; // cm
+
+  /// Semi-opaque throughout: the stick sits under the finger, on top of the
+  /// floor a fighter may be standing on, and it is feedback rather than
+  /// furniture.
+  static const int joystickWellAlpha = 40;
+  static const int joystickRingAlpha = 110;
+  static const int joystickDeadZoneAlpha = 70;
+  static const int joystickKnobAlpha = 190;
+
   // -- player colours (ARGB ints) ---------------------------------------------
   static const List<int> playerColors = [
     0xFFE63946, // red
