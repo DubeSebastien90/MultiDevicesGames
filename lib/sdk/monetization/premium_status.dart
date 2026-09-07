@@ -72,17 +72,27 @@ class PremiumStatus extends ChangeNotifier {
 
   /// Whether this build hands out Premium without asking the store.
   ///
-  /// [kDebugMode] is a compile-time constant, so in profile and release builds
-  /// this folds to `false` before the tree shaker runs and every branch below
-  /// it is dropped. There is no runtime path — and no flag anybody could flip
-  /// on a shipped binary — that turns this on in the build customers get.
+  /// True by default in debug, and in **any** build mode — release included —
+  /// when compiled with `--dart-define=UNLOCK_PREMIUM=true`. That second half
+  /// is what lets a release build of the app be play-tested end to end (real
+  /// rendering, real performance, every game in the catalogue) without going
+  /// through the store on each device.
   ///
-  /// `--dart-define=LOCK_PREMIUM=true` puts the real gate back while staying in
-  /// debug. Without that escape hatch the padlocks, the paywall and the retry
-  /// banner become unreachable in the one mode you can attach a debugger to,
-  /// which would trade a testing convenience for a testing hole.
+  /// Both halves are compile-time constants, so a build that was not compiled
+  /// with the define folds this to `false` before the tree shaker runs and
+  /// drops every branch below it: there is still no runtime path, and no flag
+  /// anybody could flip on a shipped binary, that unlocks the build customers
+  /// get. **The store build must simply be built without `UNLOCK_PREMIUM` —
+  /// omit it (or pass `=false`) for anything you ship.**
+  ///
+  /// `--dart-define=LOCK_PREMIUM=true` puts the real gate back, in debug or in
+  /// an unlocked release. Without that escape hatch the padlocks, the paywall
+  /// and the retry banner become unreachable in the one mode you can attach a
+  /// debugger to, which would trade a testing convenience for a testing hole.
+  /// It wins over `UNLOCK_PREMIUM` when both are passed.
   static const bool debugUnlocked =
-      kDebugMode && !bool.fromEnvironment('LOCK_PREMIUM');
+      (kDebugMode || bool.fromEnvironment('UNLOCK_PREMIUM')) &&
+          !bool.fromEnvironment('LOCK_PREMIUM');
 
   /// True once [CustomerInfo] has been fetched at least once. Before that,
   /// [isPremium] is a guess (false) rather than an answer — screens that gate
