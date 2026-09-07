@@ -21,18 +21,31 @@ class DodgeballView extends GameView {
 
   /// The walking character that stands in for the player's body.
   ///
-  /// One artboard for the whole table: every player walks in step, which is
-  /// wrong but cheap, and the point right now is seeing the character move at
-  /// all rather than six independent state machines.
+  /// `UpView_SM` is a single looping `Walk` with no inputs, so standing still
+  /// is not a state the file can be asked for — it is simply the machine not
+  /// being advanced. That is why every player needs their own artboard: they
+  /// stop and start independently, and one shared instance can only be walking
+  /// or frozen for everybody at once.
   static const _characterAsset = 'assets/sdk/animations/bottomDownView.riv';
   static const _characterStateMachine = 'UpView_SM';
+
+  /// World units per second below which a player counts as standing still.
+  ///
+  /// Not zero: positions are interpolated, so a stationary player still jitters
+  /// by a hair between frames and an exact test would flicker the walk on and
+  /// off.
+  static const _walkingSpeed = 0.5;
 
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
 
   rive.File? _riveFile;
-  rive.Artboard? _character;
-  rive.StateMachine? _characterSm;
+
+  /// One artboard + state machine per player entity, made on first sight.
+  final _characters = <String, _Character>{};
+
+  /// Where each player was last frame, to tell walking from standing.
+  final _lastSeen = <String, Offset>{};
 
   @override
   Future<void> load() async {
@@ -45,12 +58,7 @@ class DodgeballView extends GameView {
         riveFactory: rive.Factory.flutter,
       );
       if (file == null) throw StateError('not found');
-      final artboard = file.defaultArtboard();
-      if (artboard == null) throw StateError('no artboard');
-      _characterSm = artboard.stateMachine(_characterStateMachine) ??
-          artboard.defaultStateMachine();
       _riveFile = file;
-      _character = artboard;
     } on Object catch (e) {
       // Falls back to the sphere. A missing character is a uglier game, not a
       // broken one.
@@ -58,12 +66,35 @@ class DodgeballView extends GameView {
     }
   }
 
+  /// The character for one player, or null while the file is missing.
+  _Character? _characterFor(String id) {
+    final existing = _characters[id];
+    if (existing != null) return existing;
+    final file = _riveFile;
+    if (file == null) return null;
+    try {
+      final artboard = file.defaultArtboard();
+      if (artboard == null) throw StateError('no artboard');
+      final sm = artboard.stateMachine(_characterStateMachine) ??
+          artboard.defaultStateMachine();
+      // Once, so the artboard holds the first frame of the walk rather than
+      // whatever pose it was exported in.
+      sm?.advanceAndApply(0);
+      final character = _Character(artboard, sm);
+      _characters[id] = character;
+      return character;
+    } on Object catch (e) {
+      debugPrint('[dodgeball] no character for $id: $e');
+      return null;
+    }
+  }
+
   @override
   void dispose() {
+    _characters.clear();
+    _lastSeen.clear();
     _riveFile?.dispose();
     _riveFile = null;
-    _character = null;
-    _characterSm = null;
     super.dispose();
   }
 
@@ -101,11 +132,6 @@ class DodgeballView extends GameView {
         _fill,
       );
     }
-
-    // One advance per frame, before anybody is drawn — every player shares the
-    // artboard, so advancing per player would run the walk cycle six times as
-    // fast.
-    _characterSm?.advanceAndApply(frame.dt);
 
     // Draw players.
     for (final e in frame.ofKind('player')) {
@@ -147,15 +173,25 @@ class DodgeballView extends GameView {
 
       // Player body: the walking character, or the old sphere when the file
       // is not there.
-      final character = _character;
+      final character = _characterFor(e.id);
       if (character != null) {
-        final bounds = character.bounds;
-        final height = bounds.height;
+        // Walk only while actually moving. With no input on the state machine,
+        // 'idle' is the machine not being advanced — it holds whatever frame of
+        // the cycle the player stopped on.
+        final here = Offset(e.x, e.y);
+        final before = _lastSeen[e.id];
+        _lastSeen[e.id] = here;
+        final moving = before != null &&
+            frame.dt > 0 &&
+            (here - before).distance / frame.dt > _walkingSpeed;
+        if (moving) character.stateMachine?.advanceAndApply(frame.dt);
+
+        final height = character.artboard.bounds.height;
         final scale = height == 0 ? 1.0 : (radius * 3.0) / height;
         canvas.save();
         canvas.translate(e.x, e.y);
         canvas.scale(scale);
-        character.draw(rive.Renderer.make(canvas));
+        character.artboard.draw(rive.Renderer.make(canvas));
         canvas.restore();
       } else {
         _fill.color =
@@ -313,4 +349,12 @@ class DodgeballView extends GameView {
       child: Row(mainAxisSize: MainAxisSize.min, children: parts),
     );
   }
+}
+
+/// One player's own copy of the walking character.
+class _Character {
+  _Character(this.artboard, this.stateMachine);
+
+  final rive.Artboard artboard;
+  final rive.StateMachine? stateMachine;
 }
