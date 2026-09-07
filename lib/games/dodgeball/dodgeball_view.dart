@@ -2,19 +2,25 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
-import 'package:rive/rive.dart' as rive;
 
 import '../../sdk/contract/view.dart';
 import '../../sdk/model/player.dart';
-import '../../sdk/ui/intro_animation.dart';
+import '../../sdk/render/player_animation.dart';
 import 'dodgeball_config.dart';
 
 /// Renders the dodgeball game: players, bouncing balls, dash effects, and
 /// countdown/game-over overlays.
 class DodgeballView extends GameView {
-  DodgeballView({required this.phoneId, this.roster = Roster.empty});
+  DodgeballView({
+    required this.phoneId,
+    this.characters = PlayerAnimations.none,
+    this.roster = Roster.empty,
+  });
 
   final String phoneId;
+
+  /// Everyone's walking character, loaded and coloured by the platform.
+  final PlayerAnimations characters;
 
   /// Everyone in the round, for their platform colour. The sim ships a colour
   /// of its own on the entity, but the one a player recognises across the table
@@ -25,16 +31,6 @@ class DodgeballView extends GameView {
   static const _ballColor = Color(0xFFFF4444);
   static const _ballGlowColor = Color(0x44FF4444);
 
-  /// The walking character that stands in for the player's body.
-  ///
-  /// `UpView_SM` is a single looping `Walk` with no inputs, so standing still
-  /// is not a state the file can be asked for — it is simply the machine not
-  /// being advanced. That is why every player needs their own artboard: they
-  /// stop and start independently, and one shared instance can only be walking
-  /// or frozen for everybody at once.
-  static const _characterAsset = 'assets/sdk/animations/bottomDownView.riv';
-  static const _characterStateMachine = 'UpView_SM';
-
   /// World units per second below which a player counts as standing still.
   ///
   /// Not zero: positions are interpolated, so a stationary player still jitters
@@ -42,125 +38,11 @@ class DodgeballView extends GameView {
   /// off.
   static const _walkingSpeed = 0.5;
 
-  /// Which way the character is drawn, in the same convention as `angle`:
-  /// 0 is +x, `pi / 2` is down the screen — which is how this one is drawn,
-  /// despite the artboard being called `UpView_Artboard`. Everything is rotated
-  /// by the difference between where the player is heading and this.
-  static const _characterFacing = math.pi / 2;
-
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
 
-  rive.File? _riveFile;
-
-  /// One artboard + state machine per player entity, made on first sight.
-  final _characters = <String, _Character>{};
-
   /// Where each player was last frame, to tell walking from standing.
   final _lastSeen = <String, Offset>{};
-
-  @override
-  Future<void> load() async {
-    // Same gate as the intro: on a platform where `rive_native` takes the
-    // process down there is nothing to catch, so do not even load.
-    if (!IntroAnimation.available) return;
-    try {
-      final file = await rive.File.asset(
-        _characterAsset,
-        riveFactory: rive.Factory.flutter,
-      );
-      if (file == null) throw StateError('not found');
-      _riveFile = file;
-    } on Object catch (e) {
-      // Falls back to the sphere. A missing character is a uglier game, not a
-      // broken one.
-      debugPrint('[dodgeball] $_characterAsset did not load: $e');
-    }
-  }
-
-  /// The character for one player, or null while the file is missing.
-  ///
-  /// Made once and kept, but repainted whenever [color] changes: a seat can
-  /// change hands between rounds, and a character still wearing the last
-  /// round's colour is how somebody ends up chasing the wrong body.
-  _Character? _characterFor(String id, Color color) {
-    final existing = _characters[id];
-    if (existing != null) {
-      if (existing.color != color) {
-        existing.color = color;
-        existing.skin?.value = color;
-      }
-      return existing;
-    }
-    final file = _riveFile;
-    if (file == null) return null;
-    try {
-      // `frameOrigin: true` puts the artboard's top-left at (0, 0) — the
-      // centring is done by hand at draw time, which is the only version of it
-      // that behaves the same on every runtime.
-      final artboard = file.defaultArtboard(frameOrigin: true);
-      if (artboard == null) throw StateError('no artboard');
-      final sm = artboard.stateMachine(_characterStateMachine) ??
-          artboard.defaultStateMachine();
-      final skin = _colorProperty(file, artboard, sm);
-      skin?.value = color;
-      // Once, so the artboard holds the first frame of the walk rather than
-      // whatever pose it was exported in.
-      sm?.advanceAndApply(0);
-      final character = _Character(artboard, sm, skin, color);
-      _characters[id] = character;
-      return character;
-    } on Object catch (e) {
-      debugPrint('[dodgeball] no character for $id: $e');
-      return null;
-    }
-  }
-
-  /// The skin colour of one character's artboard, ready to be written to.
-  ///
-  /// The property is found by type rather than by name — the file's view model
-  /// carries exactly one colour — so renaming `skinOne` in the editor costs
-  /// nothing here. Never fatal: a file exported without its view model means
-  /// eight characters in the colour they were drawn, which is a duller game
-  /// rather than a broken one, and the log line is the only way anybody would
-  /// know why.
-  rive.ViewModelInstanceColor? _colorProperty(
-    rive.File file,
-    rive.Artboard artboard,
-    rive.StateMachine? stateMachine,
-  ) {
-    try {
-      final viewModel = file.defaultArtboardViewModel(artboard);
-      // Its own instance, per artboard: a shared one would repaint every
-      // character on the table the colour of whoever was coloured last.
-      final instance = viewModel?.createDefaultInstance();
-      if (viewModel == null || instance == null) {
-        debugPrint('[dodgeball] $_characterAsset has no view model — '
-            'characters keep the colour they were drawn');
-        return null;
-      }
-      artboard.bindViewModelInstance(instance);
-      stateMachine?.bindViewModelInstance(instance);
-      for (final property in viewModel.properties) {
-        if (property.type != rive.DataType.color) continue;
-        return instance.color(property.name);
-      }
-      debugPrint('[dodgeball] no colour property on ${viewModel.name}');
-      return null;
-    } on Object catch (e) {
-      debugPrint('[dodgeball] could not colour the character: $e');
-      return null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _characters.clear();
-    _lastSeen.clear();
-    _riveFile?.dispose();
-    _riveFile = null;
-    super.dispose();
-  }
 
   @override
   void render(Canvas canvas, Frame frame) {
@@ -241,38 +123,32 @@ class DodgeballView extends GameView {
         );
       }
 
-      // Player body: the walking character, or the old sphere when the file
-      // is not there.
-      final character = _characterFor(e.id, color);
-      if (character != null) {
-        // Walk only while actually moving. With no input on the state machine,
-        // 'idle' is the machine not being advanced — it holds whatever frame of
-        // the cycle the player stopped on.
-        final here = Offset(e.x, e.y);
-        final before = _lastSeen[e.id];
-        _lastSeen[e.id] = here;
-        final moving = before != null &&
-            frame.dt > 0 &&
-            (here - before).distance / frame.dt > _walkingSpeed;
-        if (moving) character.stateMachine?.advanceAndApply(frame.dt);
+      // Player body. The character walks only while the player is actually
+      // moving; `RenderEntity` carries no velocity, so movement is the distance
+      // covered since the last frame.
+      final here = Offset(e.x, e.y);
+      final before = _lastSeen[e.id];
+      _lastSeen[e.id] = here;
+      final moving = before != null &&
+          frame.dt > 0 &&
+          (here - before).distance / frame.dt > _walkingSpeed;
 
-        final bounds = character.artboard.bounds;
-        final height = bounds.height;
-        final scale = height == 0 ? 1.0 : (radius * 3.0) / height;
-        canvas.save();
-        canvas.translate(e.x, e.y);
-        canvas.rotate(e.angle - _characterFacing);
-        canvas.scale(scale);
-        // The artboard draws from its top-left, so pull it back by half its
-        // size: the player's position is then the middle of the character, and
-        // the rotation above turns about that same point.
-        canvas.translate(-bounds.width / 2, -bounds.height / 2);
-        character.artboard.draw(rive.Renderer.make(canvas));
-        canvas.restore();
-      } else {
+      // A seat nobody is sitting in yet has no platform colour to ask for a
+      // character with, so it stays the sim's own circle.
+      if (seated == null) {
         _fill.color =
             isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
-        canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
+        canvas.drawCircle(here, radius, _fill);
+      } else {
+        final character = characters.of(seated.color);
+        moving ? character.start() : character.stop();
+        character.draw(
+          canvas,
+          here,
+          worldSize: radius * 3,
+          dt: frame.dt,
+          angle: e.angle,
+        );
       }
     }
 
@@ -410,18 +286,4 @@ class DodgeballView extends GameView {
       child: Row(mainAxisSize: MainAxisSize.min, children: parts),
     );
   }
-}
-
-/// One player's own copy of the walking character.
-class _Character {
-  _Character(this.artboard, this.stateMachine, this.skin, this.color);
-
-  final rive.Artboard artboard;
-  final rive.StateMachine? stateMachine;
-
-  /// The view model's colour property, or null in a file without one.
-  final rive.ViewModelInstanceColor? skin;
-
-  /// What [skin] was last set to, so an unchanged colour costs nothing.
-  Color color;
 }
