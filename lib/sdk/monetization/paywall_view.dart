@@ -57,6 +57,17 @@ class _PaywallSheetState extends State<PaywallSheet> {
   }
 
   Future<void> _loadOfferings() async {
+    // The native SDK crashes rather than throwing a catchable error when
+    // asked for anything before [Purchases.configure] has succeeded — this
+    // sheet can be reached even when it never did (missing API key, or the
+    // store timing out at launch), so it must check before calling in.
+    if (!widget.premium.isConfigured) {
+      setState(() {
+        _error = widget.premium.error ?? "Couldn't reach the store.";
+        _loadingOfferings = false;
+      });
+      return;
+    }
     try {
       final offerings = await Purchases.getOfferings();
       if (!mounted) return;
@@ -89,6 +100,10 @@ class _PaywallSheetState extends State<PaywallSheet> {
   }
 
   Future<void> _buy(Package package) async {
+    if (!widget.premium.isConfigured) {
+      setState(() => _error = "Couldn't reach the store.");
+      return;
+    }
     setState(() {
       _purchasing = true;
       _error = null;
@@ -123,6 +138,10 @@ class _PaywallSheetState extends State<PaywallSheet> {
   }
 
   Future<void> _restore() async {
+    if (!widget.premium.isConfigured) {
+      setState(() => _error = "Couldn't reach the store.");
+      return;
+    }
     setState(() {
       _purchasing = true;
       _error = null;
