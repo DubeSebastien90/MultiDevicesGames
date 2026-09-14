@@ -40,6 +40,17 @@ class NameDropSupport {
   @visibleForTesting
   static void reset() => _cached = null;
 
+  /// Pretend every device can NameDrop while running a debug build.
+  ///
+  /// The notice is otherwise unreachable off an iPhone, which makes its
+  /// wording, its layout and the walkthrough behind it impossible to look at
+  /// on the emulator or the desktop build most of the work happens on. In a
+  /// release build this is const `false` and the branch below compiles out.
+  ///
+  /// Set to false from a test that needs the real answer in debug.
+  @visibleForTesting
+  static bool debugAlwaysSupported = kDebugMode;
+
   static Future<bool> onThisDevice() async {
     final cached = _cached;
     if (cached != null) return cached;
@@ -47,6 +58,8 @@ class NameDropSupport {
   }
 
   static Future<bool> _ask() async {
+    if (kDebugMode && debugAlwaysSupported) return true;
+
     // Skips the channel round trip on the platforms that are most of the
     // table, and keeps the web build — where the channel does not exist at
     // all — from relying on the catch below.
