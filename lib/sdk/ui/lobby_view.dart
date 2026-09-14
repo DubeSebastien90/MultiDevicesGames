@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -94,7 +95,18 @@ class LobbyView extends StatelessWidget {
                     TableNotice(controller: controller),
                   ],
                   if (host != null) ...[
-                    if (host.planError != null) ...[
+                    // Debug builds only. Two of the three things that set this
+                    // are internal failures — a game's `planBoard` refusing the
+                    // table, or its `createSim` throwing — and their text is a
+                    // class name and an exception, which is a bug report, not a
+                    // message for whoever is hosting games night. The third,
+                    // the playlist running out for a shrunken table, is worth
+                    // saying but is already said properly: `_layOutAgain` sets
+                    // a [TableChange] alongside it and [TableChangeScreen]
+                    // takes the whole screen on every phone. So nothing a
+                    // player needs is lost by hiding this, and in release they
+                    // simply land back in the lobby.
+                    if (kDebugMode && host.planError != null) ...[
                       const SizedBox(height: 14),
                       _PlanErrorBanner(
                         message: host.planError!,
@@ -185,6 +197,8 @@ String _gamesLine(HostSession host) {
 
 /// A game whose `planBoard` produced something unusable. Shown here because
 /// this is where the round would have started, and it never did.
+///
+/// Built only under [kDebugMode] — see the call site for why.
 class _PlanErrorBanner extends StatelessWidget {
   const _PlanErrorBanner({required this.message, required this.onDismiss});
 
