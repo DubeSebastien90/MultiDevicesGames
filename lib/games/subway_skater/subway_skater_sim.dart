@@ -101,15 +101,7 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
       ..clear()
       ..addAll([
         for (var i = 0; i < SubwaySkaterConfig.obstaclePool; i++)
-          _Obstacle(EntityDescriptor(
-            id: 'block$i',
-            kind: 'obstacle',
-            props: {
-              'w': SubwaySkaterConfig.obstacleLength,
-              'h': SubwaySkaterConfig.laneHeight(board) *
-                  SubwaySkaterConfig.obstacleLaneFraction,
-            },
-          )),
+          _Obstacle('block$i'),
       ]);
 
     _bursts
@@ -200,14 +192,23 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     );
     final count = _random.nextDouble() < chance ? 2 : 1;
 
-    final startX = context.board.left - SubwaySkaterConfig.obstacleLength;
+    final board = context.board;
+    final length = SubwaySkaterConfig.obstacleLength(board);
+    final startX = board.left - length;
     for (final lane in blocked.take(count)) {
       final free = _obstacles.where((o) => !o.active);
       if (free.isEmpty) return;
-      free.first
-        ..active = true
-        ..lane = lane
-        ..x = startX;
+      free.first.light(
+        lane: lane,
+        x: startX,
+        // Which car, drawn once here rather than derived from the pool slot.
+        // The pool hands out the first free block, so anything keyed to the id
+        // would deal the two colours out in a visible cycle — traffic that
+        // repeats itself is traffic players start reading ahead.
+        car: _random.nextInt(SubwaySkaterConfig.carVariants),
+        w: length,
+        h: SubwaySkaterConfig.obstacleHeight(board),
+      );
     }
   }
 
@@ -218,8 +219,8 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
   }
 
   void _moveObstacles(double dt) {
-    final limit =
-        context.board.right + SubwaySkaterConfig.obstacleLength * 2;
+    final limit = context.board.right +
+        SubwaySkaterConfig.obstacleLength(context.board) * 2;
     final speed = SubwaySkaterConfig.speedAt(_elapsed);
     for (final o in _obstacles) {
       if (!o.active) continue;
@@ -318,8 +319,8 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
       (s.x - _anchorX(slot)).abs() < 1e-6;
 
   void _collide() {
-    final reach =
-        SubwaySkaterConfig.skaterRadius + SubwaySkaterConfig.obstacleLength / 2;
+    final reach = SubwaySkaterConfig.skaterRadius +
+        SubwaySkaterConfig.obstacleLength(context.board) / 2;
 
     for (final o in _obstacles) {
       if (!o.active) continue;
@@ -573,7 +574,7 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     for (final o in _obstacles) {
       if (!o.active) continue;
       yield Entity(
-        descriptor: o.descriptor,
+        descriptor: o.descriptor!,
         x: o.x,
         y: SubwaySkaterConfig.laneCenter(board, o.lane),
         vx: SubwaySkaterConfig.obstacleSpeed,
@@ -713,15 +714,39 @@ class _Skater {
   int smashed = 0;
 }
 
+/// One car coming down the corridor.
+///
+/// The descriptor is rebuilt on every launch rather than made once with the
+/// pool, for the same reason [_Burst]'s is: props are sent on spawn, a pooled
+/// id coming back *is* a spawn, and which of the two cars this one is has to
+/// travel with it. Everyone watching it cross four phones has to see the same
+/// car, and they only ever get told once.
 class _Obstacle {
-  _Obstacle(this.descriptor);
+  _Obstacle(this.id);
 
-  final EntityDescriptor descriptor;
-  String get id => descriptor.id;
+  final String id;
+  EntityDescriptor? descriptor;
 
   bool active = false;
   double x = 0;
   int lane = 0;
+
+  void light({
+    required int lane,
+    required double x,
+    required int car,
+    required double w,
+    required double h,
+  }) {
+    this.lane = lane;
+    this.x = x;
+    active = true;
+    descriptor = EntityDescriptor(
+      id: id,
+      kind: 'obstacle',
+      props: {'w': w, 'h': h, 'car': car},
+    );
+  }
 }
 
 /// What is left of a block somebody ran through.

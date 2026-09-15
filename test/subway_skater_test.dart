@@ -572,12 +572,29 @@ void main() {
 
       // It really travels: dragged downstream, and still short of the back —
       // the circle rides the corridor rather than teleporting to the end of it.
-      run(sim, 0.3);
+      //
+      // Sampled twice inside the same three tenths of a second the tumble used
+      // to be measured over, so the landing further down still happens on the
+      // tick it always did.
+      run(sim, 0.15);
+      final early = skaterOf(sim, 'p1').x;
+      run(sim, 0.15);
       final travelling = skaterOf(sim, 'p1').x;
-      expect(travelling, greaterThan(anchorOf(started.board, 0) + 2),
+      expect(travelling, greaterThan(anchorOf(started.board, 0)),
           reason: 'the circle was not carried anywhere');
       expect(travelling, lessThan(anchorOf(started.board, 2)),
           reason: 'it arrived at the back without making the journey');
+
+      // Read as a speed rather than as a head start from the front post, which
+      // is what this used to check. A rider is pinned to the middle of whatever
+      // carries them, so a fixed margin from the post was really an assertion
+      // about how long an obstacle is — and it went red the day the blocks
+      // became cars, with nothing about the tumble having changed.
+      expect(
+        travelling - early,
+        closeTo(SubwaySkaterConfig.speedAt(0) * 0.15, 0.4),
+        reason: 'the circle was not keeping up with the corridor carrying it',
+      );
 
       // Long enough for the block carrying them to clear the far end.
       run(sim, started.board.board.width / SubwaySkaterConfig.obstacleSpeed);

@@ -85,6 +85,13 @@ flutter:
     - assets/sdk/sfx/
     - assets/sdk/animations/
 
+    # A game's own art, in a folder named for the game, so the next game's
+    # assets have to say their own name here too. The corridor tile stays
+    # outside it for now only because moving it is a rename, not a decision:
+    # 45cm x 7cm of world at 100 pixels to the centimetre, as the filename says.
+    - assets/corridor-tile-45x7cm@100px-cm.svg
+    - assets/subway_skater/
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

@@ -124,12 +124,63 @@ class SubwaySkaterConfig {
   /// thing comes at it.
   static const double leadInSeconds = 1.6;
 
+  /// How long one tile of the corridor floor is, along the run.
+  ///
+  /// Three phone-lengths, which is where the repeat stops announcing itself. A
+  /// four-phone table shows barely more than one tile at a time, so the same
+  /// patch of floor is almost never on two screens at once; and at the speeds
+  /// above it comes round about every three seconds, far enough from
+  /// [firstSpawnGap]–[lastSpawnGap] that the floor never starts beating time
+  /// with the waves — which is what makes a tiled background look tiled.
+  ///
+  /// The art is drawn to this length exactly and stretched to the corridor's
+  /// height, so a table of shorter phones squashes it by a few percent rather
+  /// than cropping it.
+  static const double floorTileLength = 45;
+
   /// The skater's circle.
   static const double skaterRadius = 0.85;
 
-  /// The obstacle, along the corridor and across a lane.
-  static const double obstacleLength = 1.8;
+  /// How much of its lane a car reaches across.
+  ///
+  /// The gap either side is what makes a blocked lane read as blocked and a
+  /// clear one as clear from the far end of the table, so this is a legibility
+  /// number rather than a physical one. It is also the only knob on how big a
+  /// car is: turn it up and cars get longer too, because [obstacleLength]
+  /// follows from it — see [carAspect].
   static const double obstacleLaneFraction = 0.7;
+
+  /// The car art's own proportions — `1205 / 612`, straight off the viewBox of
+  /// `assets/subway_skater/Car1.svg`.
+  ///
+  /// The size of an obstacle is settled in one direction only: the lane fixes
+  /// how far across a car reaches, and the art fixes how long it is. Doing it
+  /// the other way round — a length chosen here and a car squashed into it —
+  /// is how a two-to-one car ends up drawn nearly square.
+  ///
+  /// **This made obstacles longer than the blocks they replaced**, and there
+  /// was no version of this swap that did not: a car is about twice as long as
+  /// it is wide and a lane is only so tall. At the speeds above it costs the
+  /// player roughly five hundredths of a second of warning. If the corridor
+  /// ever reads as unfair, [standFraction] is the knob that gives the runway
+  /// back — not this one, which would only shrink the cars.
+  static const double carAspect = 1205 / 612;
+
+  /// How far a car reaches across its lane, in world units.
+  static double obstacleHeight(WorldRect board) =>
+      laneHeight(board) * obstacleLaneFraction;
+
+  /// How long a car is along the corridor — and the length it is hit at.
+  ///
+  /// Drawn size and hitbox are deliberately the same number. A corridor where
+  /// the thing you can see and the thing that knocks you down are different
+  /// lengths is one players stop trusting, and they stop trusting it without
+  /// ever being able to say why.
+  static double obstacleLength(WorldRect board) =>
+      obstacleHeight(board) * carAspect;
+
+  /// How many cars there are to pick from, in `assets/subway_skater/`.
+  static const int carVariants = 2;
 
   /// Where a skater stands on its own phone, measured from the top of the
   /// corridor — the edge obstacles arrive at — as a fraction of that phone.

@@ -1,6 +1,8 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
@@ -19,15 +21,83 @@ class SubwaySkaterView extends GameView {
   final ViewContext context;
 
   static const _void = Color(0xFF05070D);
-  static const _floor = Color(0xFF101A2E);
+
+  /// The asphalt under the tile, and the same grey the tile is painted on.
+  ///
+  /// Matched on purpose, twice over: it is what shows for the frame or two
+  /// before the art lands, and it is what shows through any sub-pixel crack
+  /// between two tiles laid end to end. Either one against the old navy floor
+  /// would be a flash of a different corridor.
+  static const _floor = Color(0xFF737373);
   static const _rail = Color(0xFF3D5A8A);
-  static const _laneMark = Color(0x40C7E0FF);
+
+  /// Road paint. Worn rather than fresh — full-strength yellow on grey is
+  /// brighter than the obstacles, and the thing a player has to see first is
+  /// the block, not the lane it is in.
+  static const _laneMark = Color(0xE6EFC03A);
   static const _hazard = Color(0xFFFF6B3D);
   static const _hazardCore = Color(0xFF7A2410);
   static const _charge = Color(0xFFFFD166);
 
+  /// Lane markings, in physical pixels.
+  ///
+  /// In pixels and not world units because this is a line rather than an
+  /// object: it wants to be the same weight to the eye on every phone at the
+  /// table, not the same number of millimetres on the glass.
+  static const _laneMarkPx = 2.5;
+
   final _paint = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
+
+  /// The floor art. Nothing waits on it and nothing checks it — see
+  /// [_RasterSvg].
+  ///
+  /// Rasterised short of 4096, which is still the largest texture some of the
+  /// phones at a table will take — a wider bitmap is re-tiled or dropped on
+  /// exactly the devices least able to afford either. The art is authored at
+  /// 4500, so this is a touch softer than native; it is flat asphalt and
+  /// low-contrast scuffs, and everything with an edge on it is drawn over the
+  /// top. Filtered low rather than medium on purpose: a tile is drawn at close
+  /// to its own size, and mipmaps would blur across the seam where two of them
+  /// meet.
+  final _tile = _RasterSvg(
+    'assets/corridor-tile-45x7cm@100px-cm.svg',
+    rasterWidth: 3600,
+    filterQuality: FilterQuality.low,
+  );
+
+  /// The traffic. Two cars, indexed by the `car` prop each obstacle spawns
+  /// with — see the sim for why the choice rides in props rather than being
+  /// worked out here.
+  ///
+  /// A car is about three centimetres of corridor and a phone runs near 180
+  /// pixels to the centimetre, so it lands on screen at roughly 550 pixels
+  /// wide. Rasterised above that and filtered down, which is the way round
+  /// that stays sharp: the cars are the only thing in this corridor with a
+  /// hard edge and a silhouette worth reading. Unlike the floor these are
+  /// scaled down a long way and never tiled, so mipmaps cost nothing and save
+  /// the shimmer.
+  static const _carRasterWidth = 768;
+  final _cars = [
+    for (var i = 1; i <= SubwaySkaterConfig.carVariants; i++)
+      _RasterSvg('assets/subway_skater/Car$i.svg',
+          rasterWidth: _carRasterWidth),
+  ];
+
+  @override
+  Future<void> load() async {
+    // Together rather than one after another: three decodes on the same frame
+    // budget, and the round is waiting on all of them.
+    await Future.wait([_tile.load(), for (final car in _cars) car.load()]);
+  }
+
+  @override
+  void dispose() {
+    _tile.dispose();
+    for (final car in _cars) {
+      car.dispose();
+    }
+  }
 
   /// Who is mid-tumble and who is charging, unpacked from shared state only
   /// when it changes.
@@ -46,7 +116,7 @@ class SubwaySkaterView extends GameView {
 
     _drawCorridor(canvas, frame);
     for (final o in frame.ofKind('obstacle')) {
-      _drawObstacle(canvas, o);
+      _drawObstacle(canvas, frame, o);
     }
     for (final b in frame.ofKind('burst')) {
       _drawBurst(canvas, frame, b);
@@ -110,6 +180,7 @@ class SubwaySkaterView extends GameView {
       Rect.fromLTRB(left, board.top, right, board.bottom),
       _paint,
     );
+    _drawFloorTiles(canvas, frame, left, right);
 
     _stroke
       ..color = _rail
@@ -126,6 +197,53 @@ class SubwaySkaterView extends GameView {
     );
 
     _drawLaneDashes(canvas, frame, left, right);
+  }
+
+  /// The floor itself, laid end to end along the corridor.
+  ///
+  /// Phased exactly as the lane markings are — on `frame.timeMs` through
+  /// [SubwaySkaterConfig.travelAt] — because the two are the same surface. A
+  /// background on any other clock, or at any other rate, would slide
+  /// underneath the dashes and read as the floor coming apart.
+  ///
+  /// At three phone-lengths a tile, a phone sees at most two of these, so the
+  /// loop is a couple of draws whatever the table is doing.
+  void _drawFloorTiles(Canvas canvas, Frame frame, double left, double right) {
+    final image = _tile.image;
+    if (image == null) return;
+
+    const len = SubwaySkaterConfig.floorTileLength;
+    final phase = SubwaySkaterConfig.travelAt(frame.timeMs / 1000) % len;
+    final board = frame.board;
+
+    canvas
+      ..save()
+      // Clipped, because a tile is laid on a grid of its own and the one
+      // straddling the end of the board would otherwise paint corridor out into
+      // the void beside it.
+      ..clipRect(Rect.fromLTRB(left, board.top, right, board.bottom));
+
+    final src = Rect.fromLTWH(
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
+    // Start at the first tile at or before the visible left edge, so which tile
+    // lands where depends only on world position and never on which phone is
+    // asking — the same reasoning as the dashes below.
+    var x = (left / len).floorToDouble() * len + phase - len;
+    while (x < right) {
+      canvas.drawImageRect(
+        image,
+        src,
+        Rect.fromLTRB(x, board.top, x + len, board.bottom),
+        _tile.paint,
+      );
+      x += len;
+    }
+
+    canvas.restore();
   }
 
   /// Dashes between the lanes, sliding down the corridor at the speed the
@@ -145,7 +263,7 @@ class SubwaySkaterView extends GameView {
 
     _stroke
       ..color = _laneMark
-      ..strokeWidth = frame.onePixel * 1.5;
+      ..strokeWidth = frame.onePixel * _laneMarkPx;
 
     for (var lane = 1; lane < SubwaySkaterConfig.lanes; lane++) {
       final y = board.top + board.height * lane / SubwaySkaterConfig.lanes;
@@ -161,13 +279,38 @@ class SubwaySkaterView extends GameView {
     }
   }
 
-  void _drawObstacle(Canvas canvas, RenderEntity o) {
-    final w = o.propDouble('w', SubwaySkaterConfig.obstacleLength);
-    final h = o.propDouble('h', 1);
+  /// A car, coming at you nose first.
+  ///
+  /// Drawn unrotated, and that is the art's doing rather than luck: the cars
+  /// are authored pointing `+x`, which is the way the corridor runs, so the end
+  /// of the picture with the mirrors on it is the end that reaches a player
+  /// first. Obstacles carry no angle for the same reason — nothing in this
+  /// corridor is ever turned except a skater mid-tumble.
+  void _drawObstacle(Canvas canvas, Frame frame, RenderEntity o) {
+    final w = o.propDouble('w', SubwaySkaterConfig.obstacleLength(frame.board));
+    final h = o.propDouble('h', SubwaySkaterConfig.obstacleHeight(frame.board));
     final rect =
         Rect.fromCenter(center: Offset(o.x, o.y), width: w, height: h);
-    final rounded = RRect.fromRectXY(rect, h * 0.25, h * 0.25);
 
+    // Which car, decided when this one spawned and the same on every phone it
+    // crosses. Wrapped rather than trusted: a prop that outlived the art it
+    // indexes should put a car on the road, not take the round down.
+    final car = _cars[o.propInt('car').abs() % _cars.length];
+    final image = car.image;
+    if (image != null) {
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        rect,
+        car.paint,
+      );
+      return;
+    }
+
+    // No art on this phone. The painted block the cars replaced is still a
+    // complete drawing of an obstacle — the right length, in the right lane,
+    // at the right moment — so this corridor is playable rather than pretty.
+    final rounded = RRect.fromRectXY(rect, h * 0.25, h * 0.25);
     _paint.color = _hazard;
     canvas.drawRRect(rounded, _paint);
 
@@ -332,5 +475,70 @@ class SubwaySkaterView extends GameView {
       3 => '${n}rd',
       _ => '${n}th',
     };
+  }
+}
+
+/// A piece of this game's art: a vector on disk, a bitmap by the time anyone
+/// looks at it.
+///
+/// Rasterised once during placement rather than replayed per frame, because
+/// each of these is laid down several times a frame on every phone at the table
+/// and the paths in them never change shape — only where they sit. A corridor
+/// with a dozen cars in flight is a dozen `drawImageRect`s either way; the
+/// difference is whether it is also a dozen path tessellations.
+///
+/// **A failure here is a plainer corridor, never a round that will not start.**
+/// The client turns a throw out of `GameView.load` into "Could not load Subway
+/// Skater" on somebody's screen, so this swallows its own and every caller has
+/// something to draw without it — flat grey for the floor, the old painted
+/// blocks for the cars. Artwork does not get to decide whether people can play.
+class _RasterSvg {
+  _RasterSvg(
+    this.asset, {
+    required this.rasterWidth,
+    FilterQuality filterQuality = FilterQuality.medium,
+  }) : paint = Paint()
+          ..isAntiAlias = true
+          ..filterQuality = filterQuality;
+
+  final String asset;
+
+  /// How wide the art is rasterised, in pixels. Its height follows from the
+  /// viewBox, so the bitmap is never a different shape from the drawing.
+  final int rasterWidth;
+
+  /// The alpha is what modulates an image; the colour is ignored.
+  final Paint paint;
+
+  ui.Image? _image;
+  bool _started = false;
+
+  ui.Image? get image => _image;
+
+  Future<void> load() async {
+    if (_started) return;
+    _started = true;
+    try {
+      final picture = await vg.loadPicture(SvgAssetLoader(asset), null);
+      final size = picture.size;
+      final height = (rasterWidth * size.height / size.width).round();
+
+      final recorder = ui.PictureRecorder();
+      Canvas(recorder)
+        ..scale(rasterWidth / size.width, height / size.height)
+        ..drawPicture(picture.picture);
+      final flattened = recorder.endRecording();
+
+      _image = await flattened.toImage(rasterWidth, height);
+      flattened.dispose();
+      picture.picture.dispose();
+    } on Object catch (e) {
+      debugPrint('[subway skater] $asset did not load: $e');
+    }
+  }
+
+  void dispose() {
+    _image?.dispose();
+    _image = null;
   }
 }
