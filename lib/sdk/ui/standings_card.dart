@@ -210,29 +210,61 @@ class _ScoreList extends StatefulWidget {
 class _ScoreListState extends State<_ScoreList> {
   final _controller = ScrollController();
 
+  /// Whether there is anything below the fold, and so whether the bar is out.
+  bool _scrolls = false;
+
+  /// What the bar takes: its own track plus the breath either side of it.
+  static const _gutter = 12.0;
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
+  /// The scrollbar is drawn over the list, not beside it, and what it lands on
+  /// is the right-hand end of every row — which is where the scores are. So the
+  /// rows give it a lane when there is a bar, and take the space back when
+  /// there is not.
+  ///
+  /// Answered by the viewport rather than by counting rows: how tall a row is
+  /// depends on the text size the player has chosen, and the only thing that
+  /// has actually measured one is the layout that just ran. Applied after that
+  /// frame, because this arrives mid-layout and nothing may be marked dirty
+  /// from there.
+  ///
+  /// Settles in one pass: the lane is horizontal and the extent it feeds back
+  /// is vertical, so widening the rows cannot change the answer.
+  bool _onMetrics(ScrollMetricsNotification note) {
+    final scrolls = note.metrics.maxScrollExtent > 0;
+    if (scrolls == _scrolls) return false;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _scrolls = scrolls);
+    });
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: widget.maxHeight),
-      child: Scrollbar(
-        controller: _controller,
-        child: ListView(
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: _onMetrics,
+        child: Scrollbar(
           controller: _controller,
-          // Sized by its rows up to the ceiling above, rather than filling
-          // whatever it is given.
-          shrinkWrap: true,
-          // This card is usually inside another scroll view, and two vertical
-          // lists both claiming the PrimaryScrollController is an assertion at
-          // runtime rather than a subtle bug.
-          primary: false,
-          padding: EdgeInsets.zero,
-          children: widget.children,
+          child: ListView(
+            controller: _controller,
+            // Sized by its rows up to the ceiling above, rather than filling
+            // whatever it is given.
+            shrinkWrap: true,
+            // This card is usually inside another scroll view, and two vertical
+            // lists both claiming the PrimaryScrollController is an assertion at
+            // runtime rather than a subtle bug.
+            primary: false,
+            padding: EdgeInsets.only(right: _scrolls ? _gutter : 0),
+            children: widget.children,
+          ),
         ),
       ),
     );

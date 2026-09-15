@@ -140,4 +140,21 @@ void main() {
       }
     }
   });
+
+  testWidgets('the scores step aside for the scrollbar', (tester) async {
+    EdgeInsets listPadding() =>
+        tester.widget<ListView>(find.byType(ListView)).padding as EdgeInsets;
+
+    await showInSlot(tester, players: 2, slot: 400);
+    // Nothing to scroll, so nothing to make room for.
+    expect(listPadding().right, 0);
+
+    await showInSlot(tester, players: 8, slot: 150);
+    // One frame lays the list out and reports the overflow; the next rebuilds
+    // with the lane in place.
+    await tester.pump();
+    await tester.pump();
+
+    expect(listPadding().right, greaterThan(0));
+  });
 }
