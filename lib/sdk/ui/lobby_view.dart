@@ -48,6 +48,27 @@ class LobbyView extends StatelessWidget {
     final seats = _seats(controller);
     final title = host?.name ?? client.sessionName ?? 'Lobby';
 
+    // The one screen in the app with nowhere to put a surprise. Everything on
+    // it draws its whole self and nothing scrolls, so type set at twice its
+    // size does not push the bottom of the lobby off the bottom of the phone —
+    // it overflows. A third larger is as far as this layout stretches, and past
+    // that the words stop growing rather than the Play button leaving.
+    //
+    // The cap is only here. Every other screen in the flow scrolls, and the
+    // system size is the player's business on those.
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: _build(context, client, host, seats, title),
+    );
+  }
+
+  Widget _build(
+    BuildContext context,
+    ClientSession client,
+    HostSession? host,
+    Map<String, _Seat> seats,
+    String title,
+  ) {
     return Scaffold(
       backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
@@ -91,6 +112,11 @@ class LobbyView extends StatelessWidget {
                   // between the panels and the buttons. The standings are the
                   // right thing to put here — they are the one block that grows
                   // with the table, and the one whose bottom rows can wait.
+                  // The one thing on this screen that gives. Everything above
+                  // it draws its whole self — a character you cannot see is
+                  // not a character you can pick — so the standings take the
+                  // room that is left rather than the room they would like,
+                  // and stand down entirely when what is left is nothing.
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -224,6 +250,7 @@ class _Panel extends StatelessWidget {
           ? child
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
@@ -525,7 +552,13 @@ Future<void> _showQr(BuildContext context, String name, String payload) {
                   background: LobbyFlowColors.field,
                   foreground: LobbyFlowColors.ink,
                   fontSize: 17,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  // Horizontal too: this pill is centred in a Column and so
+                  // sizes to its own contents, and a padding that only names
+                  // the vertical leaves the word touching both ends of it.
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 44,
+                  ),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
