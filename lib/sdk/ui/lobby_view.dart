@@ -36,6 +36,9 @@ class LobbyView extends StatelessWidget {
 
   final AppController controller;
 
+  /// Square-ish beside Play, which is 64-odd tall at the same padding.
+  static const _gearWidth = 66.0;
+
   @override
   Widget build(BuildContext context) {
     final client = controller.client!;
@@ -50,99 +53,134 @@ class LobbyView extends StatelessWidget {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),
-            child: ListView(
+            // A Column, not a ListView: this screen is meant to hold still.
+            // Everything on it is either a control or a fact about the table,
+            // and both are things a host looks up mid-sentence — a lobby that
+            // has scrolled a centimetre since last time is a lobby where Play
+            // is somewhere new every time you reach for it. What does not fit
+            // scrolls inside the one region built to give: the standings.
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              children: [
-                // The back pill *is* Leave. On every other screen in the flow
-                // it undoes the step that got you here, and the step that got
-                // you here was opening — or joining — this lobby.
-                LobbyHeader(
-                  title: title,
-                  onBack: controller.leave,
-                  padding: const EdgeInsets.only(top: 12, bottom: 8),
-                ),
-                const SizedBox(height: 18),
-                if (host != null)
-                  _HostPanel(host: host)
-                else
-                  const _JoinedPanel(),
-                const SizedBox(height: 16),
-                // The roster used to have a panel of its own, under the QR and
-                // above this one — a list of names, then a row of characters
-                // with nothing tying the two together. The names have moved on
-                // top of the characters they belong to, which is one panel
-                // instead of two and one lookup instead of none: the standings
-                // need the room the moment somebody scores.
-                _ColorPicker(client: client, seats: seats),
-                const SizedBox(height: 16),
-                StandingsCard(
-                  scores: host?.scores.view ?? client.scores,
-                  meId: client.phoneId,
-                  offline: awayPhoneIds(controller),
-                  onReset: host?.resetScores,
-                ),
-                if (client.warning != null || host?.warning != null) ...[
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The back pill *is* Leave. On every other screen in the flow
+                  // it undoes the step that got you here, and the step that got
+                  // you here was opening — or joining — this lobby.
+                  LobbyHeader(
+                    title: title,
+                    onBack: controller.leave,
+                    padding: const EdgeInsets.only(top: 12, bottom: 8),
+                  ),
+                  const SizedBox(height: 18),
+                  if (host != null)
+                    _HostPanel(host: host)
+                  else
+                    const _JoinedPanel(),
                   const SizedBox(height: 16),
-                  TableNotice(controller: controller),
-                ],
-                if (host != null) ...[
-                  // Debug builds only. Two of the three things that set this
-                  // are internal failures — a game's `planBoard` refusing the
-                  // table, or its `createSim` throwing — and their text is a
-                  // class name and an exception, which is a bug report, not a
-                  // message for whoever is hosting games night. The third,
-                  // the playlist running out for a shrunken table, is worth
-                  // saying but is already said properly: `_layOutAgain` sets
-                  // a [TableChange] alongside it and [TableChangeScreen]
-                  // takes the whole screen on every phone. So nothing a
-                  // player needs is lost by hiding this, and in release they
-                  // simply land back in the lobby.
-                  if (kDebugMode && host.planError != null) ...[
+                  // The roster used to have a panel of its own, under the QR and
+                  // above this one — a list of names, then a row of characters
+                  // with nothing tying the two together. The names have moved on
+                  // top of the characters they belong to, which is one panel
+                  // instead of two and one lookup instead of none: the standings
+                  // need the room the moment somebody scores.
+                  _ColorPicker(client: client, seats: seats),
+                  const SizedBox(height: 16),
+                  // The give in the layout, and the only give: whatever is left
+                  // between the panels and the buttons. The standings are the
+                  // right thing to put here — they are the one block that grows
+                  // with the table, and the one whose bottom rows can wait.
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          StandingsCard(
+                            scores: host?.scores.view ?? client.scores,
+                            meId: client.phoneId,
+                            offline: awayPhoneIds(controller),
+                            onReset: host?.resetScores,
+                          ),
+                          if (client.warning != null || host?.warning != null)
+                            const SizedBox(height: 16),
+                          if (client.warning != null || host?.warning != null)
+                            TableNotice(controller: controller),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (host != null) ...[
+                    // Debug builds only. Two of the three things that set this
+                    // are internal failures — a game's `planBoard` refusing the
+                    // table, or its `createSim` throwing — and their text is a
+                    // class name and an exception, which is a bug report, not a
+                    // message for whoever is hosting games night. The third,
+                    // the playlist running out for a shrunken table, is worth
+                    // saying but is already said properly: `_layOutAgain` sets
+                    // a [TableChange] alongside it and [TableChangeScreen]
+                    // takes the whole screen on every phone. So nothing a
+                    // player needs is lost by hiding this, and in release they
+                    // simply land back in the lobby.
+                    if (kDebugMode && host.planError != null) ...[
+                      const SizedBox(height: 16),
+                      _PlanErrorBanner(
+                        message: host.planError!,
+                        onDismiss: host.clearPlanError,
+                      ),
+                    ],
                     const SizedBox(height: 16),
-                    _PlanErrorBanner(
-                      message: host.planError!,
-                      onDismiss: host.clearPlanError,
+                    // The button says why it will not go, instead of a line
+                    // of explanation under a button that has gone gray for
+                    // reasons of its own. There is one thing a host can do
+                    // about it, and the gear beside it is where they do it.
+                    Row(
+                      children: [
+                        Expanded(
+                          child: LobbyPillButton(
+                            label: host.canStart
+                                ? 'Play'
+                                : 'Select at least one playable game',
+                            icon: host.canStart
+                                ? Icons.play_arrow_rounded
+                                : null,
+                            background: LobbyFlowColors.green,
+                            foreground: LobbyFlowColors.ink,
+                            fontSize: host.canStart ? 20 : 16,
+                            iconSize: 26,
+                            radius: LobbyMetrics.bigRadius,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 20,
+                              horizontal: 16,
+                            ),
+                            onPressed: host.canStart ? host.startRound : null,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // The playlist, down to its icon. It used to be a row of
+                        // twelve games in the lobby, then a button with a label;
+                        // it is a thing you set once and then stop looking at,
+                        // and the gear is the shape of that. Beside Play rather
+                        // than under it because it is the fix for a Play that
+                        // will not go — and because two stacked plates were the
+                        // height this screen could least afford.
+                        SizedBox(
+                          width: _gearWidth,
+                          child: LobbyPillButton(
+                            icon: Icons.tune,
+                            iconSize: 26,
+                            background: LobbyFlowColors.field,
+                            foreground: LobbyFlowColors.ink,
+                            radius: LobbyMetrics.bigRadius,
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            onPressed: () =>
+                                showGamesSheet(context, host, controller.premium),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  // The button says why it will not go, instead of a line of
-                  // explanation under a button that has gone gray for reasons
-                  // of its own. There is one thing a host can do about it and
-                  // the button beneath is where they do it.
-                  LobbyPillButton(
-                    label: host.canStart
-                        ? 'Play'
-                        : 'Select at least one playable game',
-                    icon: host.canStart ? Icons.play_arrow_rounded : null,
-                    background: LobbyFlowColors.green,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: host.canStart ? 20 : 16,
-                    iconSize: 26,
-                    radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 20,
-                      horizontal: 20,
-                    ),
-                    onPressed: host.canStart ? host.startRound : null,
-                  ),
-                  const SizedBox(height: 14),
-                  // The list used to be spread down the lobby, which put
-                  // twelve rows of game between the host and everything else
-                  // on this screen — it is a thing you set once and then stop
-                  // looking at. Gray, because it is not the button this screen
-                  // is about.
-                  LobbyPillButton(
-                    label: 'Choose Games',
-                    icon: Icons.tune,
-                    background: LobbyFlowColors.field,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: 17,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    onPressed: () =>
-                        showGamesSheet(context, host, controller.premium),
-                  ),
                 ],
-              ],
+              ),
             ),
           ),
         ),

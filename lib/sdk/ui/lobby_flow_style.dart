@@ -216,7 +216,7 @@ class _PressablePlateState extends State<_PressablePlate> {
 class LobbyPillButton extends StatelessWidget {
   const LobbyPillButton({
     super.key,
-    required this.label,
+    this.label,
     this.icon,
     this.onPressed,
     this.background = LobbyFlowColors.ink,
@@ -242,7 +242,10 @@ class LobbyPillButton extends StatelessWidget {
         stacked = true,
         iconSize = 54;
 
-  final String label;
+  /// Null for an icon-only button, which is the one shape where the icon is
+  /// expected to sit dead centre rather than beside something.
+  final String? label;
+
   final IconData? icon;
   final VoidCallback? onPressed;
   final Color background;
@@ -257,11 +260,15 @@ class LobbyPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Text(
-      label,
-      textAlign: TextAlign.center,
-      style: LobbyText.button.copyWith(color: foreground, fontSize: fontSize),
-    );
+    final words = label;
+    final text = words == null
+        ? null
+        : Text(
+            words,
+            textAlign: TextAlign.center,
+            style: LobbyText.button
+                .copyWith(color: foreground, fontSize: fontSize),
+          );
     final art = icon == null
         ? null
         : Icon(icon, size: iconSize, color: foreground);
@@ -276,19 +283,21 @@ class LobbyPillButton extends StatelessWidget {
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (art != null) ...[art, const SizedBox(height: 10)],
-                  text,
+                  if (art != null) ...[art, if (text != null)
+                    const SizedBox(height: 10)],
+                  ?text,
                 ],
               )
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (art != null) ...[art, const SizedBox(width: 8)],
+                  if (art != null) ...[art, if (text != null)
+                    const SizedBox(width: 8)],
                   // Flexible, not bare: a label long enough to be a sentence —
                   // the lobby's disabled Play button says why it is disabled —
                   // wraps inside the pill instead of running off its end.
-                  Flexible(child: text),
+                  if (text != null) Flexible(child: text),
                 ],
               ),
       ),
