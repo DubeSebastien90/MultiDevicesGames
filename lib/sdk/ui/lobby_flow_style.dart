@@ -285,7 +285,10 @@ class LobbyPillButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (art != null) ...[art, const SizedBox(width: 8)],
-                  text,
+                  // Flexible, not bare: a label long enough to be a sentence —
+                  // the lobby's disabled Play button says why it is disabled —
+                  // wraps inside the pill instead of running off its end.
+                  Flexible(child: text),
                 ],
               ),
       ),

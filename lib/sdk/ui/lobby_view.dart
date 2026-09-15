@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../app_controller.dart';
-import '../catalog.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
 import '../model/player_color.dart';
@@ -102,25 +101,27 @@ class LobbyView extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 24),
+                  // The button says why it will not go, instead of a line of
+                  // explanation under a button that has gone gray for reasons
+                  // of its own. There is one thing a host can do about it and
+                  // the button beneath is where they do it.
                   LobbyPillButton(
-                    label: 'Play',
-                    icon: Icons.play_arrow_rounded,
+                    label: host.canStart
+                        ? 'Play'
+                        : 'Select at least one playable game',
+                    icon: host.canStart ? Icons.play_arrow_rounded : null,
                     background: LobbyFlowColors.green,
                     foreground: LobbyFlowColors.ink,
-                    fontSize: 20,
+                    fontSize: host.canStart ? 20 : 16,
                     iconSize: 26,
                     radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 20,
+                      horizontal: 20,
+                    ),
                     onPressed: host.canStart ? host.startRound : null,
                   ),
-                  const SizedBox(height: 10),
-                  _Caption(
-                    host.canStart
-                        ? 'Starts ${host.upcoming!.manifest.title} and keeps '
-                              'going — each win rolls into the next game.'
-                        : host.blockedReason!,
-                  ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
                   // The list used to be spread down the lobby, which put
                   // twelve rows of game between the host and everything else
                   // on this screen — it is a thing you set once and then stop
@@ -136,8 +137,6 @@ class LobbyView extends StatelessWidget {
                     onPressed: () =>
                         showGamesSheet(context, host, controller.premium),
                   ),
-                  const SizedBox(height: 10),
-                  _Caption(_gamesLine(host)),
                 ],
               ],
             ),
@@ -146,20 +145,6 @@ class LobbyView extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A muted line of explanation under a button.
-class _Caption extends StatelessWidget {
-  const _Caption(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: LobbyText.body,
-        textAlign: TextAlign.center,
-      );
 }
 
 /// The flow's gray rounded panel: a heading with something under it.
@@ -209,25 +194,6 @@ class _Panel extends StatelessWidget {
             ),
     );
   }
-}
-
-/// What Play would actually play, in one line under it.
-///
-/// Said out loud because the list is behind a button: a run that quietly plays
-/// nine of twelve games, with nothing on screen to say so, is a host wondering
-/// where Guacamole went.
-///
-/// Counts [HostSession.runningOrder] and not the ticks. A game the table is the
-/// wrong size for is not in the run no matter how it is ticked, and "all 12
-/// games are in the run" over a table of two that can play three of them is the
-/// same lie by a longer route.
-String _gamesLine(HostSession host) {
-  final running = host.runningOrder;
-  final total = GameCatalog.playlist.length;
-  if (running.isEmpty) return 'No games are in the run.';
-  if (running.length == 1) return 'Only ${running.single.manifest.title}.';
-  if (running.length == total) return 'All $total games are in the run.';
-  return '${running.length} of $total games are in the run.';
 }
 
 /// A game whose `planBoard` produced something unusable. Shown here because
