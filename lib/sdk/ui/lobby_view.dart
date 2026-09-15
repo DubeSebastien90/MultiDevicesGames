@@ -41,7 +41,7 @@ class LobbyView extends StatelessWidget {
     final client = controller.client!;
     final host = controller.host;
 
-    final phoneCount = host?.phones.length ?? client.lobbyPhones.length;
+    final seats = _seats(controller);
     final title = host?.name ?? client.sessionName ?? 'Lobby';
 
     return Scaffold(
@@ -65,11 +65,15 @@ class LobbyView extends StatelessWidget {
                 if (host != null)
                   _HostPanel(host: host)
                 else
-                  _JoinedPanel(phoneCount: phoneCount),
+                  const _JoinedPanel(),
                 const SizedBox(height: 16),
-                _WhoIsHere(controller: controller, count: phoneCount),
-                const SizedBox(height: 16),
-                _ColorPicker(client: client),
+                // The roster used to have a panel of its own, under the QR and
+                // above this one — a list of names, then a row of characters
+                // with nothing tying the two together. The names have moved on
+                // top of the characters they belong to, which is one panel
+                // instead of two and one lookup instead of none: the standings
+                // need the room the moment somebody scores.
+                _ColorPicker(client: client, seats: seats),
                 const SizedBox(height: 16),
                 StandingsCard(
                   scores: host?.scores.view ?? client.scores,
@@ -241,23 +245,19 @@ class _PlanErrorBanner extends StatelessWidget {
 /// What a phone that is not the host sees where the QR would be: there is
 /// nothing for it to do here but wait, and saying so is the whole panel.
 class _JoinedPanel extends StatelessWidget {
-  const _JoinedPanel({required this.phoneCount});
-
-  final int phoneCount;
+  const _JoinedPanel();
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(
+    return const _Panel(
       title: 'You are in',
       child: Row(
         children: [
-          const Icon(Icons.check_circle, color: LobbyFlowColors.ink, size: 22),
-          const SizedBox(width: 10),
+          Icon(Icons.check_circle, color: LobbyFlowColors.ink, size: 22),
+          SizedBox(width: 10),
           Expanded(
             child: Text(
-              phoneCount == 1
-                  ? 'Waiting for the host to start.'
-                  : 'Waiting for the host to start. $phoneCount phones in.',
+              'Waiting for the host to start.',
               style: LobbyText.body,
             ),
           ),
@@ -284,7 +284,6 @@ class _HostPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final qr = host.qrPayload;
-    final waiting = host.phones.where((p) => p.connected).length < 2;
     final failure = host.discoveryFailure != null;
 
     return _Panel.bare(
@@ -309,9 +308,9 @@ class _HostPanel extends StatelessWidget {
                       // in then, so it is the only thing this offers.
                       ? 'This network will not let the game announce itself. '
                             'Have them scan this code.'
-                      : waiting
-                          ? 'Waiting for your friends…'
-                          : '${host.phones.length} phones in.',
+                      // How many are in is counted once, on the picker below.
+                      // This panel is about the people who are not here yet.
+                      : 'Waiting for your friends…',
                   style: LobbyText.body,
                 ),
                 // Debug builds only. Nobody is asked to type an address in a
@@ -365,29 +364,78 @@ class _HostPanel extends StatelessWidget {
   }
 }
 
-/// Which colour you are, at a table where that is how people tell you apart.
+/// Who is holding one of the characters.
+class _Seat {
+  const _Seat({required this.label, required this.connected});
+
+  final String label;
+
+  /// A phone the session remembers that is not on the wire right now. It keeps
+  /// its character — walking away does not hand it to somebody else — and the
+  /// name over that character says so by going pale.
+  final bool connected;
+}
+
+/// Who holds what, by colour id.
 ///
-/// Everyone arrives already wearing a colour, so this screen is never a gate —
-/// it is here for the person who wants to be Green because they are always
-/// Green. A taken character is shown struck through rather than hidden, because
-/// "somebody else has it" and "it does not exist" should not look the same.
+/// The host holds the roster directly; every other phone is told the same list
+/// in the lobby broadcast, in the same shape. Read once per build and handed
+/// down, because it answers two questions on this screen — whose name goes over
+/// which character, and how many people are here.
+Map<String, _Seat> _seats(AppController controller) {
+  final client = controller.client!;
+  final host = controller.host;
+
+  if (host != null) {
+    return {
+      for (final p in host.phones)
+        if (p.color != null)
+          p.color!.id: _Seat(
+            label: p.label,
+            connected: p.connected,
+          ),
+    };
+  }
+  return {
+    for (final p in client.lobbyPhones)
+      if (p['color'] is String)
+        p['color'] as String: _Seat(
+          label: (p['label'] as String?) ?? '?',
+          connected: (p['connected'] as bool?) ?? true,
+        ),
+  };
+}
+
+/// Which character you are, at a table where that is how people tell you apart.
+///
+/// Everyone arrives already wearing one, so this screen is never a gate — it is
+/// here for the person who wants to be the frog because they are always the
+/// frog. A character somebody else has taken keeps their name over it rather
+/// than being hidden, which is what makes this the roster as well as the
+/// picker: "who is here" and "who is which animal" are one question at a table,
+/// and they were being answered by two panels that could not see each other.
 class _ColorPicker extends StatelessWidget {
-  const _ColorPicker({required this.client});
+  const _ColorPicker({required this.client, required this.seats});
 
   final ClientSession client;
+  final Map<String, _Seat> seats;
 
   @override
   Widget build(BuildContext context) {
     final mine = client.myColor;
-    final taken = client.takenColorIds;
+
+    // Phones that have dropped keep their character but are not at the table,
+    // so they are not in the count. It is read as "how many of us are playing".
+    final here = seats.values.where((s) => s.connected).length;
 
     return _Panel(
-      // Names the thing being picked. The colour used to be spelled out beside
-      // this heading, which was the old swatches explaining themselves — the
-      // characters do that on their own, and the selected one is ringed.
       title: 'Select your character',
+      // Where the colour's name used to sit. The characters say which colour
+      // they are better than the word did; what nobody could see was how full
+      // the table is, and this is the panel that now knows.
+      trailing: Text('$here/${PlayerPalette.size}', style: LobbyText.count),
       child: Wrap(
-        spacing: 10,
+        spacing: 6,
         runSpacing: 10,
         children: [
           for (final c in PlayerPalette.all)
@@ -395,7 +443,7 @@ class _ColorPicker extends StatelessWidget {
               color: c,
               selected: c.id == mine?.id,
               // Mine is never "taken" from my own point of view.
-              taken: taken.contains(c.id) && c.id != mine?.id,
+              owner: c.id == mine?.id ? null : seats[c.id],
               onTap: () => client.pickColor(c),
             ),
         ],
@@ -404,7 +452,7 @@ class _ColorPicker extends StatelessWidget {
   }
 }
 
-/// One character to pick, in their own colours.
+/// One character to pick, with the name of whoever has it over its head.
 ///
 /// The character rather than a disc of paint, because the disc was a promise
 /// about something nobody had seen yet: a player chose Green in the lobby and
@@ -419,58 +467,76 @@ class _Swatch extends StatelessWidget {
   const _Swatch({
     required this.color,
     required this.selected,
-    required this.taken,
+    required this.owner,
     required this.onTap,
   });
 
   final PlayerColor color;
   final bool selected;
-  final bool taken;
+
+  /// Somebody else, or null — either free, or [selected] and therefore yours.
+  final _Seat? owner;
+
   final VoidCallback onTap;
+
+  /// Wide enough for a name to be worth reading, narrow enough that eight of
+  /// these still wrap to two rows on a small phone.
+  static const _width = 72.0;
+  static const _disc = 54.0;
 
   @override
   Widget build(BuildContext context) {
+    final taken = owner != null;
+
     return Semantics(
       // The colour, still: it is the word people say out loud across a table,
       // and a screen reader has no picture to go on.
-      label: color.name,
+      label: owner == null ? color.name : '${color.name}, ${owner!.label}',
       selected: selected,
       button: !taken,
       child: GestureDetector(
         onTap: taken ? null : onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            // A tint of their own colour rather than the flat fill: the
-            // character is the colour now, and a saturated disc behind it left
-            // the two fighting each other. Blended onto white rather than laid
-            // over the panel, so the tint keeps its colour instead of picking
-            // up the gray behind it.
-            color: Color.alphaBlend(
-              color.value.withValues(alpha: taken ? 0.10 : 0.22),
-              LobbyFlowColors.paper,
-            ),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: selected ? LobbyFlowColors.ink : Colors.transparent,
-              width: 3,
-            ),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
+        child: SizedBox(
+          width: _width,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Faded rather than hidden when somebody else has them: which
-              // characters are gone is worth seeing, and an empty circle says
-              // less than a greyed-out one.
-              Opacity(
-                opacity: taken ? 0.3 : 1,
-                child: PlayerArt.of(color, PlayerArtSlot.topdown)
-                    .widget(size: 40),
+              // Always laid out, name or no name: without it the free
+              // characters ride up and the row looks broken-toothed.
+              SizedBox(
+                height: 15,
+                child: _Name(owner: owner, selected: selected),
               ),
-              if (taken)
-                const Icon(Icons.close, size: 22, color: LobbyFlowColors.muted),
+              const SizedBox(height: 3),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: _disc,
+                height: _disc,
+                decoration: BoxDecoration(
+                  // A tint of their own colour rather than the flat fill: the
+                  // character is the colour now, and a saturated disc behind
+                  // it left the two fighting each other. Blended onto white
+                  // rather than laid over the panel, so the tint keeps its
+                  // colour instead of picking up the gray behind it.
+                  color: Color.alphaBlend(
+                    color.value.withValues(alpha: taken ? 0.10 : 0.22),
+                    LobbyFlowColors.paper,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? LobbyFlowColors.ink : Colors.transparent,
+                    width: 3,
+                  ),
+                ),
+                // Faded rather than hidden when somebody else has them: which
+                // characters are gone is worth seeing, and an empty circle
+                // says less than a greyed-out one.
+                child: Opacity(
+                  opacity: taken ? 0.45 : 1,
+                  child: PlayerArt.of(color, PlayerArtSlot.topdown)
+                      .widget(size: 38),
+                ),
+              ),
             ],
           ),
         ),
@@ -479,110 +545,45 @@ class _Swatch extends StatelessWidget {
   }
 }
 
-/// Everyone who has made it in. Names only — sizes and ordering are the
-/// arrangement screen's business.
-class _WhoIsHere extends StatelessWidget {
-  const _WhoIsHere({required this.controller, required this.count});
+/// The name over a character: theirs, yours, or nobody's.
+class _Name extends StatelessWidget {
+  const _Name({required this.owner, required this.selected});
 
-  final AppController controller;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final client = controller.client!;
-    final host = controller.host;
-
-    final entries = host != null
-        ? [
-            for (final p in host.phones)
-              (
-                label: p.label,
-                me: p.phoneId == client.phoneId,
-                ready: p.calibrated,
-                connected: p.connected,
-                color: p.color,
-              ),
-          ]
-        : [
-            for (final p in client.lobbyPhones)
-              (
-                label: (p['label'] as String?) ?? '?',
-                me: p['phoneId'] == client.phoneId,
-                ready: (p['calibrated'] as bool?) ?? false,
-                connected: (p['connected'] as bool?) ?? true,
-                color: PlayerPalette.byId(p['color'] as String?),
-              ),
-          ];
-
-    return _Panel(
-      title: count == 1 ? '1 phone here' : '$count phones here',
-      trailing: const Icon(Icons.person, size: 20, color: LobbyFlowColors.ink),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final e in entries)
-            _PlayerPill(
-              label: e.me ? '${e.label} (you)' : e.label,
-              color: e.color,
-              ready: e.ready,
-              connected: e.connected,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One person, in their colour, with what their phone is doing.
-class _PlayerPill extends StatelessWidget {
-  const _PlayerPill({
-    required this.label,
-    required this.color,
-    required this.ready,
-    required this.connected,
-  });
-
-  final String label;
-  final PlayerColor? color;
-  final bool ready;
-  final bool connected;
+  final _Seat? owner;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    // A wash of the colour on white, not the colour itself: a pill is read as
-    // text, and eight saturated lozenges would fight the characters below for
-    // the same job.
-    final tint = color == null
-        ? LobbyFlowColors.paper
-        : Color.alphaBlend(
-            color!.value.withValues(alpha: 0.30),
-            LobbyFlowColors.paper,
-          );
+    // Yours is the one character here you do not need a label to find — it is
+    // the ringed one — so it says so in a word rather than in your own name,
+    // which you already know.
+    if (selected) {
+      return const Text(
+        'You',
+        style: TextStyle(
+          color: LobbyFlowColors.ink,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      );
+    }
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
-      decoration: BoxDecoration(
-        color: tint,
-        borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            !connected
-                ? Icons.link_off
-                : ready
-                    ? Icons.smartphone
-                    : Icons.hourglass_empty,
-            size: 15,
-            // A phone that has dropped is the one thing here worth a colour of
-            // its own; everything else is ink on its owner's tint.
-            color: connected ? LobbyFlowColors.ink : LobbyFlowColors.coral,
-          ),
-          const SizedBox(width: 7),
-          Text(label, style: LobbyText.button.copyWith(fontSize: 13)),
-        ],
+    final seat = owner;
+    if (seat == null) return const SizedBox.shrink();
+
+    return Text(
+      seat.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: seat.connected ? LobbyFlowColors.ink : LobbyFlowColors.muted,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        // A phone that has dropped has not stopped being that character; it
+        // has stopped being here, and a struck-through name says that without
+        // needing a legend.
+        decoration: seat.connected ? null : TextDecoration.lineThrough,
       ),
     );
   }

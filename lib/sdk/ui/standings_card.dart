@@ -16,6 +16,7 @@ class StandingsCard extends StatelessWidget {
     this.showDeltas = false,
     this.offline = const {},
     this.onReset,
+    this.maxListHeight = 200,
   });
 
   final ScoreView scores;
@@ -34,6 +35,16 @@ class StandingsCard extends StatelessWidget {
   final Set<String> offline;
 
   final VoidCallback? onReset;
+
+  /// How tall the rows may get before they start scrolling inside the card.
+  ///
+  /// A full table is eight rows, which is taller than the lobby has to spare
+  /// and taller than a results screen wants to give a list that is not the
+  /// thing it is about. Rather than shrink the type or drop the people at the
+  /// bottom — the two people most likely to be reading it — the card takes a
+  /// fixed slice of the screen and scrolls within it. Shorter tables still draw
+  /// exactly as tall as they need: the constraint is a maximum, not a height.
+  final double maxListHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -67,81 +78,94 @@ class StandingsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            for (final (i, entry) in ranked.indexed)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 22,
-                      child: Text(
-                        '${i + 1}.',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    Expanded(
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxListHeight),
+              child: ListView(
+                shrinkWrap: true,
+                // This card is usually inside another scroll view, and two
+                // vertical lists both claiming the PrimaryScrollController is
+                // an assertion at runtime rather than a subtle bug.
+                primary: false,
+                padding: EdgeInsets.zero,
+                children: [
+                  for (final (i, entry) in ranked.indexed)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
                       child: Row(
                         children: [
-                          Flexible(
+                          SizedBox(
+                            width: 22,
                             child: Text(
-                              entry.phoneId == meId
-                                  ? '${entry.label} (you)'
-                                  : entry.label,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: entry.phoneId == meId
-                                    ? FontWeight.w600
-                                    : FontWeight.normal,
-                                color: offline.contains(entry.phoneId)
-                                    ? theme.colorScheme.onSurfaceVariant
-                                    : null,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (offline.contains(entry.phoneId)) ...[
-                            const SizedBox(width: 6),
-                            Icon(
-                              Icons.cloud_off,
-                              size: 13,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              'away',
-                              style: theme.textTheme.labelSmall?.copyWith(
+                              '${i + 1}.',
+                              style: theme.textTheme.labelMedium?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
+                          ),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    entry.phoneId == meId
+                                        ? '${entry.label} (you)'
+                                        : entry.label,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: entry.phoneId == meId
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                      color: offline.contains(entry.phoneId)
+                                          ? theme.colorScheme.onSurfaceVariant
+                                          : null,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (offline.contains(entry.phoneId)) ...[
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    Icons.cloud_off,
+                                    size: 13,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'away',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (showDeltas && entry.roundDelta != 0) ...[
+                            Text(
+                              // A negative number brings its own sign. Prefixing
+                              // every delta made a loss read '+-10'.
+                              entry.roundDelta > 0
+                                  ? '+${entry.roundDelta}'
+                                  : '${entry.roundDelta}',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: entry.roundDelta > 0
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.error,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
                           ],
+                          Text(
+                            '${entry.total}',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    if (showDeltas && entry.roundDelta != 0) ...[
-                      Text(
-                        // A negative number brings its own sign. Prefixing
-                        // every delta made a loss read '+-10'.
-                        entry.roundDelta > 0
-                            ? '+${entry.roundDelta}'
-                            : '${entry.roundDelta}',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: entry.roundDelta > 0
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.error,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    Text(
-                      '${entry.total}',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
+            ),
           ],
         ),
       ),
