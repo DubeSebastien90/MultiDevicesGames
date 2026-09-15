@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/sdk/ui/lobby_flow_style.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
@@ -56,21 +57,43 @@ void main() {
   }) => tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: SingleChildScrollView(
-          child: GamePicker(
-            offers: offers,
-            selectionLocked: selectionLocked,
-            premiumError: premiumError,
-            onRetryPremium: onRetryPremium,
-            onChoose: (game, chosen) => toggles.add((game.manifest.id, chosen)),
-            onAll: () => alls++,
-            onNone: () => nones++,
-            onSelectionLockedTap: () => selectionLockedTaps++,
-          ),
+        body: GamePicker(
+          offers: offers,
+          selectionLocked: selectionLocked,
+          premiumError: premiumError,
+          onRetryPremium: onRetryPremium,
+          onChoose: (game, chosen) => toggles.add((game.manifest.id, chosen)),
+          onAll: () => alls++,
+          onNone: () => nones++,
+          onSelectionLockedTap: () => selectionLockedTaps++,
         ),
       ),
     ),
   );
+
+  /// The plate a title sits on: the row, as one widget.
+  Finder rowOf(String title) =>
+      find.ancestor(of: find.text(title), matching: find.byType(Container)).first;
+
+  /// Whether that row is ticked. Asked of the row rather than of the screen,
+  /// because the list is lazy — off-screen rows are not built, which is the
+  /// point of it — so counting ticks across the whole list counts the ones
+  /// that happen to be on screen.
+  bool ticked(String title) => find
+      .descendant(of: rowOf(title), matching: find.byIcon(Icons.check))
+      .evaluate()
+      .isNotEmpty;
+
+  /// The colour of the plate a title sits on. Green is in the run, gray is not,
+  /// and that pair replaced the tally the sheet used to print under the rows.
+  Color plateOf(WidgetTester tester, String title) {
+    final plate = tester
+        .widgetList<Container>(
+          find.ancestor(of: find.text(title), matching: find.byType(Container)),
+        )
+        .first;
+    return (plate.decoration! as BoxDecoration).color!;
+  }
 
   testWidgets('every game is listed with its tick', (tester) async {
     await show(tester, [
@@ -81,30 +104,25 @@ void main() {
     expect(find.text('Arena'), findsOneWidget);
     expect(find.text('Dodgeball'), findsOneWidget);
 
-    final boxes = tester
-        .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
-        .toList();
-    expect(boxes.map((b) => b.value), [true, false]);
-    expect(find.text('1 of 2 in the run'), findsOneWidget);
+    // One tick, for the one game that is in the run.
+    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(plateOf(tester, 'Arena'), LobbyFlowColors.green);
+    expect(plateOf(tester, 'Dodgeball'), LobbyFlowColors.field);
   });
 
-  testWidgets('a ticked game the table cannot play is not counted as in the '
-      'run', (tester) async {
-    // The count is the run, not the ticks. Flood is ticked and will not be
-    // played, and a footer that counts it is telling the host they are about to
-    // play a game they are not.
+  testWidgets('a ticked game the table cannot play does not look like one it '
+      'can', (tester) async {
+    // Ticked is not the same as in the run. Flood is ticked and will not be
+    // played tonight, and a plate the same colour as Arena's would be telling
+    // the host they are about to play a game they are not. The sheet used to
+    // correct that in a footer; now the plate simply does not make the claim.
     await show(tester, [
       offer(const ArenaGame()),
       offer(const FloodGame(), fits: false),
     ]);
 
-    expect(find.text('1 of 2 in the run'), findsNothing);
-    expect(
-      find.text(
-        '1 of 2 in the run · 1 ticked but the wrong size for this table',
-      ),
-      findsOneWidget,
-    );
+    expect(plateOf(tester, 'Arena'), LobbyFlowColors.green);
+    expect(plateOf(tester, 'Flood'), LobbyFlowColors.field);
   });
 
   testWidgets('tapping a row takes it out of the run', (tester) async {
@@ -166,16 +184,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SingleChildScrollView(
-            child: GamePicker(
-              offers: [
-                offer(const ArenaGame()),
-                offer(const HotPotatoGame(), locked: true),
-              ],
-              onChoose: (game, chosen) =>
-                  toggles.add((game.manifest.id, chosen)),
-              onLockedTap: (offer) => lockedTaps.add(offer.manifest.id),
-            ),
+          body: GamePicker(
+            offers: [
+              offer(const ArenaGame()),
+              offer(const HotPotatoGame(), locked: true),
+            ],
+            onChoose: (game, chosen) => toggles.add((game.manifest.id, chosen)),
+            onLockedTap: (offer) => lockedTaps.add(offer.manifest.id),
           ),
         ),
       ),
@@ -183,8 +198,10 @@ void main() {
 
     expect(find.text('Hot Potato'), findsOneWidget);
     expect(find.text('PREMIUM'), findsOneWidget);
-    // One checkbox only — Arena's. A locked row has nothing to tick.
-    expect(find.byType(CheckboxListTile), findsOneWidget);
+    // One tick only — Arena's. A locked row has nothing to tick, and shows a
+    // padlock where the ring would be.
+    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
 
     await tester.tap(find.text('Hot Potato'));
     expect(lockedTaps, ['hotpotato']);
@@ -234,12 +251,16 @@ void main() {
       expect(find.text('PREMIUM'), findsNothing);
       expect(find.textContaining('locked behind Premium'), findsNothing);
 
-      // Nor is it offered as tickable, which would be the opposite lie.
-      expect(find.widgetWithText(CheckboxListTile, 'Hot Potato'), findsNothing);
+      // Nor is it offered as tickable, which would be the opposite lie: the
+      // one tick on screen is Flood's.
+      expect(find.byIcon(Icons.check), findsOneWidget);
       expect(find.text('Checking your purchase…'), findsOneWidget);
 
-      // The rest of the list still works while one row waits.
-      expect(find.widgetWithText(CheckboxListTile, 'Flood'), findsOneWidget);
+      // The rest of the list still works while one row waits: Flood keeps its
+      // plate, its tick and its tap.
+      expect(plateOf(tester, 'Flood'), LobbyFlowColors.green);
+      await tester.tap(find.text('Flood'));
+      expect(toggles, [('flood', false)]);
     });
 
     testWidgets('All and None wait rather than sell', (tester) async {
@@ -338,7 +359,7 @@ void main() {
     expect(host.chosenGames, isNotEmpty);
   });
 
-  testWidgets('the gear opens it, and a tick reaches the session', (
+  testWidgets('the gear opens the screen, and a tick reaches the session', (
     tester,
   ) async {
     // The whole path, because the two halves were built apart: the sheet has to
@@ -358,7 +379,7 @@ void main() {
           body: Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.settings),
-              onPressed: () => showGamesSheet(context, host, premium),
+              onPressed: () => showGamesScreen(context, host, premium),
             ),
           ),
         ),
@@ -373,30 +394,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Games in the run'), findsOneWidget);
     expect(find.text('Arena'), findsOneWidget);
-    // Nobody has connected, so nothing fits and nothing is in the run — and it
-    // says so rather than counting every tick as a game.
-    expect(
-      find.text(
-        '0 of $total in the run · $total ticked but the wrong size for this '
-        'table',
-      ),
-      findsOneWidget,
-    );
+    // Nobody has connected, so nothing fits: every game is ticked and none of
+    // them is in the run, which is a screen of gray plates rather than green
+    // ones.
+    expect(ticked('Arena'), isTrue);
+    expect(plateOf(tester, 'Arena'), LobbyFlowColors.field);
+    expect(host.chosenGames.length, total);
 
     await tester.tap(find.text('Arena'));
     await tester.pumpAndSettle();
+    expect(host.chosenGames.length, total - 1);
     expect(
-      find.text(
-        '0 of $total in the run · ${total - 1} ticked but the wrong size for '
-        'this table',
-      ),
-      findsOneWidget,
-      reason: 'the sheet did not redraw from the session it wrote to',
+      ticked('Arena'),
+      isFalse,
+      reason: 'the screen did not redraw from the session it wrote to',
     );
 
     await tester.tap(find.text('None'));
     await tester.pumpAndSettle();
-    expect(find.text('0 of $total in the run'), findsOneWidget);
+    expect(ticked('Arena'), isFalse);
     expect(host.chosenGames, isEmpty);
   });
 }

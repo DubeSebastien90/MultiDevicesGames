@@ -200,7 +200,7 @@ class LobbyView extends StatelessWidget {
                             radius: LobbyMetrics.bigRadius,
                             padding: const EdgeInsets.symmetric(vertical: 20),
                             onPressed: () =>
-                                showGamesSheet(context, host, controller.premium),
+                                showGamesScreen(context, host, controller.premium),
                           ),
                         ),
                       ],
