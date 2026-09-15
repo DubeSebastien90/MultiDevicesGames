@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../app_controller.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
+import '../score/scoreboard.dart';
 import '../model/player_color.dart';
 import '../render/player_art.dart';
 import 'game_picker.dart';
@@ -91,22 +92,22 @@ class LobbyView extends StatelessWidget {
                   // right thing to put here — they are the one block that grows
                   // with the table, and the one whose bottom rows can wait.
                   Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          StandingsCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (client.warning != null || host?.warning != null) ...[
+                          TableNotice(controller: controller),
+                          const SizedBox(height: 16),
+                        ],
+                        Expanded(
+                          child: _StandingsSlot(
                             scores: host?.scores.view ?? client.scores,
                             meId: client.phoneId,
                             offline: awayPhoneIds(controller),
                             onReset: host?.resetScores,
                           ),
-                          if (client.warning != null || host?.warning != null)
-                            const SizedBox(height: 16),
-                          if (client.warning != null || host?.warning != null)
-                            TableNotice(controller: controller),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   if (host != null) ...[
@@ -305,99 +306,265 @@ class _JoinedPanel extends StatelessWidget {
   }
 }
 
-/// The way in, and the only one worth drawing: the QR.
+/// The way in: a QR, and how much of the screen it deserves right now.
 ///
 /// No address and no join code. Friends on the same WiFi find this game by name
 /// in their own join list; the QR is what covers the network that will not let
 /// them. Neither of those is a string anybody types, so neither is on screen.
+///
+/// It folds itself away once somebody arrives. A host alone is a host holding
+/// their phone out for people to scan, and the code should be as big as the
+/// panel allows; a host with three friends in has a table to look at, and a
+/// full-size QR sitting in the middle of it is a hundred and fifty pixels spent
+/// on a job already done. The code is still one tap away, and the tap opens it
+/// bigger than this panel ever drew it — which is what a fourth person walking
+/// in late actually wants.
 class _HostPanel extends StatelessWidget {
   const _HostPanel({required this.host});
 
   final HostSession host;
 
-  /// Small enough to sit beside the text, big enough for a camera across a
-  /// table to take in one go.
-  static const _qrSize = 104.0;
+  /// While nobody has arrived: as big as the panel will take.
+  static const _bigQr = 148.0;
+
+  /// Once they have: a stamp that says "the code is here", not one to scan.
+  static const _thumbQr = 38.0;
 
   @override
   Widget build(BuildContext context) {
     final qr = host.qrPayload;
-    final failure = host.discoveryFailure != null;
+    final alone = host.phones.where((p) => p.connected).length < 2;
 
     return _Panel.bare(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // The words carry this panel and the QR illustrates them, so the
-          // words get the room. Stacked to the left of the code rather than
-          // above it: the panel is half as tall that way, which keeps Play on
-          // the first screenful on a small phone.
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Let them in', style: LobbyText.label),
-                const SizedBox(height: 6),
-                Text(
-                  failure
-                      // Worth saying, because the join list they are staring
-                      // at is never going to fill in. The QR is the only way
-                      // in then, so it is the only thing this offers.
-                      ? 'This network will not let the game announce itself. '
-                            'Have them scan this code.'
-                      // How many are in is counted once, on the picker below.
-                      // This panel is about the people who are not here yet.
-                      : 'Waiting for your friends…',
-                  style: LobbyText.body,
-                ),
-                // Debug builds only. Nobody is asked to type an address in a
-                // shipped build — there is no field for it outside debug — so
-                // in release this is a row of digits with no instruction
-                // attached, which is a puzzle rather than a fallback. It is
-                // here because the join sheet's own Type Address button is,
-                // and that button needs something to read off.
-                if (kDebugMode) ...[
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    host.address?.toString() ?? 'starting…',
-                    style: LobbyText.body.copyWith(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: LobbyFlowColors.paper,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: qr == null
-                ? const SizedBox(
-                    width: _qrSize,
-                    height: _qrSize,
-                    child: Center(
-                      child: Text('starting…', style: LobbyText.hint),
-                    ),
-                  )
-                : QrImageView(
-                    // Address *and* code: scanning proves you were standing
-                    // in front of this screen, which is what the code asks
-                    // for anyway — so a scan should not demand it twice.
-                    data: qr,
-                    version: QrVersions.auto,
-                    size: _qrSize,
-                    backgroundColor: LobbyFlowColors.paper,
-                    padding: EdgeInsets.zero,
-                  ),
-          ),
-        ],
+      // The fold is the one thing on this screen that moves on its own, so it
+      // moves visibly. Snapping shut the instant a friend joins reads as the
+      // screen glitching; two-tenths of a second reads as the panel getting
+      // out of the way.
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: alone ? _open(context, qr) : _folded(context, qr),
       ),
+    );
+  }
+
+  /// Nobody here yet: the code, as large as the panel goes.
+  Widget _open(BuildContext context, String? qr) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text('Let them in', style: LobbyText.label),
+        const SizedBox(height: 12),
+        Center(child: _code(context, qr, _bigQr, const EdgeInsets.all(12))),
+        const SizedBox(height: 12),
+        Text(
+          _line,
+          style: LobbyText.body,
+          textAlign: TextAlign.center,
+        ),
+        ..._debugAddress(TextAlign.center),
+      ],
+    );
+  }
+
+  /// Somebody is here: one line, and the code as a stamp beside it.
+  Widget _folded(BuildContext context, String? qr) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Let them in', style: LobbyText.label),
+              const SizedBox(height: 4),
+              Text(_line, style: LobbyText.body),
+              ..._debugAddress(TextAlign.start),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        _code(context, qr, _thumbQr, const EdgeInsets.all(7)),
+      ],
+    );
+  }
+
+  /// What the panel has to say for itself, folded or not.
+  String get _line {
+    if (host.discoveryFailure != null) {
+      // Worth saying, because the join list they are staring at is never going
+      // to fill in. The QR is the only way in then, so it is the only thing
+      // this offers.
+      return 'This network will not let the game announce itself. Have them '
+          'scan this code.';
+    }
+    // How many are in is counted once, on the picker below. This panel is
+    // about the people who are not here yet.
+    return 'Waiting for your friends…';
+  }
+
+  /// Debug builds only. Nobody is asked to type an address in a shipped build —
+  /// there is no field for it outside debug — so in release this is a row of
+  /// digits with no instruction attached, which is a puzzle rather than a
+  /// fallback. It is here because the join sheet's own Type Address button is,
+  /// and that button needs something to read off.
+  List<Widget> _debugAddress(TextAlign align) {
+    if (!kDebugMode) return const [];
+    return [
+      const SizedBox(height: 4),
+      SelectableText(
+        host.address?.toString() ?? 'starting…',
+        textAlign: align,
+        style: LobbyText.body.copyWith(fontFamily: 'monospace', fontSize: 11),
+      ),
+    ];
+  }
+
+  /// The code on its white plate, at whatever size it is being given.
+  ///
+  /// Tappable at both sizes, and it has to be at the small one: thirty-eight
+  /// pixels is a picture of a QR rather than a scannable one, so the stamp is a
+  /// button that says where the real thing lives.
+  Widget _code(BuildContext context, String? qr, double size, EdgeInsets pad) {
+    return GestureDetector(
+      onTap: qr == null ? null : () => _showQr(context, host.name, qr),
+      child: Container(
+        padding: pad,
+        decoration: BoxDecoration(
+          color: LobbyFlowColors.paper,
+          borderRadius: BorderRadius.circular(size > 80 ? 20 : 12),
+        ),
+        child: qr == null
+            ? SizedBox(
+                width: size,
+                height: size,
+                child: const Center(
+                  child: Text('starting…', style: LobbyText.hint),
+                ),
+              )
+            : QrImageView(
+                // Address *and* code: scanning proves you were standing in
+                // front of this screen, which is what the code asks for
+                // anyway — so a scan should not demand it twice.
+                data: qr,
+                version: QrVersions.auto,
+                size: size,
+                backgroundColor: LobbyFlowColors.paper,
+                padding: EdgeInsets.zero,
+              ),
+      ),
+    );
+  }
+}
+
+/// The code, alone, on the whole screen.
+///
+/// Bigger than the lobby ever drew it even before the panel learned to fold,
+/// because this is the one moment it is being scanned rather than glanced at —
+/// somebody is holding their phone over yours, across a table, in whatever
+/// light the room has.
+Future<void> _showQr(BuildContext context, String name, String payload) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) {
+      final side = MediaQuery.sizeOf(context).shortestSide - 96;
+      return Dialog.fullscreen(
+        backgroundColor: LobbyFlowColors.paper,
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              LobbyTitle(name, fontSize: 22),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: LobbyFlowColors.paper,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: QrImageView(
+                  data: payload,
+                  version: QrVersions.auto,
+                  size: side.clamp(160.0, 360.0),
+                  backgroundColor: LobbyFlowColors.paper,
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Scan this to join the game.',
+                style: LobbyText.body,
+              ),
+              const SizedBox(height: 28),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: LobbyPillButton(
+                  label: 'Done',
+                  background: LobbyFlowColors.field,
+                  foreground: LobbyFlowColors.ink,
+                  fontSize: 17,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// The standings, sized to the hole they are sitting in.
+///
+/// The card is told how tall its names may be rather than being laid out at
+/// whatever height it likes and then scrolled bodily by something that could
+/// not fit it — which is what used to happen, and why three players on an
+/// iPhone made the whole card slide about instead of the list inside it.
+///
+/// Below [_floor] there is no version of this card worth drawing: a heading, a
+/// Reset button and no room for a single name is a worse answer than the space
+/// it would take. So it stands down and leaves the room to the panels above,
+/// which is only reachable on a screen shorter than any phone this runs on.
+class _StandingsSlot extends StatelessWidget {
+  const _StandingsSlot({
+    required this.scores,
+    required this.meId,
+    required this.offline,
+    required this.onReset,
+  });
+
+  final ScoreView scores;
+  final String? meId;
+  final Set<String> offline;
+  final VoidCallback? onReset;
+
+  /// The card's own furniture: padding, the heading row, the gap under it.
+  static const _chrome = 62.0;
+
+  /// Two names is the least that says anything, and a name is 30 tall.
+  static const _floor = _chrome + 60;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final slot = box.maxHeight;
+        if (!slot.isFinite || slot < _floor) return const SizedBox.shrink();
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: StandingsCard(
+            scores: scores,
+            meId: meId,
+            offline: offline,
+            onReset: onReset,
+            maxListHeight: slot - _chrome,
+          ),
+        );
+      },
     );
   }
 }
@@ -519,8 +686,8 @@ class _Swatch extends StatelessWidget {
 
   /// Wide enough for a name to be worth reading, narrow enough that eight of
   /// these still wrap to two rows on a small phone.
-  static const _width = 72.0;
-  static const _disc = 54.0;
+  static const _width = 66.0;
+  static const _disc = 48.0;
 
   @override
   Widget build(BuildContext context) {
@@ -572,7 +739,7 @@ class _Swatch extends StatelessWidget {
                 child: Opacity(
                   opacity: taken ? 0.45 : 1,
                   child: PlayerArt.of(color, PlayerArtSlot.topdown)
-                      .widget(size: 38),
+                      .widget(size: 34),
                 ),
               ),
             ],

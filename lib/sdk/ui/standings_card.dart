@@ -61,6 +61,11 @@ class StandingsCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          // As tall as the heading and the names it actually has. Without this
+          // the card fills whatever it is offered, which on a screen with room
+          // to spare is a heading with an acre of white under it, and in the
+          // lobby is the whole leftover slot for two names.
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
