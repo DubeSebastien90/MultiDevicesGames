@@ -306,92 +306,58 @@ class _JoinedPanel extends StatelessWidget {
   }
 }
 
-/// The way in: a QR, and how much of the screen it deserves right now.
+/// The way in: a QR the size of a stamp, and the way to make it big.
 ///
 /// No address and no join code. Friends on the same WiFi find this game by name
 /// in their own join list; the QR is what covers the network that will not let
 /// them. Neither of those is a string anybody types, so neither is on screen.
 ///
-/// It folds itself away once somebody arrives. A host alone is a host holding
-/// their phone out for people to scan, and the code should be as big as the
-/// panel allows; a host with three friends in has a table to look at, and a
-/// full-size QR sitting in the middle of it is a hundred and fifty pixels spent
-/// on a job already done. The code is still one tap away, and the tap opens it
-/// bigger than this panel ever drew it — which is what a fourth person walking
-/// in late actually wants.
+/// The code is never drawn large here. A lobby is read at arm's length by the
+/// person holding it, and a hundred and fifty pixels of QR in the middle of it
+/// is a hundred and fifty pixels spent on a job that takes one tap — while the
+/// scanning itself happens across a table, in whatever light the room has,
+/// which wants the code bigger than this panel could ever have drawn it. So the
+/// stamp is a button, with the expand mark on its corner saying so, and
+/// [_showQr] is where the code actually lives.
 class _HostPanel extends StatelessWidget {
   const _HostPanel({required this.host});
 
   final HostSession host;
 
-  /// While nobody has arrived: as big as the panel will take.
-  static const _bigQr = 148.0;
-
-  /// Once they have: a stamp that says "the code is here", not one to scan.
-  static const _thumbQr = 38.0;
+  /// Big enough to read as a QR, small enough to read as a button.
+  static const _qr = 46.0;
 
   @override
   Widget build(BuildContext context) {
     final qr = host.qrPayload;
-    final alone = host.phones.where((p) => p.connected).length < 2;
 
     return _Panel.bare(
-      // The fold is the one thing on this screen that moves on its own, so it
-      // moves visibly. Snapping shut the instant a friend joins reads as the
-      // screen glitching; two-tenths of a second reads as the panel getting
-      // out of the way.
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-        alignment: Alignment.topCenter,
-        child: alone ? _open(context, qr) : _folded(context, qr),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Let them in', style: LobbyText.label),
+                const SizedBox(height: 4),
+                Text(_line, style: LobbyText.body),
+                ..._debugAddress(),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _CodeStamp(
+            payload: qr,
+            size: _qr,
+            onTap: qr == null ? null : () => _showQr(context, host.name, qr),
+          ),
+        ],
       ),
     );
   }
 
-  /// Nobody here yet: the code, as large as the panel goes.
-  Widget _open(BuildContext context, String? qr) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('Let them in', style: LobbyText.label),
-        const SizedBox(height: 12),
-        Center(child: _code(context, qr, _bigQr, const EdgeInsets.all(12))),
-        const SizedBox(height: 12),
-        Text(
-          _line,
-          style: LobbyText.body,
-          textAlign: TextAlign.center,
-        ),
-        ..._debugAddress(TextAlign.center),
-      ],
-    );
-  }
-
-  /// Somebody is here: one line, and the code as a stamp beside it.
-  Widget _folded(BuildContext context, String? qr) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Let them in', style: LobbyText.label),
-              const SizedBox(height: 4),
-              Text(_line, style: LobbyText.body),
-              ..._debugAddress(TextAlign.start),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        _code(context, qr, _thumbQr, const EdgeInsets.all(7)),
-      ],
-    );
-  }
-
-  /// What the panel has to say for itself, folded or not.
+  /// What the panel has to say for itself.
   String get _line {
     if (host.discoveryFailure != null) {
       // Worth saying, because the join list they are staring at is never going
@@ -410,50 +376,104 @@ class _HostPanel extends StatelessWidget {
   /// digits with no instruction attached, which is a puzzle rather than a
   /// fallback. It is here because the join sheet's own Type Address button is,
   /// and that button needs something to read off.
-  List<Widget> _debugAddress(TextAlign align) {
+  List<Widget> _debugAddress() {
     if (!kDebugMode) return const [];
     return [
       const SizedBox(height: 4),
       SelectableText(
         host.address?.toString() ?? 'starting…',
-        textAlign: align,
         style: LobbyText.body.copyWith(fontFamily: 'monospace', fontSize: 11),
       ),
     ];
   }
+}
 
-  /// The code on its white plate, at whatever size it is being given.
-  ///
-  /// Tappable at both sizes, and it has to be at the small one: thirty-eight
-  /// pixels is a picture of a QR rather than a scannable one, so the stamp is a
-  /// button that says where the real thing lives.
-  Widget _code(BuildContext context, String? qr, double size, EdgeInsets pad) {
-    return GestureDetector(
-      onTap: qr == null ? null : () => _showQr(context, host.name, qr),
-      child: Container(
-        padding: pad,
-        decoration: BoxDecoration(
-          color: LobbyFlowColors.paper,
-          borderRadius: BorderRadius.circular(size > 80 ? 20 : 12),
-        ),
-        child: qr == null
-            ? SizedBox(
-                width: size,
-                height: size,
-                child: const Center(
-                  child: Text('starting…', style: LobbyText.hint),
+/// The code as a stamp, with the mark that says it opens.
+///
+/// At this size it is a picture of a QR and not a scannable one, so it has to
+/// say what it is for. The expand mark does that in the corner where every
+/// other app puts it, and it sits on the plate rather than beside it so the
+/// whole thing reads as one button.
+class _CodeStamp extends StatelessWidget {
+  const _CodeStamp({
+    required this.payload,
+    required this.size,
+    required this.onTap,
+  });
+
+  final String? payload;
+  final double size;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final code = payload;
+
+    return Semantics(
+      button: true,
+      label: 'Show the join code full screen',
+      child: GestureDetector(
+        onTap: onTap,
+        // The mark hangs off the plate's corner, so the taps it catches are
+        // the ones aimed just outside it.
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          // Room for the mark to hang into, and a tap target that clears the
+          // forty-four pixels a finger is entitled to.
+          padding: const EdgeInsets.only(top: 7, right: 7),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: LobbyFlowColors.paper,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              )
-            : QrImageView(
-                // Address *and* code: scanning proves you were standing in
-                // front of this screen, which is what the code asks for
-                // anyway — so a scan should not demand it twice.
-                data: qr,
-                version: QrVersions.auto,
-                size: size,
-                backgroundColor: LobbyFlowColors.paper,
-                padding: EdgeInsets.zero,
+                child: code == null
+                    ? SizedBox(
+                        width: size,
+                        height: size,
+                        child: const Center(
+                          child: Icon(
+                            Icons.more_horiz,
+                            size: 18,
+                            color: LobbyFlowColors.muted,
+                          ),
+                        ),
+                      )
+                    : QrImageView(
+                        // Address *and* code: scanning proves you were standing
+                        // in front of this screen, which is what the code asks
+                        // for anyway — so a scan should not demand it twice.
+                        data: code,
+                        version: QrVersions.auto,
+                        size: size,
+                        backgroundColor: LobbyFlowColors.paper,
+                        padding: EdgeInsets.zero,
+                      ),
               ),
+              Positioned(
+                top: -7,
+                right: -7,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: LobbyFlowColors.ink,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    // The two arrows pointing out of each other's corner: the
+                    // one glyph everybody already reads as "make this big".
+                    Icons.open_in_full,
+                    size: 12,
+                    color: LobbyFlowColors.paper,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
