@@ -581,6 +581,12 @@ Future<void> _showQr(BuildContext context, String name, String payload) {
 /// Reset button and no room for a single name is a worse answer than the space
 /// it would take. So it stands down and leaves the room to the panels above,
 /// which is only reachable on a screen shorter than any phone this runs on.
+///
+/// How tall the card then *is* is the card's own business. This hands it the
+/// ceiling and nothing else — the heading under it carries a Reset button on a
+/// host and not on anybody else, so its height is not a thing this widget can
+/// be told in advance, and guessing it here is what overflowed the lobby by
+/// twelve pixels at five players.
 class _StandingsSlot extends StatelessWidget {
   const _StandingsSlot({
     required this.scores,
@@ -594,11 +600,14 @@ class _StandingsSlot extends StatelessWidget {
   final Set<String> offline;
   final VoidCallback? onReset;
 
-  /// The card's own furniture: padding, the heading row, the gap under it.
-  static const _chrome = 62.0;
-
-  /// Two names is the least that says anything, and a name is 30 tall.
-  static const _floor = _chrome + 60;
+  /// Under this there is no card worth drawing, so none is drawn.
+  ///
+  /// Roughly a heading and two names. Deliberately the only number here about
+  /// the card's own size, and deliberately a rough one: it decides whether to
+  /// draw at all, not how tall to draw, so being twelve pixels out costs
+  /// nothing. Fitting is the card's own business — it is handed a ceiling and
+  /// keeps under it.
+  static const _floor = 130.0;
 
   @override
   Widget build(BuildContext context) {
@@ -607,6 +616,10 @@ class _StandingsSlot extends StatelessWidget {
         final slot = box.maxHeight;
         if (!slot.isFinite || slot < _floor) return const SizedBox.shrink();
 
+        // The slot arrives as a real ceiling — Align keeps it, loosened — and
+        // the card lays its heading out for real before deciding how many
+        // names fit under it. Nothing here does arithmetic on a height it
+        // cannot see.
         return Align(
           alignment: Alignment.topCenter,
           child: StandingsCard(
@@ -614,7 +627,9 @@ class _StandingsSlot extends StatelessWidget {
             meId: meId,
             offline: offline,
             onReset: onReset,
-            maxListHeight: slot - _chrome,
+            // No cap of its own: in the lobby the room that is left is the
+            // whole answer, and the card is already held to it.
+            maxListHeight: double.infinity,
           ),
         );
       },

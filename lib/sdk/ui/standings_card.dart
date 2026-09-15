@@ -55,7 +55,104 @@ class StandingsCard extends StatelessWidget {
     final theme = Theme.of(context);
     final ranked = scores.ranked;
 
-    return Card(
+    final list = _ScoreList(
+      maxHeight: maxListHeight,
+      children: [
+        for (final (i, entry) in ranked.indexed)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: Text(
+                    '${i + 1}.',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          entry.phoneId == meId
+                              ? '${entry.label} (you)'
+                              : entry.label,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: entry.phoneId == meId
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                            color: offline.contains(entry.phoneId)
+                                ? theme.colorScheme.onSurfaceVariant
+                                : null,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (offline.contains(entry.phoneId)) ...[
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.cloud_off,
+                          size: 13,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          'away',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (showDeltas && entry.roundDelta != 0) ...[
+                  Text(
+                    // A negative number brings its own sign. Prefixing
+                    // every delta made a loss read '+-10'.
+                    entry.roundDelta > 0
+                        ? '+${entry.roundDelta}'
+                        : '${entry.roundDelta}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: entry.roundDelta > 0
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.error,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Text(
+                  '${entry.total}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+
+    // The card has to know whether it is being held to a height, and only the
+    // thing holding it knows that.
+    //
+    // Given a ceiling, the names take what is left under the heading and no
+    // more. That cannot be worked out from outside: the heading's height is not
+    // a number anybody else can know — a host sees a Reset button in it and
+    // nobody else does, and that button is a Material [TextButton] carrying a
+    // minimum height of its own. The lobby used to guess it, twelve pixels
+    // short, and the card overflowed its slot by exactly that as soon as a
+    // fifth player made the list long enough to reach the cap.
+    //
+    // Unbounded — inside a scroll view, which is where the results screen and
+    // the waiting room put it — there is nothing to fit under, and a flex child
+    // in a Column with no ceiling is an assertion rather than a layout. So the
+    // names fall back to their own [maxListHeight].
+    return LayoutBuilder(
+      builder: (context, box) => Card(
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
@@ -85,88 +182,10 @@ class StandingsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            _ScoreList(
-              maxHeight: maxListHeight,
-              children: [
-                for (final (i, entry) in ranked.indexed)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 22,
-                          child: Text(
-                            '${i + 1}.',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  entry.phoneId == meId
-                                      ? '${entry.label} (you)'
-                                      : entry.label,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: entry.phoneId == meId
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                    color: offline.contains(entry.phoneId)
-                                        ? theme.colorScheme.onSurfaceVariant
-                                        : null,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (offline.contains(entry.phoneId)) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.cloud_off,
-                                  size: 13,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'away',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        if (showDeltas && entry.roundDelta != 0) ...[
-                          Text(
-                            // A negative number brings its own sign. Prefixing
-                            // every delta made a loss read '+-10'.
-                            entry.roundDelta > 0
-                                ? '+${entry.roundDelta}'
-                                : '${entry.roundDelta}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: entry.roundDelta > 0
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.error,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        Text(
-                          '${entry.total}',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
+            if (box.maxHeight.isFinite) Flexible(child: list) else list,
           ],
         ),
+      ),
       ),
     );
   }
