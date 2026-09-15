@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../score/scoreboard.dart';
+import '../model/player_color.dart';
 import 'standings_card.dart';
 
 /// Connected, and sitting this one out.
@@ -22,6 +23,7 @@ class WaitingRoomView extends StatelessWidget {
     required this.scores,
     required this.meId,
     this.playing,
+    this.colors = const {},
     this.offline = const <String>{},
   });
 
@@ -30,6 +32,10 @@ class WaitingRoomView extends StatelessWidget {
 
   /// The round being sat out, when the host has said which.
   final String? playing;
+
+  /// Each phone's character, for the standings underneath.
+  final Map<String, PlayerColor?> colors;
+
   final Set<String> offline;
 
   @override
@@ -98,7 +104,12 @@ class WaitingRoomView extends StatelessWidget {
                     // Proof the seat was kept: their name and their score, in
                     // the same table everybody else is looking at.
                     const SizedBox(height: 26),
-                    StandingsCard(scores: scores, meId: meId, offline: offline),
+                    StandingsCard(
+                      scores: scores,
+                      meId: meId,
+                      colors: colors,
+                      offline: offline,
+                    ),
                   ],
                 ),
               ),

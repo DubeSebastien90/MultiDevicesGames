@@ -75,7 +75,7 @@ void main() {
     // An overflow is reported as an exception rather than a failed
     // expectation, so it has to be asked for by name.
     expect(tester.takeException(), isNull);
-    expect(tester.getSize(find.byType(Card)).height, lessThan(160));
+    expect(tester.getSize(find.byKey(StandingsCard.plateKey)).height, lessThan(160));
   });
 
   testWidgets('everybody is reachable by scrolling the names', (tester) async {
@@ -83,8 +83,8 @@ void main() {
 
     // The bottom of the table starts below the fold, and is one drag away.
     expect(find.text('Player 8'), findsNothing);
-    await tester.drag(find.byType(ListView), const Offset(0, -200));
-    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.text('Player 8'), findsOneWidget);
@@ -95,14 +95,17 @@ void main() {
 
     // The point of a ceiling rather than a height: two players do not leave a
     // card with six rows of white under them.
-    // Two rows and the card's own furniture: a shade over 120.
-    expect(tester.getSize(find.byType(Card)).height, lessThan(130));
+    // Two rows of character art and the card's own furniture.
+    expect(
+      tester.getSize(find.byKey(StandingsCard.plateKey)).height,
+      lessThan(160),
+    );
   });
 
   testWidgets('it stays away until somebody scores', (tester) async {
     await show(tester, players: 0, maxListHeight: 200);
 
-    expect(find.byType(Card), findsNothing);
+    expect(find.byKey(StandingsCard.plateKey), findsNothing);
   });
 
   testWidgets('it fits the slot it is given, Reset button and all', (
@@ -113,13 +116,13 @@ void main() {
     await showInSlot(tester, players: 5, slot: 150);
 
     expect(tester.takeException(), isNull);
-    expect(tester.getSize(find.byType(Card)).height, lessThanOrEqualTo(150));
+    expect(tester.getSize(find.byKey(StandingsCard.plateKey)).height, lessThanOrEqualTo(150));
   });
 
   testWidgets('a slot it cannot fill is not padded out', (tester) async {
     await showInSlot(tester, players: 2, slot: 400);
 
-    expect(tester.getSize(find.byType(Card)).height, lessThan(180));
+    expect(tester.getSize(find.byKey(StandingsCard.plateKey)).height, lessThan(180));
   });
 
   testWidgets('every table size fits every slot', (tester) async {
@@ -133,7 +136,7 @@ void main() {
           reason: '$players players in a ${slot.toInt()}px slot',
         );
         expect(
-          tester.getSize(find.byType(Card)).height,
+          tester.getSize(find.byKey(StandingsCard.plateKey)).height,
           lessThanOrEqualTo(slot),
           reason: '$players players in a ${slot.toInt()}px slot',
         );

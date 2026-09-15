@@ -129,6 +129,7 @@ class LobbyView extends StatelessWidget {
                           child: _StandingsSlot(
                             scores: host?.scores.view ?? client.scores,
                             meId: client.phoneId,
+                            colors: playerColors(controller),
                             offline: awayPhoneIds(controller),
                             onReset: host?.resetScores,
                           ),
@@ -591,12 +592,14 @@ class _StandingsSlot extends StatelessWidget {
   const _StandingsSlot({
     required this.scores,
     required this.meId,
+    required this.colors,
     required this.offline,
     required this.onReset,
   });
 
   final ScoreView scores;
   final String? meId;
+  final Map<String, PlayerColor?> colors;
   final Set<String> offline;
   final VoidCallback? onReset;
 
@@ -625,6 +628,7 @@ class _StandingsSlot extends StatelessWidget {
           child: StandingsCard(
             scores: scores,
             meId: meId,
+            colors: colors,
             offline: offline,
             onReset: onReset,
             // No cap of its own: in the lobby the room that is left is the

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../app_controller.dart';
 import '../model/player_color.dart';
+import '../render/player_art.dart';
 import '../score/scoreboard.dart';
+import 'lobby_flow_style.dart';
+import 'results_view.dart' show VerdictMark;
 
 /// The end of the run: who won the whole evening.
 ///
@@ -28,8 +30,8 @@ class ScoreboardView extends StatelessWidget {
   final ScoreView scores;
   final String? meId;
 
-  /// Each phone's colour, so a row is recognisable to somebody who has spent
-  /// the evening being the green one. Missing entries simply get no dot.
+  /// Each phone's character, so a row is recognisable to somebody who has spent
+  /// the evening being the frog. Missing entries simply get no portrait.
   final Map<String, PlayerColor?> colors;
 
   /// Phones the session remembers that are not here any more. They keep their
@@ -41,15 +43,19 @@ class ScoreboardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final ranked = scores.ranked;
 
     // Ties share a place, so two people level on 40 are both second rather than
     // one of them being told they came third by the order of a list.
     final places = _places(ranked);
 
+    // Whether this phone is the one being congratulated. The mark is the same
+    // one the results screen uses, and it should not be celebrating at somebody
+    // who came fourth.
+    final won = scores.isUsed && scores.leader?.phoneId == meId;
+
     return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -60,67 +66,67 @@ class ScoreboardView extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(Icons.emoji_events, size: 56, color: scheme.primary),
-                  const SizedBox(height: 12),
-                  Text(
-                    _headline(scores, meId),
-                    style: theme.textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 4),
+                  Center(child: VerdictMark(won: won)),
+                  const SizedBox(height: 16),
+                  LobbyTitle(_headline(scores, meId), fontSize: 30),
+                  const SizedBox(height: 6),
                   Text(
                     'Final standings',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      letterSpacing: 2,
-                    ),
+                    style: LobbyText.body.copyWith(letterSpacing: 2),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 24),
 
                   // Deliberately not a [StandingsCard]: that one draws nothing
                   // at all until somebody scores, which is right where it sits —
                   // beside other things — and wrong here, where it is the whole
                   // screen. A co-operative run that ended level still has to
                   // show the table its own names.
-                  Card(
-                    margin: EdgeInsets.zero,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 8,
-                        horizontal: 12,
-                      ),
-                      child: Column(
-                        children: [
-                          for (final (i, entry) in ranked.indexed)
-                            _Row(
-                              place: places[i],
-                              entry: entry,
-                              me: entry.phoneId == meId,
-                              away: offline.contains(entry.phoneId),
-                              color: colors[entry.phoneId],
-                              // Medals mean nothing on a board nobody scored on.
-                              medals: scores.isUsed,
-                            ),
-                        ],
-                      ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: LobbyFlowColors.field,
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    child: Column(
+                      children: [
+                        for (final (i, entry) in ranked.indexed)
+                          _Row(
+                            place: places[i],
+                            entry: entry,
+                            me: entry.phoneId == meId,
+                            away: offline.contains(entry.phoneId),
+                            color: colors[entry.phoneId],
+                            // Medals mean nothing on a board nobody scored on.
+                            medals: scores.isUsed,
+                          ),
+                      ],
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 26),
                   if (onBackToLobby != null)
-                    FilledButton.icon(
+                    LobbyPillButton(
                       onPressed: onBackToLobby,
-                      icon: const Icon(Icons.meeting_room_outlined),
-                      label: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Back to lobby'),
+                      icon: Icons.meeting_room_outlined,
+                      label: 'Back to lobby',
+                      background: LobbyFlowColors.green,
+                      foreground: LobbyFlowColors.ink,
+                      fontSize: 18,
+                      iconSize: 22,
+                      radius: LobbyMetrics.bigRadius,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 18,
+                        horizontal: 20,
                       ),
                     )
                   else
                     // Something to look at, so a phone with no button does not
                     // read as a phone that has frozen.
-                    Row(
+                    const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         SizedBox(
@@ -128,16 +134,11 @@ class ScoreboardView extends StatelessWidget {
                           height: 14,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: scheme.onSurfaceVariant,
+                            color: LobbyFlowColors.muted,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Waiting for the host…',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
+                        SizedBox(width: 10),
+                        Text('Waiting for the host…', style: LobbyText.body),
                       ],
                     ),
                 ],
@@ -174,22 +175,6 @@ class ScoreboardView extends StatelessWidget {
   }
 }
 
-/// Everyone's colour, from whichever roster this device happens to have.
-///
-/// The host reads its own; a joiner reads the lobby broadcast. They are the
-/// same list — the host is a client of itself — so taking whichever is to hand
-/// keeps the screen from having to know which device it is on.
-Map<String, PlayerColor?> playerColors(AppController controller) {
-  final host = controller.host;
-  if (host != null) {
-    return {for (final p in host.phones) p.phoneId: p.color};
-  }
-  return {
-    for (final p in controller.client!.lobbyPhones)
-      p['phoneId'] as String: PlayerPalette.byId(p['color'] as String?),
-  };
-}
-
 class _Row extends StatelessWidget {
   const _Row({
     required this.place,
@@ -207,6 +192,13 @@ class _Row extends StatelessWidget {
   final PlayerColor? color;
   final bool medals;
 
+  /// The character, where a ten-pixel dot of their colour used to be.
+  ///
+  /// The dot was enough to tell two rows apart and not enough to be anybody.
+  /// This is the same picture they have been chasing round the board all
+  /// evening, at a size where it is that animal rather than a smudge of paint.
+  static const _art = 34.0;
+
   /// Gold, silver, bronze. Deliberately fixed rather than themed: a medal that
   /// changes colour with the theme is not a medal.
   static const _medal = <int, Color>{
@@ -217,12 +209,12 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final badge = medals ? _medal[place] : null;
+    final ink = away ? LobbyFlowColors.muted : LobbyFlowColors.ink;
+    final art = color;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
           Container(
@@ -230,46 +222,48 @@ class _Row extends StatelessWidget {
             height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: badge ?? scheme.surfaceContainerHighest,
+              color: badge ?? LobbyFlowColors.paper,
               shape: BoxShape.circle,
             ),
             child: Text(
               '$place',
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: badge == null ? scheme.onSurfaceVariant : Colors.black87,
+              style: LobbyText.count.copyWith(
+                fontSize: 14,
+                color: badge == null ? LobbyFlowColors.muted : Colors.black87,
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          if (color != null) ...[
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: color!.value,
-                shape: BoxShape.circle,
-              ),
+          const SizedBox(width: 10),
+          if (art != null) ...[
+            Opacity(
+              opacity: away ? 0.45 : 1,
+              child: PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
             ),
             const SizedBox(width: 8),
           ],
           Expanded(
             child: Text(
               me ? '${entry.label} (you)' : entry.label,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: me ? FontWeight.w700 : FontWeight.w500,
-                color: away ? scheme.onSurfaceVariant : null,
-              ),
               overflow: TextOverflow.ellipsis,
+              style: LobbyText.label.copyWith(
+                color: ink,
+                fontWeight: me ? FontWeight.w800 : FontWeight.w600,
+              ),
             ),
           ),
           if (away) ...[
-            Icon(Icons.cloud_off, size: 14, color: scheme.onSurfaceVariant),
+            const Icon(
+              Icons.cloud_off,
+              size: 14,
+              color: LobbyFlowColors.muted,
+            ),
             const SizedBox(width: 8),
           ],
           Text(
             '${entry.total}',
-            style: theme.textTheme.titleLarge?.copyWith(
+            style: LobbyText.title.copyWith(
+              color: ink,
+              fontSize: 20,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),

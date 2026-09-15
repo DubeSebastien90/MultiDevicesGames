@@ -135,6 +135,7 @@ class SessionScreen extends StatelessWidget {
           scores: client.scores,
           meId: client.phoneId,
           playing: client.manifest?.title,
+          colors: playerColors(controller),
           offline: awayPhoneIds(controller),
         );
 

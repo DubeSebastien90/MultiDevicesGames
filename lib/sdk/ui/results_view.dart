@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../client/client_session.dart' show RoundVerdict;
+import 'lobby_flow_style.dart';
 import 'standings_card.dart';
 
 /// The round is over: what happened, and where everyone stands.
@@ -17,7 +18,6 @@ class ResultsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final client = controller.client!;
     final host = controller.host;
     final result = client.result;
@@ -60,6 +60,7 @@ class ResultsView extends StatelessWidget {
         : (result?.runIsOver ?? false);
 
     return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -70,34 +71,28 @@ class ResultsView extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Whose result this is, before what the result was. The
-                  // portrait is the same character this phone has been all
-                  // round, so the screen is recognisably *yours* at a glance
-                  // across a table — which is the same job the colour does
-                  // everywhere else.
+                  // Whose result this is, before what the result was, and big
+                  // enough to be the first thing seen.
+                  //
+                  // [Player.topdown] rather than [Player.face]: the piece as it
+                  // was on the board thirty seconds ago is the picture the
+                  // player has actually been watching, and until the artwork
+                  // loads — or on a build without it — the portrait slot falls
+                  // back to a plain shape in their colour, which is a coloured
+                  // square where a character should be.
                   if (me != null) ...[
-                    Center(child: me.face.widget(size: 72)),
-                    const SizedBox(height: 12),
+                    Center(child: me.topdown.widget(size: 168)),
+                    const SizedBox(height: 16),
                   ],
-                  Icon(
-                    verdict.celebrate ? Icons.emoji_events : Icons.replay,
-                    size: 44,
-                    color: verdict.celebrate
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    verdict.headline,
-                    style: theme.textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
+                  Center(child: VerdictMark(won: verdict.celebrate)),
+                  const SizedBox(height: 14),
+                  LobbyTitle(verdict.headline, fontSize: 30),
                   if (title != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: LobbyText.label.copyWith(
+                        color: LobbyFlowColors.muted,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -106,57 +101,58 @@ class ResultsView extends StatelessWidget {
                   // line everyone gets — "You made 320 points" matters more to
                   // the person holding the phone than "time ran out" does.
                   if (verdict.line != null) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 10),
                     Text(
                       verdict.line!,
-                      style: theme.textTheme.titleSmall,
+                      style: LobbyText.label,
                       textAlign: TextAlign.center,
                     ),
                   ],
                   if (summary != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
                       summary,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: LobbyText.body,
                       textAlign: TextAlign.center,
                     ),
                   ],
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 22),
                   StandingsCard(
                     scores: host?.scores.view ?? client.scores,
                     meId: client.phoneId,
+                    colors: playerColors(controller),
                     showDeltas: true,
                     offline: awayPhoneIds(controller),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 22),
                   // The host drives what happens next, and the button no longer
                   // names the game — announcing it here was the same spoiler the
                   // "Up next" card was.
                   if (host != null)
-                    FilledButton.icon(
+                    LobbyPillButton(
                       onPressed: hasNext
                           ? host.advanceToNextGame
                           : runIsOver
                           ? host.showScoreboard
                           : host.returnToLobby,
-                      icon: Icon(
-                        hasNext
-                            ? Icons.arrow_forward
-                            : runIsOver
-                            ? Icons.emoji_events
-                            : Icons.list,
-                      ),
-                      label: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          hasNext
-                              ? 'Next game'
-                              : runIsOver
-                              ? 'Score board'
-                              : 'Back to the games',
-                        ),
+                      icon: hasNext
+                          ? Icons.arrow_forward
+                          : runIsOver
+                          ? Icons.emoji_events
+                          : Icons.list,
+                      label: hasNext
+                          ? 'Next game'
+                          : runIsOver
+                          ? 'Score board'
+                          : 'Back to the games',
+                      background: LobbyFlowColors.green,
+                      foreground: LobbyFlowColors.ink,
+                      fontSize: 18,
+                      iconSize: 22,
+                      radius: LobbyMetrics.bigRadius,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 18,
+                        horizontal: 20,
                       ),
                     )
                   else
@@ -166,9 +162,7 @@ class ResultsView extends StatelessWidget {
                           : runIsOver
                           ? 'Waiting for the host to show the score board…'
                           : 'Waiting for the host to pick the next game…',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: LobbyText.body,
                       textAlign: TextAlign.center,
                     ),
                 ],
@@ -176,6 +170,48 @@ class ResultsView extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Won or did not, as a disc.
+///
+/// The old screen put a bare Material icon here, in the theme's primary colour
+/// for a win and its muted grey for anything else — which made losing look like
+/// a disabled control. This is the flow's own vocabulary instead: the same
+/// coloured plate every button on every other screen is made of, the cup on
+/// green when it went your way and the arrow on coral when it did not. Coral
+/// rather than grey because a round you lost still happened.
+class VerdictMark extends StatelessWidget {
+  const VerdictMark({super.key, required this.won});
+
+  final bool won;
+
+  static const _size = 78.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = won ? LobbyFlowColors.green : LobbyFlowColors.coral;
+
+    return Container(
+      width: _size,
+      height: _size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: LobbyFlowColors.shadeOf(color),
+            offset: const Offset(0, LobbyMetrics.plateOffset),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Icon(
+        won ? Icons.emoji_events : Icons.replay_rounded,
+        size: 40,
+        color: LobbyFlowColors.ink,
       ),
     );
   }

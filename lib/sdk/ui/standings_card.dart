@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../model/player_color.dart';
+import '../render/player_art.dart';
 import '../score/scoreboard.dart';
+import 'lobby_flow_style.dart';
 
 /// The session standings.
 ///
@@ -13,14 +16,23 @@ class StandingsCard extends StatelessWidget {
     super.key,
     required this.scores,
     this.meId,
+    this.colors = const {},
     this.showDeltas = false,
     this.offline = const {},
     this.onReset,
     this.maxListHeight = 156,
   });
 
+  /// The plate itself, for a test that wants to measure it.
+  static const plateKey = Key('standings-plate');
+
   final ScoreView scores;
   final String? meId;
+
+  /// Each phone's character, so a row is recognisable to somebody who has spent
+  /// the evening being the frog. Missing entries simply get no portrait — a
+  /// joiner who never picked, or a screen that has no roster to hand.
+  final Map<String, PlayerColor?> colors;
 
   /// Show each phone's change this round — the results screen wants it, the
   /// lobby does not.
@@ -52,86 +64,19 @@ class StandingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!scores.isUsed) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
     final ranked = scores.ranked;
 
     final list = _ScoreList(
       maxHeight: maxListHeight,
       children: [
         for (final (i, entry) in ranked.indexed)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 22,
-                  child: Text(
-                    '${i + 1}.',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          entry.phoneId == meId
-                              ? '${entry.label} (you)'
-                              : entry.label,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: entry.phoneId == meId
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                            color: offline.contains(entry.phoneId)
-                                ? theme.colorScheme.onSurfaceVariant
-                                : null,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (offline.contains(entry.phoneId)) ...[
-                        const SizedBox(width: 6),
-                        Icon(
-                          Icons.cloud_off,
-                          size: 13,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          'away',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (showDeltas && entry.roundDelta != 0) ...[
-                  Text(
-                    // A negative number brings its own sign. Prefixing
-                    // every delta made a loss read '+-10'.
-                    entry.roundDelta > 0
-                        ? '+${entry.roundDelta}'
-                        : '${entry.roundDelta}',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: entry.roundDelta > 0
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.error,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Text(
-                  '${entry.total}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
+          _Row(
+            place: i + 1,
+            entry: entry,
+            me: entry.phoneId == meId,
+            away: offline.contains(entry.phoneId),
+            color: colors[entry.phoneId],
+            showDelta: showDeltas,
           ),
       ],
     );
@@ -142,20 +87,22 @@ class StandingsCard extends StatelessWidget {
     // Given a ceiling, the names take what is left under the heading and no
     // more. That cannot be worked out from outside: the heading's height is not
     // a number anybody else can know — a host sees a Reset button in it and
-    // nobody else does, and that button is a Material [TextButton] carrying a
-    // minimum height of its own. The lobby used to guess it, twelve pixels
-    // short, and the card overflowed its slot by exactly that as soon as a
-    // fifth player made the list long enough to reach the cap.
+    // nobody else does — and it was guessed at from the outside once, twelve
+    // pixels short, and the card overflowed its slot by exactly that as soon as
+    // a fifth player made the list long enough to reach the cap.
     //
     // Unbounded — inside a scroll view, which is where the results screen and
     // the waiting room put it — there is nothing to fit under, and a flex child
     // in a Column with no ceiling is an assertion rather than a layout. So the
     // names fall back to their own [maxListHeight].
     return LayoutBuilder(
-      builder: (context, box) => Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+      builder: (context, box) => Container(
+        key: plateKey,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        decoration: BoxDecoration(
+          color: LobbyFlowColors.field,
+          borderRadius: BorderRadius.circular(20),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           // As tall as the heading and the names it actually has. Without this
@@ -166,26 +113,132 @@ class StandingsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.leaderboard,
-                  size: 16,
-                  color: theme.colorScheme.primary,
+                const Expanded(
+                  child: Text('Standings', style: LobbyText.label),
                 ),
-                const SizedBox(width: 8),
-                Text('Standings', style: theme.textTheme.titleSmall),
-                const Spacer(),
                 if (onReset != null)
-                  TextButton(
+                  LobbyPillButton(
+                    label: 'Reset',
                     onPressed: onReset,
-                    child: const Text('Reset'),
+                    background: LobbyFlowColors.paper,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 12,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 7,
+                      horizontal: 14,
+                    ),
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             if (box.maxHeight.isFinite) Flexible(child: list) else list,
           ],
         ),
       ),
+    );
+  }
+}
+
+/// One person's line: where they came, who they are, and what they have.
+class _Row extends StatelessWidget {
+  const _Row({
+    required this.place,
+    required this.entry,
+    required this.me,
+    required this.away,
+    required this.color,
+    required this.showDelta,
+  });
+
+  final int place;
+  final ScoreEntry entry;
+  final bool me;
+  final bool away;
+  final PlayerColor? color;
+  final bool showDelta;
+
+  /// The character, at the size the old coloured dot should always have been.
+  ///
+  /// That dot was ten pixels of paint: enough to tell two rows apart, not
+  /// enough to be anybody. The art is the same picture the player has been
+  /// looking for on the board all evening, and at this size it is recognisably
+  /// that animal rather than a smudge of its colour.
+  static const _art = 24.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = away ? LobbyFlowColors.muted : LobbyFlowColors.ink;
+    final art = color;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            child: Text(
+              '$place.',
+              style: LobbyText.button.copyWith(
+                color: LobbyFlowColors.muted,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          if (art != null) ...[
+            Opacity(
+              opacity: away ? 0.45 : 1,
+              child: PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Text(
+              me ? '${entry.label} (you)' : entry.label,
+              overflow: TextOverflow.ellipsis,
+              style: LobbyText.label.copyWith(
+                color: ink,
+                fontSize: 14,
+                fontWeight: me ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ),
+          if (away) ...[
+            const Icon(
+              Icons.cloud_off,
+              size: 13,
+              color: LobbyFlowColors.muted,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'away',
+              style: LobbyText.body.copyWith(fontSize: 11),
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (showDelta && entry.roundDelta != 0) ...[
+            Text(
+              // A negative number brings its own sign. Prefixing every delta
+              // made a loss read '+-10'.
+              entry.roundDelta > 0
+                  ? '+${entry.roundDelta}'
+                  : '${entry.roundDelta}',
+              style: LobbyText.button.copyWith(
+                fontSize: 12,
+                color: entry.roundDelta > 0
+                    ? LobbyFlowColors.shadeOf(LobbyFlowColors.green)
+                    : LobbyFlowColors.shadeOf(LobbyFlowColors.coral),
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Text(
+            '${entry.total}',
+            style: LobbyText.count.copyWith(
+              color: ink,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -284,5 +337,23 @@ Set<String> awayPhoneIds(AppController controller) {
     for (final p in controller.client!.lobbyPhones)
       if (((p['connected'] as bool?) ?? true) == false)
         p['phoneId'] as String,
+  };
+}
+
+/// Everyone's character, from whichever roster this device happens to have.
+///
+/// Same source and same reasoning as [awayPhoneIds], which is why it lives
+/// beside it: the host reads its own roster, a joiner reads the lobby
+/// broadcast, and they are the same list because the host is a client of
+/// itself. Taking whichever is to hand keeps every standings screen from having
+/// to know which device it is on.
+Map<String, PlayerColor?> playerColors(AppController controller) {
+  final host = controller.host;
+  if (host != null) {
+    return {for (final p in host.phones) p.phoneId: p.color};
+  }
+  return {
+    for (final p in controller.client!.lobbyPhones)
+      p['phoneId'] as String: PlayerPalette.byId(p['color'] as String?),
   };
 }
