@@ -9,22 +9,29 @@ import '../host/host_session.dart';
 import '../model/player_color.dart';
 import '../render/player_art.dart';
 import 'game_picker.dart';
+import 'lobby_flow_style.dart';
 import 'standings_card.dart';
 import 'table_notice.dart';
 
-/// The connection screen, and only that: the code, the QR, the address, and who
-/// has arrived.
+/// The connection screen, and only that: the QR, who has arrived, and — on the
+/// host — the button that starts the evening.
 ///
 /// Deliberately says nothing about phone placement. That belongs to the
 /// arrangement screen, because it changes with every minigame while this screen
 /// never does — you set the room up once and let people in, then decide what to
 /// play.
 ///
-/// The host advertises the game by name over UDP so friends can find it without
-/// typing anything, and gates entry on a 5-digit code so a stranger who sees
-/// the name still cannot walk in. The QR (which carries address *and* code) and
-/// the plain address are always on screen too — broadcast is the first thing a
-/// hostile network drops, and the game has to survive that.
+/// Dressed in the pre-game flow's own style ([LobbyFlowColors] and friends)
+/// rather than the app's [ThemeData], because this is the last screen of that
+/// flow: you arrive here straight off the entry screen or the join list, and
+/// landing on a differently-dressed screen reads as landing in a different app.
+///
+/// The host advertises the game by name over UDP so friends can find it in
+/// their join list without typing anything. The QR is on screen for the same
+/// reason it always was — broadcast is the first thing a hostile network drops,
+/// and the game has to survive that. The plain IP address used to be here too
+/// and is not any more: nobody was ever asked to type one, and a row of digits
+/// with no instruction attached is a puzzle, not a fallback.
 class LobbyView extends StatelessWidget {
   const LobbyView({super.key, required this.controller});
 
@@ -34,140 +41,105 @@ class LobbyView extends StatelessWidget {
   Widget build(BuildContext context) {
     final client = controller.client!;
     final host = controller.host;
-    final theme = Theme.of(context);
 
-    final phoneCount =
-        host?.phones.length ?? client.lobbyPhones.length;
+    final phoneCount = host?.phones.length ?? client.lobbyPhones.length;
+    final title = host?.name ?? client.sessionName ?? 'Lobby';
 
     return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          host != null ? 'Hosting' : 'Joined',
-                          style: theme.textTheme.titleLarge,
-                        ),
-                      ),
-                      Text(
-                        client.phoneId ?? '…',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: controller.leave,
-                        child: const Text('Leave'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (host != null)
-                    _HostPanel(host: host)
-                  else
-                    _JoinedPanel(client: client, phoneCount: phoneCount),
-                  const SizedBox(height: 14),
-                  _ColorPicker(client: client),
-                  const SizedBox(height: 14),
-                  _WhoIsHere(
-                    controller: controller,
-                    count: phoneCount,
-                  ),
-                  const SizedBox(height: 14),
-                  StandingsCard(
-                    scores: host?.scores.view ?? client.scores,
-                    meId: client.phoneId,
-                    offline: awayPhoneIds(controller),
-                    onReset: host?.resetScores,
-                  ),
-                  if (controller.client?.warning != null ||
-                      host?.warning != null) ...[
-                    const SizedBox(height: 14),
-                    TableNotice(controller: controller),
-                  ],
-                  if (host != null) ...[
-                    // Debug builds only. Two of the three things that set this
-                    // are internal failures — a game's `planBoard` refusing the
-                    // table, or its `createSim` throwing — and their text is a
-                    // class name and an exception, which is a bug report, not a
-                    // message for whoever is hosting games night. The third,
-                    // the playlist running out for a shrunken table, is worth
-                    // saying but is already said properly: `_layOutAgain` sets
-                    // a [TableChange] alongside it and [TableChangeScreen]
-                    // takes the whole screen on every phone. So nothing a
-                    // player needs is lost by hiding this, and in release they
-                    // simply land back in the lobby.
-                    if (kDebugMode && host.planError != null) ...[
-                      const SizedBox(height: 14),
-                      _PlanErrorBanner(
-                        message: host.planError!,
-                        onDismiss: host.clearPlanError,
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    // One button starts the evening; the one beside it decides
-                    // what the evening is. The list used to be spread down the
-                    // lobby, which put twelve rows of game between the host and
-                    // everything else on this screen — it is a thing you set
-                    // once and then stop looking at.
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: host.canStart ? host.startRound : null,
-                            icon: const Icon(Icons.play_arrow),
-                            label: const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text('Play'),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        IconButton.filledTonal(
-                          onPressed: () =>
-                              showGamesSheet(context, host, controller.premium),
-                          icon: const Icon(Icons.settings),
-                          tooltip: 'Choose which games are in the run',
-                          style: IconButton.styleFrom(
-                            // Matched to the Play button beside it: two
-                            // controls on one line at two different heights
-                            // read as one control and an afterthought.
-                            minimumSize: const Size(56, 56),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      host.canStart
-                          ? 'Starts ${host.upcoming!.manifest.title} and keeps '
-                                'going — each win rolls into the next game.'
-                          : host.blockedReason!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _gamesLine(host),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              children: [
+                // The back pill *is* Leave. On every other screen in the flow
+                // it undoes the step that got you here, and the step that got
+                // you here was opening — or joining — this lobby.
+                LobbyHeader(
+                  title: title,
+                  onBack: controller.leave,
+                  padding: const EdgeInsets.only(top: 12, bottom: 8),
+                ),
+                const SizedBox(height: 18),
+                if (host != null)
+                  _HostPanel(host: host)
+                else
+                  _JoinedPanel(phoneCount: phoneCount),
+                const SizedBox(height: 16),
+                _WhoIsHere(controller: controller, count: phoneCount),
+                const SizedBox(height: 16),
+                _ColorPicker(client: client),
+                const SizedBox(height: 16),
+                StandingsCard(
+                  scores: host?.scores.view ?? client.scores,
+                  meId: client.phoneId,
+                  offline: awayPhoneIds(controller),
+                  onReset: host?.resetScores,
+                ),
+                if (client.warning != null || host?.warning != null) ...[
+                  const SizedBox(height: 16),
+                  TableNotice(controller: controller),
                 ],
-              ),
+                if (host != null) ...[
+                  // Debug builds only. Two of the three things that set this
+                  // are internal failures — a game's `planBoard` refusing the
+                  // table, or its `createSim` throwing — and their text is a
+                  // class name and an exception, which is a bug report, not a
+                  // message for whoever is hosting games night. The third,
+                  // the playlist running out for a shrunken table, is worth
+                  // saying but is already said properly: `_layOutAgain` sets
+                  // a [TableChange] alongside it and [TableChangeScreen]
+                  // takes the whole screen on every phone. So nothing a
+                  // player needs is lost by hiding this, and in release they
+                  // simply land back in the lobby.
+                  if (kDebugMode && host.planError != null) ...[
+                    const SizedBox(height: 16),
+                    _PlanErrorBanner(
+                      message: host.planError!,
+                      onDismiss: host.clearPlanError,
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  LobbyPillButton(
+                    label: 'Play',
+                    icon: Icons.play_arrow_rounded,
+                    background: LobbyFlowColors.green,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 20,
+                    iconSize: 26,
+                    radius: LobbyMetrics.bigRadius,
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    onPressed: host.canStart ? host.startRound : null,
+                  ),
+                  const SizedBox(height: 10),
+                  _Caption(
+                    host.canStart
+                        ? 'Starts ${host.upcoming!.manifest.title} and keeps '
+                              'going — each win rolls into the next game.'
+                        : host.blockedReason!,
+                  ),
+                  const SizedBox(height: 18),
+                  // The list used to be spread down the lobby, which put
+                  // twelve rows of game between the host and everything else
+                  // on this screen — it is a thing you set once and then stop
+                  // looking at. Gray, because it is not the button this screen
+                  // is about.
+                  LobbyPillButton(
+                    label: 'Choose Games',
+                    icon: Icons.tune,
+                    background: LobbyFlowColors.field,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 17,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    onPressed: () =>
+                        showGamesSheet(context, host, controller.premium),
+                  ),
+                  const SizedBox(height: 10),
+                  _Caption(_gamesLine(host)),
+                ],
+              ],
             ),
           ),
         ),
@@ -176,11 +148,74 @@ class LobbyView extends StatelessWidget {
   }
 }
 
+/// A muted line of explanation under a button.
+class _Caption extends StatelessWidget {
+  const _Caption(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        style: LobbyText.body,
+        textAlign: TextAlign.center,
+      );
+}
+
+/// The flow's gray rounded panel: a heading with something under it.
+///
+/// [_Panel.bare] is the same plate with no heading of its own, for a panel that
+/// lays its own title out — the host's does, beside the QR rather than above
+/// it.
+class _Panel extends StatelessWidget {
+  const _Panel({required this.title, required this.child, this.trailing});
+
+  const _Panel.bare({required this.child})
+      : title = null,
+        trailing = null;
+
+  final String? title;
+  final Widget child;
+
+  /// Sits opposite the heading.
+  final Widget? trailing;
+
+  static const _padding = EdgeInsets.fromLTRB(20, 16, 20, 20);
+
+  @override
+  Widget build(BuildContext context) {
+    final heading = title;
+
+    return Container(
+      padding: _padding,
+      decoration: BoxDecoration(
+        color: LobbyFlowColors.field,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: heading == null
+          ? child
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(heading, style: LobbyText.label)),
+                    ?trailing,
+                  ],
+                ),
+                const SizedBox(height: 14),
+                child,
+              ],
+            ),
+    );
+  }
+}
+
 /// What Play would actually play, in one line under it.
 ///
-/// Said out loud because the list is now behind a button: a run that quietly
-/// plays nine of twelve games, with nothing on screen to say so, is a host
-/// wondering where Guacamole went.
+/// Said out loud because the list is behind a button: a run that quietly plays
+/// nine of twelve games, with nothing on screen to say so, is a host wondering
+/// where Guacamole went.
 ///
 /// Counts [HostSession.runningOrder] and not the ticks. A game the table is the
 /// wrong size for is not in the run no matter how it is ticked, and "all 12
@@ -198,7 +233,9 @@ String _gamesLine(HostSession host) {
 /// A game whose `planBoard` produced something unusable. Shown here because
 /// this is where the round would have started, and it never did.
 ///
-/// Built only under [kDebugMode] — see the call site for why.
+/// Built only under [kDebugMode] — see the call site for why. Left in the app's
+/// error colours rather than the flow's palette on purpose: it is a developer's
+/// banner, and it should not look like part of the design.
 class _PlanErrorBanner extends StatelessWidget {
   const _PlanErrorBanner({required this.message, required this.onDismiss});
 
@@ -235,30 +272,138 @@ class _PlanErrorBanner extends StatelessWidget {
   }
 }
 
+/// What a phone that is not the host sees where the QR would be: there is
+/// nothing for it to do here but wait, and saying so is the whole panel.
 class _JoinedPanel extends StatelessWidget {
-  const _JoinedPanel({required this.client, required this.phoneCount});
+  const _JoinedPanel({required this.phoneCount});
 
-  final ClientSession client;
   final int phoneCount;
 
   @override
-  Widget build(BuildContext context) => Card(
-    margin: EdgeInsets.zero,
-    child: ListTile(
-      leading: const Icon(Icons.check_circle_outline),
-      title: Text(client.sessionName ?? 'Connected to the host'),
-      subtitle: Text(
-        'Waiting for the host to start. $phoneCount phone(s) in.',
+  Widget build(BuildContext context) {
+    return _Panel(
+      title: 'You are in',
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: LobbyFlowColors.ink, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              phoneCount == 1
+                  ? 'Waiting for the host to start.'
+                  : 'Waiting for the host to start. $phoneCount phones in.',
+              style: LobbyText.body,
+            ),
+          ),
+        ],
       ),
-    ),
-  );
+    );
+  }
+}
+
+/// The way in, and the only one worth drawing: the QR.
+///
+/// No address and no join code. Friends on the same WiFi find this game by name
+/// in their own join list; the QR is what covers the network that will not let
+/// them. Neither of those is a string anybody types, so neither is on screen.
+class _HostPanel extends StatelessWidget {
+  const _HostPanel({required this.host});
+
+  final HostSession host;
+
+  /// Small enough to sit beside the text, big enough for a camera across a
+  /// table to take in one go.
+  static const _qrSize = 104.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final qr = host.qrPayload;
+    final waiting = host.phones.where((p) => p.connected).length < 2;
+    final failure = host.discoveryFailure != null;
+
+    return _Panel.bare(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // The words carry this panel and the QR illustrates them, so the
+          // words get the room. Stacked to the left of the code rather than
+          // above it: the panel is half as tall that way, which keeps Play on
+          // the first screenful on a small phone.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Let them in', style: LobbyText.label),
+                const SizedBox(height: 6),
+                Text(
+                  failure
+                      // Worth saying, because the join list they are staring
+                      // at is never going to fill in. The QR is the only way
+                      // in then, so it is the only thing this offers.
+                      ? 'This network will not let the game announce itself. '
+                            'Have them scan this code.'
+                      : waiting
+                          ? 'Waiting for your friends…'
+                          : '${host.phones.length} phones in.',
+                  style: LobbyText.body,
+                ),
+                // Debug builds only. Nobody is asked to type an address in a
+                // shipped build — there is no field for it outside debug — so
+                // in release this is a row of digits with no instruction
+                // attached, which is a puzzle rather than a fallback. It is
+                // here because the join sheet's own Type Address button is,
+                // and that button needs something to read off.
+                if (kDebugMode) ...[
+                  const SizedBox(height: 6),
+                  SelectableText(
+                    host.address?.toString() ?? 'starting…',
+                    style: LobbyText.body.copyWith(
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: LobbyFlowColors.paper,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: qr == null
+                ? const SizedBox(
+                    width: _qrSize,
+                    height: _qrSize,
+                    child: Center(
+                      child: Text('starting…', style: LobbyText.hint),
+                    ),
+                  )
+                : QrImageView(
+                    // Address *and* code: scanning proves you were standing
+                    // in front of this screen, which is what the code asks
+                    // for anyway — so a scan should not demand it twice.
+                    data: qr,
+                    version: QrVersions.auto,
+                    size: _qrSize,
+                    backgroundColor: LobbyFlowColors.paper,
+                    padding: EdgeInsets.zero,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Which colour you are, at a table where that is how people tell you apart.
 ///
 /// Everyone arrives already wearing a colour, so this screen is never a gate —
 /// it is here for the person who wants to be Green because they are always
-/// Green. A taken swatch is shown struck through rather than hidden, because
+/// Green. A taken character is shown struck through rather than hidden, because
 /// "somebody else has it" and "it does not exist" should not look the same.
 class _ColorPicker extends StatelessWidget {
   const _ColorPicker({required this.client});
@@ -267,48 +412,27 @@ class _ColorPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final mine = client.myColor;
     final taken = client.takenColorIds;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('Who you are', style: theme.textTheme.titleSmall),
-                const Spacer(),
-                if (mine != null)
-                  Text(
-                    mine.name,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: mine.value,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-              ],
+    return _Panel(
+      // Names the thing being picked. The colour used to be spelled out beside
+      // this heading, which was the old swatches explaining themselves — the
+      // characters do that on their own, and the selected one is ringed.
+      title: 'Select your character',
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final c in PlayerPalette.all)
+            _Swatch(
+              color: c,
+              selected: c.id == mine?.id,
+              // Mine is never "taken" from my own point of view.
+              taken: taken.contains(c.id) && c.id != mine?.id,
+              onTap: () => client.pickColor(c),
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (final c in PlayerPalette.all)
-                  _Swatch(
-                    color: c,
-                    selected: c.id == mine?.id,
-                    // Mine is never "taken" from my own point of view.
-                    taken: taken.contains(c.id) && c.id != mine?.id,
-                    onTap: () => client.pickColor(c),
-                  ),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -340,8 +464,6 @@ class _Swatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
     return Semantics(
       // The colour, still: it is the word people say out loud across a table,
       // and a screen reader has no picture to go on.
@@ -357,11 +479,16 @@ class _Swatch extends StatelessWidget {
           decoration: BoxDecoration(
             // A tint of their own colour rather than the flat fill: the
             // character is the colour now, and a saturated disc behind it left
-            // the two fighting each other.
-            color: color.value.withValues(alpha: taken ? 0.10 : 0.22),
+            // the two fighting each other. Blended onto white rather than laid
+            // over the panel, so the tint keeps its colour instead of picking
+            // up the gray behind it.
+            color: Color.alphaBlend(
+              color.value.withValues(alpha: taken ? 0.10 : 0.22),
+              LobbyFlowColors.paper,
+            ),
             shape: BoxShape.circle,
             border: Border.all(
-              color: selected ? scheme.onSurface : Colors.transparent,
+              color: selected ? LobbyFlowColors.ink : Colors.transparent,
               width: 3,
             ),
           ),
@@ -377,7 +504,7 @@ class _Swatch extends StatelessWidget {
                     .widget(size: 40),
               ),
               if (taken)
-                Icon(Icons.close, size: 22, color: scheme.onSurfaceVariant),
+                const Icon(Icons.close, size: 22, color: LobbyFlowColors.muted),
             ],
           ),
         ),
@@ -396,7 +523,6 @@ class _WhoIsHere extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final client = controller.client!;
     final host = controller.host;
 
@@ -422,148 +548,75 @@ class _WhoIsHere extends StatelessWidget {
               ),
           ];
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              count == 1 ? '1 phone here' : '$count phones here',
-              style: theme.textTheme.titleSmall,
+    return _Panel(
+      title: count == 1 ? '1 phone here' : '$count phones here',
+      trailing: const Icon(Icons.person, size: 20, color: LobbyFlowColors.ink),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final e in entries)
+            _PlayerPill(
+              label: e.me ? '${e.label} (you)' : e.label,
+              color: e.color,
+              ready: e.ready,
+              connected: e.connected,
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final e in entries)
-                  Chip(
-                    avatar: Icon(
-                      !e.connected
-                          ? Icons.link_off
-                          : e.ready
-                              ? Icons.smartphone
-                              : Icons.hourglass_empty,
-                      size: 16,
-                      color: !e.connected
-                          ? theme.colorScheme.error
-                          : e.color?.value ?? theme.colorScheme.primary,
-                    ),
-                    label: Text(e.me ? '${e.label} (you)' : e.label),
-                    // A wash of the colour, not the colour itself: a chip is
-                    // read as text, and eight saturated pills would fight the
-                    // swatches above for the same job.
-                    backgroundColor: e.color?.value.withValues(alpha: 0.16),
-                    side: e.color == null
-                        ? null
-                        : BorderSide(
-                            color: e.color!.value.withValues(alpha: 0.5),
-                          ),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
 }
 
-class _HostPanel extends StatelessWidget {
-  const _HostPanel({required this.host});
+/// One person, in their colour, with what their phone is doing.
+class _PlayerPill extends StatelessWidget {
+  const _PlayerPill({
+    required this.label,
+    required this.color,
+    required this.ready,
+    required this.connected,
+  });
 
-  final HostSession host;
+  final String label;
+  final PlayerColor? color;
+  final bool ready;
+  final bool connected;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final address = host.address?.toString() ?? 'starting…';
-    final qr = host.qrPayload;
-    final waiting = host.phones.where((p) => p.connected).length < 2;
+    // A wash of the colour on white, not the colour itself: a pill is read as
+    // text, and eight saturated lozenges would fight the characters below for
+    // the same job.
+    final tint = color == null
+        ? LobbyFlowColors.paper
+        : Color.alphaBlend(
+            color!.value.withValues(alpha: 0.30),
+            LobbyFlowColors.paper,
+          );
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(host.name, style: theme.textTheme.titleMedium),
-                      const SizedBox(height: 2),
-                      Text(
-                        waiting
-                            ? 'Waiting for your friends…'
-                            : '${host.phones.length} phones in.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      // JOIN CODE DISABLED — showing a code nobody is asked for
-                      // would just be a puzzle. The QR beside this still works;
-                      // it carries the address, which is the part that matters.
-                      // const SizedBox(height: 12),
-                      // Text(
-                      //   'Give them this code',
-                      //   style: theme.textTheme.labelMedium?.copyWith(
-                      //     color: theme.colorScheme.onSurfaceVariant,
-                      //   ),
-                      // ),
-                      // const SizedBox(height: 2),
-                      // SelectableText(
-                      //   host.joinCode,
-                      //   style: theme.textTheme.displaySmall?.copyWith(
-                      //     fontFamily: 'monospace',
-                      //     letterSpacing: 8,
-                      //     fontWeight: FontWeight.w600,
-                      //     color: theme.colorScheme.primary,
-                      //   ),
-                      // ),
-                    ],
-                  ),
-                ),
-                if (qr != null)
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: QrImageView(
-                      // Address *and* code: scanning proves you were standing
-                      // in front of this screen, which is what the code asks
-                      // for anyway — so a scan should not demand it twice.
-                      data: qr,
-                      version: QrVersions.auto,
-                      size: 112,
-                      backgroundColor: Colors.white,
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              host.discoveryFailure == null
-                  ? 'Your game shows up under “${host.name}” when they tap '
-                        '“Join a game”. They can also scan the QR, or type '
-                        '$address.'
-                  : 'This network will not let the game announce itself. Have '
-                        'them scan the QR, or type $address.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
+      decoration: BoxDecoration(
+        color: tint,
+        borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            !connected
+                ? Icons.link_off
+                : ready
+                    ? Icons.smartphone
+                    : Icons.hourglass_empty,
+            size: 15,
+            // A phone that has dropped is the one thing here worth a colour of
+            // its own; everything else is ink on its owner's tint.
+            color: connected ? LobbyFlowColors.ink : LobbyFlowColors.coral,
+          ),
+          const SizedBox(width: 7),
+          Text(label, style: LobbyText.button.copyWith(fontSize: 13)),
+        ],
       ),
     );
   }

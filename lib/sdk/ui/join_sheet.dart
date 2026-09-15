@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 // JOIN CODE DISABLED — the keypad's digits-only formatter lived here.
 // import 'package:flutter/services.dart';
@@ -108,6 +109,30 @@ class _JoinSheetState extends State<JoinSheet> {
     // Navigator.of(context).pop(JoinRequest(target.uri, code));
   }
 
+  /// The address typed by hand — debug builds only.
+  ///
+  /// The way back in on a platform with no scanner, which on this project means
+  /// Windows: [mobile_scanner] has no implementation there, so [qrScanSupported]
+  /// is false and the button beside this one is not built. It is not shipped
+  /// because nothing in a release build shows an address to type — the host's
+  /// lobby prints one only under [kDebugMode] too.
+  Future<void> _typeAddress() async {
+    final raw = await showDialog<String>(
+      context: context,
+      builder: (_) => const _AddressDialog(),
+    );
+    if (raw == null || !mounted) return;
+
+    final target = parseHostTarget(raw);
+    if (target == null) {
+      _snack('That is not a game address.');
+      return;
+    }
+    // JOIN CODE DISABLED — a typed address carries no code, and the host is
+    // not asking for one.
+    Navigator.of(context).pop(JoinRequest(target.uri, target.code ?? ''));
+  }
+
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -178,18 +203,40 @@ class _JoinSheetState extends State<JoinSheet> {
                     ],
                   ),
                 ),
-                if (qrScanSupported)
+                if (qrScanSupported || kDebugMode)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    child: LobbyPillButton.big(
-                      label: 'Scan QR Code',
-                      icon: Icons.qr_code_2,
-                      background: LobbyFlowColors.yellow,
-                      onPressed: _scan,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 22,
-                        horizontal: 30,
-                      ),
+                    child: Row(
+                      children: [
+                        if (qrScanSupported)
+                          Expanded(
+                            child: LobbyPillButton.big(
+                              label: 'Scan QR Code',
+                              icon: Icons.qr_code_2,
+                              background: LobbyFlowColors.yellow,
+                              onPressed: _scan,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 22,
+                                horizontal: 16,
+                              ),
+                            ),
+                          ),
+                        if (qrScanSupported && kDebugMode)
+                          const SizedBox(width: 14),
+                        if (kDebugMode)
+                          Expanded(
+                            child: LobbyPillButton.big(
+                              label: 'Type Address',
+                              icon: Icons.keyboard,
+                              background: LobbyFlowColors.cyan,
+                              onPressed: _typeAddress,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 22,
+                                horizontal: 16,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
               ],
@@ -444,3 +491,82 @@ class _CodeDialogState extends State<_CodeDialog> {
 }
 */
 
+
+
+/// Type where the host is. Debug builds only — see [_JoinSheetState._typeAddress].
+///
+/// [parseHostAddress] is forgiving about what goes in here: a bare IP, a
+/// `host:port`, or a whole `ws://…` payload all parse, so the field asks for the
+/// shortest of those and accepts the rest.
+class _AddressDialog extends StatefulWidget {
+  const _AddressDialog();
+
+  @override
+  State<_AddressDialog> createState() => _AddressDialogState();
+}
+
+class _AddressDialogState extends State<_AddressDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit([String? _]) =>
+      Navigator.of(context).pop(_controller.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: LobbyFlowColors.paper,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const LobbyTitle('Type Address', fontSize: 22),
+            const SizedBox(height: 18),
+            LobbyChipField(
+              controller: _controller,
+              autofocus: true,
+              hintText: '192.168.1.42',
+              onSubmitted: _submit,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'The host shows this under its QR code in debug builds.',
+              style: LobbyText.body,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: LobbyPillButton(
+                    label: 'Cancel',
+                    background: LobbyFlowColors.field,
+                    foreground: LobbyFlowColors.ink,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: LobbyPillButton(
+                    label: 'Join',
+                    background: LobbyFlowColors.green,
+                    foreground: LobbyFlowColors.ink,
+                    onPressed: _submit,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
