@@ -16,7 +16,7 @@ class StandingsCard extends StatelessWidget {
     this.showDeltas = false,
     this.offline = const {},
     this.onReset,
-    this.listHeight = 156,
+    this.maxListHeight = 156,
   });
 
   final ScoreView scores;
@@ -36,15 +36,17 @@ class StandingsCard extends StatelessWidget {
 
   final VoidCallback? onReset;
 
-  /// How tall the names are, always — about five rows at the default.
+  /// How tall the names may get before they start scrolling — about five rows
+  /// at the default.
   ///
-  /// A height and not a maximum, so the card is the same size at two players as
-  /// at eight. Every screen this sits on is one where something else moves —
-  /// people arrive, scores land, a round ends — and a card that grew a row each
-  /// time would walk the Play button down the lobby as the evening went on.
-  /// A full table is eight rows; the ones past the fifth are reached by
-  /// scrolling the names, which is the one thing inside this card that moves.
-  final double listHeight;
+  /// Only the names. 'Standings' and its Reset button sit above this and never
+  /// move, so what scrolls is a list rather than the card's own contents.
+  ///
+  /// A ceiling and not a height: three players draw three rows and the card is
+  /// short, which is what a card that has nothing more to say should look like.
+  /// It is only a full table — eight rows is half again what fits — that turns
+  /// the names into a window with the rest below the fold.
+  final double maxListHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +81,7 @@ class StandingsCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             _ScoreList(
-              height: listHeight,
+              maxHeight: maxListHeight,
               children: [
                 for (final (i, entry) in ranked.indexed)
                   Padding(
@@ -165,15 +167,16 @@ class StandingsCard extends StatelessWidget {
   }
 }
 
-/// The names, in a window of their own.
+/// The names: as tall as they are, up to [maxHeight], and scrolling past that.
 ///
 /// Its own widget for the scroll controller: a [Scrollbar] has to be given the
 /// same controller as the list it describes, and on a desktop build that bar is
-/// the only thing on screen saying there are more people below the fold.
+/// the only thing on screen saying there are more people below the fold. It
+/// takes itself out of the way when everybody fits — nothing to scroll, no bar.
 class _ScoreList extends StatefulWidget {
-  const _ScoreList({required this.height, required this.children});
+  const _ScoreList({required this.maxHeight, required this.children});
 
-  final double height;
+  final double maxHeight;
   final List<Widget> children;
 
   @override
@@ -191,12 +194,15 @@ class _ScoreListState extends State<_ScoreList> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: widget.height,
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: widget.maxHeight),
       child: Scrollbar(
         controller: _controller,
         child: ListView(
           controller: _controller,
+          // Sized by its rows up to the ceiling above, rather than filling
+          // whatever it is given.
+          shrinkWrap: true,
           // This card is usually inside another scroll view, and two vertical
           // lists both claiming the PrimaryScrollController is an assertion at
           // runtime rather than a subtle bug.
