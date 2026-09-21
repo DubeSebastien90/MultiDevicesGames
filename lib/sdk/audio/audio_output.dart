@@ -20,6 +20,15 @@ import 'dart:async';
 /// does not like an asset, or a device with no audio route are all *silence*,
 /// never a crashed round. A game does not get to fail because of a sound.
 abstract class AudioOutput {
+  /// Told when a one-shot has finished by itself, so whoever is counting live
+  /// sounds can stop counting that one.
+  ///
+  /// Set by [AudioEngine] and by nobody else. An output that has no idea when
+  /// a sound ends — the silent one — simply never calls it, and the engine
+  /// carries on holding the handle until the round clears it. That is the
+  /// honest failure: silence has no duration to report.
+  set onFinished(void Function(int handleId)? callback);
+
   /// Start [asset] under [handleId]. Returns when playback has been *asked*
   /// for, not when the sound finishes.
   Future<void> play(
@@ -45,6 +54,11 @@ abstract class AudioOutput {
 /// to hear.
 class SilentAudioOutput implements AudioOutput {
   SilentAudioOutput({this.keepLog = false});
+
+  /// Accepted and never called: nothing here ever finishes, because nothing
+  /// here ever starts.
+  @override
+  set onFinished(void Function(int handleId)? callback) {}
 
   /// Whether to remember calls. Off by default: a round can raise thousands of
   /// cues and a list that only a test ever reads should not grow on every

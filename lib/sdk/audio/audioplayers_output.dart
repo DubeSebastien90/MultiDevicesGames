@@ -33,6 +33,11 @@ class AudioPlayersOutput implements AudioOutput {
   /// of native players a phone is asked to hold.
   final int maxPlayers;
 
+  @override
+  set onFinished(void Function(int handleId)? callback) =>
+      _onFinished = callback;
+  void Function(int handleId)? _onFinished;
+
   final _live = <int, AudioPlayer>{};
   final _idle = <AudioPlayer>[];
   final _fades = <int, Timer>{};
@@ -56,9 +61,7 @@ class AudioPlayersOutput implements AudioOutput {
       final player = _take();
       _live[handleId] = player;
 
-      await player.setReleaseMode(
-        loop ? ReleaseMode.loop : ReleaseMode.stop,
-      );
+      await player.setReleaseMode(loop ? ReleaseMode.loop : ReleaseMode.stop);
       await player.setVolume(volume.clamp(0.0, 1.0));
       await player.play(AssetSource(_sourcePath(asset)));
 
@@ -68,7 +71,11 @@ class AudioPlayersOutput implements AudioOutput {
         late final StreamSubscription<void> sub;
         sub = player.onPlayerComplete.listen((_) {
           sub.cancel();
-          if (identical(_live[handleId], player)) _release(handleId);
+          if (!identical(_live[handleId], player)) return;
+          _release(handleId);
+          // And tell the engine, which is counting voices and has no other way
+          // to learn that this one has stopped taking up a seat.
+          _onFinished?.call(handleId);
         });
       }
     } on Object catch (e) {
@@ -97,24 +104,23 @@ class AudioPlayersOutput implements AudioOutput {
     const stepMs = 25;
     final steps = (fade.inMilliseconds / stepMs).ceil().clamp(1, 200);
     var step = 0;
-    _fades[handleId] = Timer.periodic(
-      const Duration(milliseconds: stepMs),
-      (timer) async {
-        step++;
-        if (step >= steps || _disposed) {
-          timer.cancel();
-          _fades.remove(handleId);
-          await _stopNow(handleId, player);
-          return;
-        }
-        try {
-          await player.setVolume((1 - step / steps).clamp(0.0, 1.0));
-        } on Object {
-          timer.cancel();
-          _fades.remove(handleId);
-        }
-      },
-    );
+    _fades[handleId] = Timer.periodic(const Duration(milliseconds: stepMs), (
+      timer,
+    ) async {
+      step++;
+      if (step >= steps || _disposed) {
+        timer.cancel();
+        _fades.remove(handleId);
+        await _stopNow(handleId, player);
+        return;
+      }
+      try {
+        await player.setVolume((1 - step / steps).clamp(0.0, 1.0));
+      } on Object {
+        timer.cancel();
+        _fades.remove(handleId);
+      }
+    });
   }
 
   Future<void> _stopNow(int handleId, AudioPlayer player) async {

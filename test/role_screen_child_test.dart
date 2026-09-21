@@ -70,7 +70,7 @@ void main() {
     SharedPreferences.setMockInitialValues({'player_name': 'Sebastien'});
     await pumpRole(tester, AgeBand.adult);
 
-    await tester.tap(find.text('Host a game'));
+    await tester.tap(find.text('Create a Lobby'));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(TextField, "Sebastien's board"), findsOneWidget);
@@ -80,10 +80,12 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await pumpRole(tester, AgeBand.child);
 
-    await tester.tap(find.text('Host a game'));
+    await tester.tap(find.text('Create a Lobby'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Name your game'), findsOneWidget);
+    // The dialog's title and its confirm button say the same words, so this
+    // asks whether it opened at all rather than counting them.
+    expect(find.text('Create Lobby'), findsWidgets);
     expect(find.byType(TextField), findsNothing);
     expect(find.textContaining("'s board"), findsOneWidget);
   });

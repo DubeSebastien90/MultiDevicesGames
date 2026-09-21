@@ -182,6 +182,11 @@ class _PressablePlateState extends State<_PressablePlate> {
     return Opacity(
       opacity: widget.dimmed || !_enabled ? 0.5 : 1,
       child: GestureDetector(
+        // The whole plate, not just whatever inside it happens to be opaque:
+        // the padding is part of the button, and on the placement screen a
+        // press that slips off the words must still be the plate's press
+        // rather than the hold behind it.
+        behavior: HitTestBehavior.opaque,
         onTapDown: (_) => _down(),
         onTapUp: (_) => _up(),
         onTapCancel: _up,
@@ -395,12 +400,17 @@ class LobbyCard extends StatelessWidget {
     this.onTap,
     this.dimmed = false,
     this.color = LobbyFlowColors.orange,
+    this.padding = const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final bool dimmed;
   final Color color;
+
+  /// Tighter than a lobby row for the chip-sized uses — the placement screen's
+  /// legend, where a row's worth of padding would be most of the chip.
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
@@ -410,10 +420,7 @@ class LobbyCard extends StatelessWidget {
       onPressed: onTap,
       dimmed: dimmed,
       offset: LobbyMetrics.rowOffset,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-        child: child,
-      ),
+      child: Padding(padding: padding, child: child),
     );
   }
 }

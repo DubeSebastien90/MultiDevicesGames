@@ -20,9 +20,7 @@ class SoundCue {
   ///
   /// The path is its own id: two calls naming the same file are the same cue,
   /// which is what a mixer wants when asked to stop 'that one'.
-  const SoundCue.asset(String path)
-      : id = path,
-        asset = path;
+  const SoundCue.asset(String path) : id = path, asset = path;
 
   /// Stable and wire-visible: 'countdown', 'green.sad'. Never derived from the
   /// path, so the file can be renamed or re-recorded without invalidating

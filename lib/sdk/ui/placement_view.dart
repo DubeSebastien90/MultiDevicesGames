@@ -68,10 +68,11 @@ class PlacementView extends StatelessWidget {
     );
 
     final legend = client.myLinks.isEmpty
-        ? const SizedBox.shrink()
-        : Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: _LinkLegend(links: client.myLinks, slices: client.slices),
+        ? null
+        : _LinkLegend(
+            links: client.myLinks,
+            slices: client.slices,
+            onPoke: client.poke,
           );
 
     return Scaffold(
@@ -102,12 +103,11 @@ class PlacementView extends StatelessWidget {
             // Two stripe widths of air all round, so a board drawn as large as
             // it can be still never runs under the bands on the glass.
             padding: const EdgeInsets.all(kEdgeStripeWidth * 2),
-            content: Column(
-              children: [
-                Expanded(child: diagram),
-                legend,
-              ],
-            ),
+            content: diagram,
+            // Under the ring rather than under the picture, and outside the
+            // hold: these are buttons now, and a button inside the hold target
+            // would fill the ring every time it was pressed.
+            footer: legend,
           ),
 
           // Debug builds only, and outside the hold target above so reaching
@@ -191,18 +191,28 @@ class _EdgeStripePainter extends CustomPainter {
 }
 
 /// Names every stripe on this phone's edges: which colour joins which
-/// neighbour.
+/// neighbour — and asks that neighbour to speak up.
 ///
 /// The stripes alone tell you to line colours up; this tells you *who* with,
 /// which is the difference between "match the red" and "match the red with
 /// phone 2". It also happens to make a wrong board diagnosable at a glance —
 /// if a colour is listed but no stripe is visible, the two halves of that join
 /// disagree.
+///
+/// Tapping a neighbour's chip makes that phone say something in its own
+/// player's voice. "Which one is phone 2?" is a question a diagram answers
+/// slowly and a noise from the far end of the table answers instantly, and at
+/// this moment in the evening it is the only question anybody has.
 class _LinkLegend extends StatelessWidget {
-  const _LinkLegend({required this.links, required this.slices});
+  const _LinkLegend({
+    required this.links,
+    required this.slices,
+    required this.onPoke,
+  });
 
   final List<EdgeMarker> links;
   final List<PhoneSlice> slices;
+  final ValueChanged<String> onPoke;
 
   /// Where a phone sits in the board's reading order, 1-based.
   int? _positionOf(String phoneId) {
@@ -220,49 +230,85 @@ class _LinkLegend extends StatelessWidget {
       runSpacing: 8,
       children: [
         for (final link in links)
-          // The flow's plate again, at chip size: a pastel pill with the same
-          // hard shadow every button in the lobby casts. The stripe's own
-          // colour fills it, so the chip and the band along the glass are
-          // plainly the same thing.
-          _LegendChip(
+          _LinkChip(
             color: link.isJoin
                 ? LinkPalette.of(link.colorIndex)
                 : LinkPalette.inward,
             label: link.partnerId == null
                 ? 'the middle'
                 : 'phone ${_positionOf(link.partnerId!) ?? "?"}',
+            // The stripe pointing at the middle of the table has no phone
+            // behind it, so there is nothing there to make a noise. That chip
+            // stays a label.
+            onPoke: link.partnerId == null
+                ? null
+                : () => onPoke(link.partnerId!),
           ),
       ],
     );
   }
 }
 
-/// One coloured pill naming one join.
-class _LegendChip extends StatelessWidget {
-  const _LegendChip({required this.color, required this.label});
+/// One stripe's chip: its colour and who is on the other end.
+///
+/// When that is a phone, tapping it makes them speak — deliberately unmarked;
+/// see the plate below.
+///
+/// Two plates rather than one with a disabled state, because the flow draws a
+/// dead control at half opacity and the middle-of-the-table chip is not dead.
+/// It is a caption that happens to look like the others, and it should be as
+/// legible as they are.
+class _LinkChip extends StatelessWidget {
+  const _LinkChip({
+    required this.color,
+    required this.label,
+    required this.onPoke,
+  });
 
   final Color color;
   final String label;
+  final VoidCallback? onPoke;
+
+  static const _padding = EdgeInsets.symmetric(horizontal: 16, vertical: 10);
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
-        boxShadow: [
-          BoxShadow(
-            color: LobbyFlowColors.shadeOf(color),
-            offset: const Offset(
-              LobbyMetrics.rowOffset,
-              LobbyMetrics.rowOffset,
+    final poke = onPoke;
+    final words = Text(label, style: LobbyText.button);
+
+    if (poke == null) {
+      return Container(
+        padding: _padding,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
+          boxShadow: [
+            BoxShadow(
+              color: LobbyFlowColors.shadeOf(color),
+              offset: const Offset(
+                LobbyMetrics.rowOffset,
+                LobbyMetrics.rowOffset,
+              ),
+              blurRadius: 0,
             ),
-            blurRadius: 0,
-          ),
-        ],
-      ),
-      child: Text(label, style: LobbyText.button),
+          ],
+        ),
+        child: words,
+      );
+    }
+
+    // The flow's plate at chip size: it sinks into its own shadow when pressed,
+    // which is the only feedback this phone gets — the sound it asks for comes
+    // out of somebody else's speaker.
+    //
+    // Nothing marks it as a button. It is meant to be found by somebody idly
+    // prodding the screen while the table sorts itself out, and a little
+    // speaker icon would turn a discovery into a feature.
+    return LobbyCard(
+      color: color,
+      padding: _padding,
+      onTap: poke,
+      child: words,
     );
   }
 }

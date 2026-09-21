@@ -108,8 +108,7 @@ class SilentGameAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
-  }) =>
-      SoundHandle.none;
+  }) => SoundHandle.none;
 
   @override
   SoundHandle playOnPhone(
@@ -118,8 +117,7 @@ class SilentGameAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
-  }) =>
-      SoundHandle.none;
+  }) => SoundHandle.none;
 
   @override
   void stopSound(SoundHandle handle, {Duration fade = Duration.zero}) {}
@@ -153,8 +151,8 @@ class AudioCommand {
     required this.loop,
     required this.volume,
     required this.persist,
-  })  : op = AudioOp.play,
-        fadeMs = 0;
+  }) : op = AudioOp.play,
+       fadeMs = 0;
 
   /// [phoneId] is where the sound was *started*, not where the stop was
   /// decided. A stop has to follow its handle to the phone that holds it, or
@@ -163,21 +161,21 @@ class AudioCommand {
     required this.handleId,
     required this.fadeMs,
     required this.phoneId,
-  })  : op = AudioOp.stop,
-        cue = null,
-        loop = false,
-        volume = 1.0,
-        persist = false;
+  }) : op = AudioOp.stop,
+       cue = null,
+       loop = false,
+       volume = 1.0,
+       persist = false;
 
   AudioCommand.stopRound()
-      : op = AudioOp.stopRound,
-        handleId = -1,
-        cue = null,
-        phoneId = null,
-        loop = false,
-        volume = 1.0,
-        persist = false,
-        fadeMs = 0;
+    : op = AudioOp.stopRound,
+      handleId = -1,
+      cue = null,
+      phoneId = null,
+      loop = false,
+      volume = 1.0,
+      persist = false,
+      fadeMs = 0;
 
   final String op;
   final int handleId;
@@ -267,8 +265,7 @@ class RoundAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
-  }) =>
-      _play(cue, null, loop, volume, persist);
+  }) => _play(cue, null, loop, volume, persist);
 
   @override
   SoundHandle playOnPhone(
@@ -277,8 +274,7 @@ class RoundAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
-  }) =>
-      _play(cue, player.phoneId, loop, volume, persist);
+  }) => _play(cue, player.phoneId, loop, volume, persist);
 
   SoundHandle _play(
     SoundCue cue,
@@ -294,14 +290,16 @@ class RoundAudio implements GameAudio {
 
     final id = _nextHandle++;
     _target[id] = phoneId;
-    _pending.add(AudioCommand.play(
-      handleId: id,
-      cue: cue,
-      phoneId: phoneId,
-      loop: loop,
-      volume: volume,
-      persist: persist,
-    ));
+    _pending.add(
+      AudioCommand.play(
+        handleId: id,
+        cue: cue,
+        phoneId: phoneId,
+        loop: loop,
+        volume: volume,
+        persist: persist,
+      ),
+    );
     return SoundHandle(id);
   }
 
@@ -310,11 +308,13 @@ class RoundAudio implements GameAudio {
     // [SoundHandle.none] — a cue with no asset. Nothing was ever started, so
     // there is nothing to tell a phone about.
     if (handle.id < 0) return;
-    _pending.add(AudioCommand.stop(
-      handleId: handle.id,
-      fadeMs: fade.inMilliseconds,
-      phoneId: _target.remove(handle.id),
-    ));
+    _pending.add(
+      AudioCommand.stop(
+        handleId: handle.id,
+        fadeMs: fade.inMilliseconds,
+        phoneId: _target.remove(handle.id),
+      ),
+    );
   }
 
   /// One message rather than a stop per handle: the phones already know which

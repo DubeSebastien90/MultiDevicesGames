@@ -26,6 +26,7 @@ class HoldToConfirm extends StatefulWidget {
     this.hold = const Duration(seconds: 1),
     this.decay = const Duration(milliseconds: 2200),
     this.padding = const EdgeInsets.all(16),
+    this.footer,
   });
 
   /// Shown next to the ring. The reason someone is holding at all.
@@ -43,6 +44,16 @@ class HoldToConfirm extends StatefulWidget {
 
   final Duration hold;
   final Duration decay;
+
+  /// Shown under the ring, and the one part of this screen that may be
+  /// touched without holding anything.
+  ///
+  /// It is a slot rather than part of [content] because of how the two are hit
+  /// tested: [content] is made transparent to pointers so the hold underneath
+  /// gets them all, while this is left alive, so a button here takes its own
+  /// press. Without that, every tap on a chip would fill the ring a little and
+  /// a dozen impatient taps would confirm a position nobody confirmed.
+  final Widget? footer;
 
   /// The air around the whole arrangement. The placement screen widens it to
   /// two stripe widths, because its content grows to whatever it is given and
@@ -131,43 +142,66 @@ class _HoldToConfirmState extends State<HoldToConfirm>
       label: _done ? widget.doneLabel : widget.label,
     );
 
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => _down(),
-      onPointerUp: (_) => _up(),
-      onPointerCancel: (_) => _up(),
-      child: SafeArea(
-        child: Center(
+    final extra = widget.footer;
+
+    return Stack(
+      children: [
+        // The hold target, and it really is the whole screen: underneath
+        // everything, catching every pointer the layer above lets through.
+        //
+        // Which is all of them but one. The picture and the ring are wrapped in
+        // an [IgnorePointer] below, so a finger anywhere on them falls straight
+        // through to here; only the footer's buttons are left hittable, and a
+        // button that takes the press is a press this never sees. That is the
+        // whole trick — no rectangle is carved out of the hold, and no tap on a
+        // chip can nudge the ring.
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => _down(),
+            onPointerUp: (_) => _up(),
+            onPointerCancel: (_) => _up(),
+          ),
+        ),
+        SafeArea(
           child: Padding(
             padding: widget.padding,
             child: LayoutBuilder(
               builder: (context, constraints) {
                 // "Next to" on a portrait phone means underneath.
-                // [Expanded], not a bare child: the content is handed
-                // everything the ring does not want, so a picture that can
-                // grow — the board diagram — draws as large as the phone
-                // allows instead of at some size guessed here.
-                if (constraints.maxWidth <= 520) {
-                  return Column(
-                    children: [
-                      Expanded(child: Center(child: widget.content)),
-                      const SizedBox(height: 28),
-                      ring,
-                    ],
-                  );
-                }
-                return Row(
+                final tall = constraints.maxWidth <= 520;
+
+                // [Expanded], not a bare child: the picture is handed whatever
+                // the ring and the footer do not want. That is what makes the
+                // gutter hold on a short phone — the fixed things keep their
+                // size and the one thing that can be drawn smaller is.
+                final body = tall
+                    ? Column(
+                        children: [
+                          Expanded(child: Center(child: widget.content)),
+                          const SizedBox(height: 28),
+                          ring,
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Expanded(child: Center(child: widget.content)),
+                          const SizedBox(width: 32),
+                          ring,
+                        ],
+                      );
+
+                return Column(
                   children: [
-                    Expanded(child: Center(child: widget.content)),
-                    const SizedBox(width: 32),
-                    ring,
+                    Expanded(child: IgnorePointer(child: body)),
+                    if (extra != null) ...[const SizedBox(height: 24), extra],
                   ],
                 );
               },
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

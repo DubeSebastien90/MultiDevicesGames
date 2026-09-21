@@ -1078,6 +1078,9 @@ class HostSession extends ChangeNotifier {
       case ClientMsg.interrupted:
         _handleInterrupted(record, msg);
 
+      case ClientMsg.poke:
+        _handlePoke(record, msg['phoneId'] as String?);
+
       case ClientMsg.reset:
         _sim?.reset();
 
@@ -1118,6 +1121,33 @@ class HostSession extends ChangeNotifier {
       _phoneById(phoneId)?.link.send({'type': HostMsg.nameDropSuspected});
     }
   }
+
+  /// Somebody tapped a neighbour's colour on the placement screen: make that
+  /// neighbour speak.
+  ///
+  /// Only while the table is being laid out. Mid-round the same message would
+  /// be a way to drop a noise into somebody else's game, and in the lobby the
+  /// phones are in pockets where a voice answers nothing.
+  ///
+  /// Poking yourself does nothing. The sound is meant to travel across the
+  /// table, and a phone that can already make its own noise has no use for a
+  /// round trip to ask for one.
+  void _handlePoke(PhoneRecord from, String? phoneId) {
+    if (_phase != HostPhase.placing) return;
+    if (phoneId == null || phoneId == from.phoneId) return;
+
+    final target = _phoneById(phoneId);
+    if (target == null) return;
+
+    // Happy or sad, by coin toss, because the point is to hear *which* phone
+    // answered rather than what it thought of being asked.
+    target.link.send({
+      'type': HostMsg.poke,
+      'mood': _poking.nextBool() ? 'happy' : 'sad',
+    });
+  }
+
+  final _poking = Random();
 
   PhoneRecord? _phoneById(String phoneId) {
     for (final p in _phones) {

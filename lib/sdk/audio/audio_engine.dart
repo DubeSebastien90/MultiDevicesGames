@@ -56,7 +56,17 @@ class _Live {
 
 class AudioEngine implements LocalAudio {
   AudioEngine({AudioOutput? output, this.muted = false})
-      : _output = output ?? SilentAudioOutput();
+    : _output = output ?? SilentAudioOutput() {
+    // A one-shot that has played to the end is not a live voice any more.
+    // Without this the voice cap below is a one-way ratchet: eight cues into a
+    // round, [_live] is full of sounds that finished seconds ago and every cue
+    // after them is dropped in silence until the round ends and clears it.
+    _output.onFinished = _finished;
+  }
+
+  /// A sound ended on its own. Frees the seat, and nothing else — the output
+  /// has already let go of its player.
+  void _finished(int handleId) => _live.remove(handleId);
 
   final AudioOutput _output;
 
@@ -84,7 +94,9 @@ class AudioEngine implements LocalAudio {
   /// worse than a sound not played, so they are dropped.
   static const staleMs = 400.0;
 
-  /// A ceiling on simultaneous one-shots. Eight players and one scoring event
+  /// A ceiling on *simultaneous* one-shots — which is only meaningful because
+  /// [_finished] takes a sound out of the count when it ends.
+  /// Eight players and one scoring event
   /// is eight clips in the same tick; past this the newest is dropped rather
   /// than stealing a voice from something already audible. Loops are exempt —
   /// music is never the thing that should be culled.
@@ -103,14 +115,16 @@ class AudioEngine implements LocalAudio {
         // sends it anyway so the routing is exercised; there is nothing to
         // play.
         if (asset == null) return;
-        _pending.add(_Scheduled(
-          handleId: (msg['h'] as num).toInt(),
-          asset: asset,
-          atMs: (msg['at'] as num?)?.toDouble() ?? 0,
-          loop: msg['loop'] == true,
-          volume: (msg['vol'] as num?)?.toDouble() ?? 1.0,
-          persist: msg['persist'] == true,
-        ));
+        _pending.add(
+          _Scheduled(
+            handleId: (msg['h'] as num).toInt(),
+            asset: asset,
+            atMs: (msg['at'] as num?)?.toDouble() ?? 0,
+            loop: msg['loop'] == true,
+            volume: (msg['vol'] as num?)?.toDouble() ?? 1.0,
+            persist: msg['persist'] == true,
+          ),
+        );
         // Bounded, for the phone that stops rendering while the host keeps
         // talking. Dropping the oldest matches the staleness rule: the ones
         // furthest in the past are the ones least worth hearing.
@@ -119,8 +133,10 @@ class AudioEngine implements LocalAudio {
         }
 
       case AudioOp.stop:
-        _stop((msg['h'] as num).toInt(),
-            fade: Duration(milliseconds: (msg['fade'] as num?)?.toInt() ?? 0));
+        _stop(
+          (msg['h'] as num).toInt(),
+          fade: Duration(milliseconds: (msg['fade'] as num?)?.toInt() ?? 0),
+        );
 
       case AudioOp.stopRound:
         stopAll(includingPersistent: false);
@@ -141,8 +157,13 @@ class AudioEngine implements LocalAudio {
       }
       _pending.removeAt(i);
       if (renderTimeMs - cue.atMs > staleMs) continue;
-      _start(cue.handleId, cue.asset,
-          loop: cue.loop, volume: cue.volume, persist: cue.persist);
+      _start(
+        cue.handleId,
+        cue.asset,
+        loop: cue.loop,
+        volume: cue.volume,
+        persist: cue.persist,
+      );
     }
   }
 

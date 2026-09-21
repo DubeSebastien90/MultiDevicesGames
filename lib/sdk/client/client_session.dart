@@ -546,6 +546,15 @@ class ClientSession extends ChangeNotifier {
     _transport.send({'type': ClientMsg.confirmPlacement, 'phoneId': _phoneId});
   }
 
+  /// 'Which of you is phone 2?' — asked by making phone 2 answer out loud.
+  ///
+  /// Nothing happens on this phone. The sound is the point and it belongs at
+  /// the other end of the table: a number in a legend has to be matched against
+  /// a diagram, while a voice coming from a particular phone needs no matching
+  /// at all. The host decides whether the answer is cheerful or sulky.
+  void poke(String phoneId) =>
+      _transport.send({'type': ClientMsg.poke, 'phoneId': phoneId});
+
   void sendReset() => _transport.send({'type': ClientMsg.reset});
 
   /// Forward a touch as raw local pixels.
@@ -788,6 +797,18 @@ class ClientSession extends ChangeNotifier {
         // Queued, not played. It fires when this phone's delayed clock reaches
         // the instant the host stamped on it — see [AudioEngine].
         audio.receive(msg);
+
+      case HostMsg.poke:
+        // Played now, not queued: there is no round clock while the table is
+        // being laid out, and a phone being pointed at should answer while the
+        // finger is still on the screen. Silent on a phone with no seat yet —
+        // it has no voice to answer in.
+        final player = me;
+        if (player != null) {
+          audio.play(
+            msg['mood'] == 'sad' ? player.soundSad : player.soundHappy,
+          );
+        }
 
       case HostMsg.pong:
         final sent = (msg['t'] as num).toDouble();

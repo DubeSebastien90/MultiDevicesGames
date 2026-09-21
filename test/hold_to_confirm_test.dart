@@ -14,6 +14,7 @@ void main() {
     WidgetTester tester, {
     required VoidCallback onConfirmed,
     bool confirmed = false,
+    Widget? footer,
   }) =>
       tester.pumpWidget(MaterialApp(
         home: Scaffold(
@@ -21,6 +22,7 @@ void main() {
             confirmed: confirmed,
             onConfirmed: onConfirmed,
             content: const Text('the board'),
+            footer: footer,
           ),
         ),
       ));
@@ -154,5 +156,55 @@ void main() {
   testWidgets('the content is shown beside the ring', (tester) async {
     await mount(tester, onConfirmed: () {});
     expect(find.text('the board'), findsOne);
+  });
+
+  // The other half of the footer rule: everything that is *not* a button holds,
+  // including the picture itself. Pressed by widget rather than by coordinate,
+  // because the point is that the picture does not take the press.
+  testWidgets('pressing the picture itself still holds', (tester) async {
+    var calls = 0;
+    await mount(
+      tester,
+      onConfirmed: () => calls++,
+      footer: const Text('phone 2'),
+    );
+
+    final finger = await tester.startGesture(
+      tester.getCenter(find.text('the board')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(calls, 1, reason: 'the board swallowed the press');
+    await finger.up();
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  // The footer holds buttons — the legend chips that make a neighbour's phone
+  // speak — and the hold listens for a finger anywhere inside itself. If those
+  // buttons were inside it, every tap would fill the ring a little, and enough
+  // impatient taps would confirm a position nobody confirmed.
+  testWidgets('tapping the footer never fills the ring', (tester) async {
+    var calls = 0;
+    var taps = 0;
+    await mount(
+      tester,
+      onConfirmed: () => calls++,
+      footer: Builder(
+        builder: (context) => GestureDetector(
+          onTap: () => taps++,
+          child: const Text('phone 2'),
+        ),
+      ),
+    );
+
+    for (var i = 0; i < 12; i++) {
+      await tester.tap(find.text('phone 2'));
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    expect(taps, 12, reason: 'the chip itself must still be tappable');
+    expect(calls, 0, reason: 'a dozen taps on a chip confirmed the placement');
+    expect(find.text('Ready'), findsNothing);
   });
 }

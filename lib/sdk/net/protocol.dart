@@ -18,6 +18,18 @@ class ClientMsg {
   static const pickColor = 'pickColor';
 
   static const confirmPlacement = 'confirmPlacement';
+
+  /// 'Make the phone I am pointing at say something.'
+  ///
+  /// Carries `phoneId`: the phone that should make the noise, which is never
+  /// the sender. Used while the table is being laid out, where the question
+  /// "which of these is phone 2?" is answered far better by a voice from the
+  /// right end of the table than by a number on a diagram.
+  ///
+  /// Routed through the host rather than phone to phone, because phones have no
+  /// way to reach each other — and because the host is the only device that
+  /// knows which colour the target is, and therefore whose voice to use.
+  static const poke = 'poke';
   static const touch = 'touch';
   static const ping = 'ping';
   static const reset = 'reset';
@@ -100,6 +112,21 @@ class HostMsg {
   /// it at that instant of the shared timeline rather than the moment the
   /// packet happened to land.
   static const sound = 'sound';
+
+  /// 'Somebody pointed at you. Say something.'
+  ///
+  /// The answer to [ClientMsg.poke], sent only to the phone that was pointed
+  /// at. Carries `mood`, 'happy' or 'sad' — the host picks, because a random
+  /// choice made on the sender would let a phone decide how another phone
+  /// sounds.
+  ///
+  /// Deliberately not a [sound] message. Those are scheduled against the
+  /// round's clock and fire when the render timeline reaches them, and while
+  /// the table is being laid out there is no round and no timeline: a cue sent
+  /// that way would sit in the queue until the game started, or be dropped as
+  /// stale. This one is played on arrival, which is right for a sound whose
+  /// whole job is to answer a finger that has just been put on a screen.
+  static const poke = 'poke';
 
   static const pong = 'pong';
 }

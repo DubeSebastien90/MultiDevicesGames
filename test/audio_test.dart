@@ -32,6 +32,27 @@ List<Map<String, dynamic>> wire(RoundAudio audio, double atMs) => [
   for (final c in audio.drain()) {'type': HostMsg.sound, ...c.toJson(atMs)},
 ];
 
+/// A silent output that can also say when a sound ended.
+///
+/// The plain [SilentAudioOutput] never reports a finish, because silence has no
+/// duration — which is right for it and useless for testing the voice cap, the
+/// one rule that depends on sounds ending.
+class EndingOutput extends SilentAudioOutput {
+  EndingOutput() : super(keepLog: true);
+
+  void Function(int handleId)? _onFinished;
+
+  @override
+  set onFinished(void Function(int handleId)? callback) =>
+      _onFinished = callback;
+
+  /// Play [handleId] to its end, as a real speaker eventually does.
+  void finish(int handleId) {
+    stop(handleId);
+    _onFinished?.call(handleId);
+  }
+}
+
 /// Let the loopback's queued messages reach the session.
 Future<void> pumpEvents() =>
     Future<void>.delayed(const Duration(milliseconds: 20));
@@ -207,6 +228,47 @@ void main() {
       engine.pump(0);
 
       expect(out.playing, hasLength(AudioEngine.maxVoices + 1));
+    });
+
+    // The cap counts *simultaneous* voices, which is only true if a voice is
+    // given back when its sound ends. It was not: the engine held every handle
+    // until the round cleared them, so the ninth one-shot of a round — and
+    // every one after it — was dropped in silence. Nothing on the placement
+    // screen ends a round, so the easter egg there simply went quiet after
+    // eight pokes.
+    test('a one-shot that ends gives its voice back', () {
+      final out = EndingOutput();
+      final engine = AudioEngine(output: out);
+
+      // One emitter throughout: handles come from its counter, and a fresh
+      // emitter per cue would mint the same handle every time and stand in for
+      // one sound played nine times.
+      final audio = RoundAudio();
+      void play() {
+        audio.playGeneral(bang);
+        for (final msg in wire(audio, 0)) {
+          engine.receive(msg);
+        }
+        engine.pump(0);
+      }
+
+      for (var i = 0; i < AudioEngine.maxVoices; i++) {
+        play();
+      }
+      expect(out.playing, hasLength(AudioEngine.maxVoices));
+
+      // Full: while they are all still sounding, the next one is dropped.
+      play();
+      expect(out.playing, hasLength(AudioEngine.maxVoices));
+
+      // They finish, as sounds do.
+      for (final id in out.playing.toList()) {
+        out.finish(id);
+      }
+      expect(out.playing, isEmpty);
+
+      play();
+      expect(out.playing, hasLength(1), reason: 'the cap never let go');
     });
   });
 
