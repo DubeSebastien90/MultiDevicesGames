@@ -8,6 +8,15 @@ import '../layout/board_links.dart';
 import 'board_diagram.dart';
 import 'hold_to_confirm.dart';
 import 'link_palette.dart';
+import 'lobby_flow_style.dart';
+
+/// How thick the edge stripes are drawn, in logical pixels.
+///
+/// The one number this screen is measured in: the stripes are this wide, the
+/// inset that keeps them on the glass is half of it, and the gutter the picture
+/// keeps from the edges is twice it — so the diagram grows until it is two
+/// connectors away from the bands, and no further.
+const double kEdgeStripeWidth = 18.0;
 
 /// "Place yourself here" — the picture, the colours, and a ring you hold.
 ///
@@ -47,12 +56,15 @@ class PlacementView extends StatelessWidget {
         if ((p['confirmed'] as bool?) ?? false) p['phoneId'] as String,
     };
 
+    // No cap on the size here: the picture is the screen's whole message, so
+    // it takes every pixel the ring and the legend leave it.
     final diagram = BoardDiagram(
       slices: client.slices,
       board: layout.board,
       links: client.allLinks,
       meId: client.phoneId,
       confirmed: confirmedIds,
+      maxExtent: null,
     );
 
     final legend = client.myLinks.isEmpty
@@ -63,6 +75,10 @@ class PlacementView extends StatelessWidget {
           );
 
     return Scaffold(
+      // Same paper the lobby, the games list and the results are drawn on: this
+      // screen sits between them, and a dark screen in the middle of a white
+      // flow reads as a different app.
+      backgroundColor: LobbyFlowColors.paper,
       // Deliberately not turned: you read your own phone the way you hold it,
       // whatever angle its slot in the board happens to be.
       body: Stack(
@@ -70,7 +86,10 @@ class PlacementView extends StatelessWidget {
           // The stripes hug the real glass edges, so this fills the screen.
           Positioned.fill(
             child: CustomPaint(
-              painter: _EdgeStripePainter(layout: layout, links: client.myLinks),
+              painter: _EdgeStripePainter(
+                layout: layout,
+                links: client.myLinks,
+              ),
             ),
           ),
 
@@ -80,9 +99,14 @@ class PlacementView extends StatelessWidget {
           HoldToConfirm(
             confirmed: confirmedIds.contains(client.phoneId),
             onConfirmed: client.confirmPlacement,
+            // Two stripe widths of air all round, so a board drawn as large as
+            // it can be still never runs under the bands on the glass.
+            padding: const EdgeInsets.all(kEdgeStripeWidth * 2),
             content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [diagram, legend],
+              children: [
+                Expanded(child: diagram),
+                legend,
+              ],
             ),
           ),
 
@@ -122,10 +146,7 @@ class _EdgeStripePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFF101733),
-    );
+    canvas.drawRect(Offset.zero & size, Paint()..color = LobbyFlowColors.paper);
 
     /// Where a world point lands on this screen, turn included.
     Offset toScreen(double wx, double wy) {
@@ -134,9 +155,12 @@ class _EdgeStripePainter extends CustomPainter {
       return Offset(px.x / dpr, px.y / dpr);
     }
 
+    // Twice the old width. A band you are asked to line up with your
+    // neighbour's across a millimetre of bezel wants to be seen from arm's
+    // length, and a thin line reads as decoration rather than an instruction.
     final stripe = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 9
+      ..strokeWidth = kEdgeStripeWidth
       ..strokeCap = StrokeCap.round;
 
     for (final link in links) {
@@ -144,9 +168,10 @@ class _EdgeStripePainter extends CustomPainter {
       final b = toScreen(link.x2, link.y2);
       // Pull the line a few pixels inside the panel, or half its width falls
       // off the glass.
-      final inset = _towardCentre(a, b, size, 5);
-      stripe.color =
-          link.isJoin ? LinkPalette.of(link.colorIndex) : LinkPalette.inward;
+      final inset = _towardCentre(a, b, size, kEdgeStripeWidth / 2);
+      stripe.color = link.isJoin
+          ? LinkPalette.of(link.colorIndex)
+          : LinkPalette.inward;
       canvas.drawLine(a + inset, b + inset, stripe);
     }
   }
@@ -189,39 +214,55 @@ class _LinkLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Wrap(
       alignment: WrapAlignment.center,
-      spacing: 12,
-      runSpacing: 4,
+      spacing: 10,
+      runSpacing: 8,
       children: [
         for (final link in links)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 16,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: link.isJoin
-                      ? LinkPalette.of(link.colorIndex)
-                      : LinkPalette.inward,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                link.partnerId == null
-                    ? 'the middle'
-                    : 'phone ${_positionOf(link.partnerId!) ?? "?"}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+          // The flow's plate again, at chip size: a pastel pill with the same
+          // hard shadow every button in the lobby casts. The stripe's own
+          // colour fills it, so the chip and the band along the glass are
+          // plainly the same thing.
+          _LegendChip(
+            color: link.isJoin
+                ? LinkPalette.of(link.colorIndex)
+                : LinkPalette.inward,
+            label: link.partnerId == null
+                ? 'the middle'
+                : 'phone ${_positionOf(link.partnerId!) ?? "?"}',
           ),
       ],
+    );
+  }
+}
+
+/// One coloured pill naming one join.
+class _LegendChip extends StatelessWidget {
+  const _LegendChip({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
+        boxShadow: [
+          BoxShadow(
+            color: LobbyFlowColors.shadeOf(color),
+            offset: const Offset(
+              LobbyMetrics.rowOffset,
+              LobbyMetrics.rowOffset,
+            ),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Text(label, style: LobbyText.button),
     );
   }
 }

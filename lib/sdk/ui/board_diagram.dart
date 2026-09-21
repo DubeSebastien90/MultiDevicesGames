@@ -6,6 +6,7 @@ import '../contract/sim.dart' show PhoneSlice;
 import '../layout/board_links.dart';
 import '../model/world_rect.dart';
 import 'link_palette.dart';
+import 'lobby_flow_style.dart';
 
 /// A to-scale picture of the board the game actually compiled.
 ///
@@ -47,20 +48,17 @@ class BoardDiagram extends StatelessWidget {
   /// Phone ids that have confirmed their position.
   final Set<String> confirmed;
 
-  /// The most room the drawing may take along its longer axis.
-  final double maxExtent;
+  /// The most room the drawing may take along its longer axis, or null to let
+  /// it fill whatever it is given — which is what the placement screen wants,
+  /// where the picture *is* the screen.
+  final double? maxExtent;
 
   @override
   Widget build(BuildContext context) {
     if (slices.isEmpty) {
       return SizedBox(
         height: 60,
-        child: Center(
-          child: Text(
-            'No phones yet',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
+        child: Center(child: Text('No phones yet', style: LobbyText.body)),
       );
     }
 
@@ -81,57 +79,64 @@ class BoardDiagram extends StatelessWidget {
     final frameHeight = bottom - top;
     if (frameWidth <= 0 || frameHeight <= 0) return const SizedBox.shrink();
 
-    final scheme = Theme.of(context).colorScheme;
+    final cap = maxExtent;
+
+    // [AspectRatio] already takes the largest size its constraints allow, so
+    // filling the space is simply a matter of not capping it.
+    final picture = AspectRatio(
+      aspectRatio: frameWidth / frameHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final scale = constraints.maxWidth / frameWidth;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // The playfield, so a screen reaching past it is visible as
+              // exactly that.
+              Positioned(
+                left: (board.left - left) * scale,
+                top: (board.top - top) * scale,
+                width: board.width * scale,
+                height: board.height * scale,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    // The playfield in the flow's field grey — the same
+                    // grey its text fields are filled with.
+                    color: LobbyFlowColors.field,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+              ),
+              for (final (i, slice) in slices.indexed)
+                _positionedScreen(slice, i, left, top, scale),
+              // Drawn over the screens so a join reads as one band even
+              // where two phones nearly touch.
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _LinkPainter(
+                    links: links,
+                    left: left,
+                    top: top,
+                    scale: scale,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
 
     return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: frameWidth >= frameHeight ? maxExtent * 2.2 : maxExtent,
-          maxHeight: maxExtent,
-        ),
-        child: AspectRatio(
-          aspectRatio: frameWidth / frameHeight,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final scale = constraints.maxWidth / frameWidth;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // The playfield, so a screen reaching past it is visible as
-                  // exactly that.
-                  Positioned(
-                    left: (board.left - left) * scale,
-                    top: (board.top - top) * scale,
-                    width: board.width * scale,
-                    height: board.height * scale,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest
-                            .withValues(alpha: 0.28),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                  ),
-                  for (final (i, slice) in slices.indexed)
-                    _positionedScreen(slice, i, left, top, scale, scheme),
-                  // Drawn over the screens so a join reads as one band even
-                  // where two phones nearly touch.
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _LinkPainter(
-                        links: links,
-                        left: left,
-                        top: top,
-                        scale: scale,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
+      child: cap == null
+          ? picture
+          : ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: frameWidth >= frameHeight ? cap * 2.2 : cap,
+                maxHeight: cap,
+              ),
+              child: picture,
+            ),
     );
   }
 
@@ -146,7 +151,6 @@ class BoardDiagram extends StatelessWidget {
     double left,
     double top,
     double scale,
-    ColorScheme scheme,
   ) {
     final screen = slice.screen;
     final w = screen.width * scale;
@@ -165,7 +169,6 @@ class BoardDiagram extends StatelessWidget {
           isMe: slice.phoneId == meId,
           confirmed: confirmed.contains(slice.phoneId),
           turnRadians: screen.turnRadians,
-          scheme: scheme,
         ),
       ),
     );
@@ -179,7 +182,6 @@ class _Screen extends StatelessWidget {
     required this.isMe,
     required this.confirmed,
     required this.turnRadians,
-    required this.scheme,
   });
 
   final int index;
@@ -187,76 +189,124 @@ class _Screen extends StatelessWidget {
   final bool isMe;
   final bool confirmed;
   final double turnRadians;
-  final ColorScheme scheme;
 
   @override
   Widget build(BuildContext context) {
-    final edge = isMe ? scheme.primary : scheme.outlineVariant;
+    // Your own phone is a yellow plate; everyone else's is paper. One colour
+    // does the whole job of saying which one you are holding, the way the
+    // lobby's own plates do.
+    final fill = isMe ? LobbyFlowColors.yellow : LobbyFlowColors.paper;
+    final edge = isMe ? LobbyFlowColors.ink : LobbyFlowColors.muted;
 
     return Container(
       decoration: BoxDecoration(
-        color: isMe
-            ? scheme.primary.withValues(alpha: 0.22)
-            : scheme.surfaceContainerHigh,
+        color: fill,
         border: Border.all(color: edge, width: isMe ? 2 : 1),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // A bar along the phone's own top edge. With everything turned, this
-          // is what tells you which way round to put it down — a rectangle
-          // alone cannot say which end is up.
-          Align(
-            alignment: Alignment.topCenter,
-            child: FractionallySizedBox(
-              widthFactor: 0.45,
-              child: Container(
-                height: 2.5,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: BoxDecoration(
-                  color: edge,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ),
-          // Turned back, so the writing stays readable however the phone lies.
-          Transform.rotate(
-            angle: -turnRadians,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    isMe ? 'YOU' : '${index + 1}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isMe ? scheme.primary : scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (label.isNotEmpty)
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  if (confirmed)
-                    Icon(Icons.check_circle, size: 10, color: scheme.primary),
-                ],
-              ),
-            ),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: [
+          BoxShadow(
+            color: LobbyFlowColors.shadeOf(fill),
+            offset: const Offset(2, 2),
+            blurRadius: 0,
           ),
         ],
       ),
+      // The chip's own size is the only thing the writing can be measured
+      // against, and only the layout knows it.
+      child: LayoutBuilder(
+        builder: (context, constraints) => Stack(
+          alignment: Alignment.center,
+          children: [
+            // A bar along the phone's own top edge. With everything turned, this
+            // is what tells you which way round to put it down — a rectangle
+            // alone cannot say which end is up.
+            Align(
+              alignment: Alignment.topCenter,
+              child: FractionallySizedBox(
+                widthFactor: 0.45,
+                child: Container(
+                  height: 2.5,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: edge,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+            // Turned back, so the writing stays readable however the phone lies,
+            // and grown to fill the room that leaves: [BoxFit.contain] scales up
+            // as willingly as down, so the same column of text is tiny on an
+            // eight-phone board and large on a two-phone one without a single
+            // font size being chosen for either. The sizes below are therefore
+            // only ratios — 'YOU' stays a little bigger than the label.
+            Transform.rotate(
+              angle: -turnRadians,
+              child: SizedBox.fromSize(
+                size: _writingBox(constraints.biggest),
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isMe ? 'YOU' : '${index + 1}',
+                        style: LobbyText.button.copyWith(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (label.isNotEmpty)
+                        Text(
+                          label,
+                          style: LobbyText.body.copyWith(fontSize: 8),
+                        ),
+                      if (confirmed)
+                        Icon(
+                          Icons.check_circle,
+                          size: 10,
+                          color: LobbyFlowColors.shadeOf(LobbyFlowColors.green),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
-}
 
+  /// The largest box the writing may use, measured in the chip's own
+  /// coordinates — that is, before it is turned back upright.
+  ///
+  /// A turned rectangle is the whole difficulty. The text box is rotated by
+  /// `turnRadians` with respect to the chip, so it fits only while
+  /// `w·|cos| + h·|sin| ≤ chipWidth` and `w·|sin| + h·|cos| ≤ chipHeight`.
+  /// Scaling the chip's own proportions by the smaller of those two ratios
+  /// gives the biggest box that satisfies both — exactly, not by guesswork, and
+  /// at zero turn it gives the chip back unchanged.
+  Size _writingBox(Size chip) {
+    // Room for the top-edge bar, taken off both ends so the writing stays
+    // optically centred rather than pushed down.
+    final h = math.max(chip.height - _barBand * 2, 1.0);
+    final w = math.max(chip.width * _sideAir, 1.0);
+
+    final c = math.cos(turnRadians).abs();
+    final sn = math.sin(turnRadians).abs();
+    final k = math.min(w / (w * c + h * sn), h / (w * sn + h * c));
+    return Size(w * k, h * k);
+  }
+
+  /// The strip at the top and bottom the writing keeps clear of, so it never
+  /// runs into the bar marking which end is up.
+  static const _barBand = 6.0;
+
+  /// How much of the chip's width the writing may take, so a word does not end
+  /// flush against the border.
+  static const _sideAir = 0.88;
+}
 
 /// The edge stripes, in the schema's own little coordinate space.
 class _LinkPainter extends CustomPainter {
@@ -274,9 +324,11 @@ class _LinkPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Twice the old weight, in step with the bands drawn along the real glass
+    // edges: the picture and the phone say the same thing at the same volume.
     final stroke = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
+      ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
 
     for (final link in links) {

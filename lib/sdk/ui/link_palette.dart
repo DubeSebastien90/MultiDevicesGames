@@ -26,5 +26,9 @@ class LinkPalette {
   /// Deliberately outside the list above. It is not half of anything, and
   /// painting it in a pairing colour is how a ring once looked like a row of
   /// joins that had all come out the same.
-  static const Color inward = Color(0xFFE8ECF5);
+  ///
+  /// Muted stone rather than the near-white it used to be: these screens are
+  /// drawn on the flow's paper now, and a white line on white paper is no line
+  /// at all.
+  static const Color inward = Color(0xFF8C8370);
 }

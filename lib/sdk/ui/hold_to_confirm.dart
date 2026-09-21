@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'lobby_flow_style.dart';
+
 /// Press anywhere and keep pressing: a ring fills, and at the end of it the
 /// answer is yes.
 ///
@@ -23,6 +25,7 @@ class HoldToConfirm extends StatefulWidget {
     this.doneLabel = 'Ready',
     this.hold = const Duration(seconds: 1),
     this.decay = const Duration(milliseconds: 2200),
+    this.padding = const EdgeInsets.all(16),
   });
 
   /// Shown next to the ring. The reason someone is holding at all.
@@ -40,6 +43,11 @@ class HoldToConfirm extends StatefulWidget {
 
   final Duration hold;
   final Duration decay;
+
+  /// The air around the whole arrangement. The placement screen widens it to
+  /// two stripe widths, because its content grows to whatever it is given and
+  /// the gutter is the only thing holding it off the edge stripes.
+  final EdgeInsets padding;
 
   @override
   State<HoldToConfirm> createState() => _HoldToConfirmState();
@@ -131,24 +139,26 @@ class _HoldToConfirmState extends State<HoldToConfirm>
       child: SafeArea(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: widget.padding,
             child: LayoutBuilder(
               builder: (context, constraints) {
                 // "Next to" on a portrait phone means underneath.
+                // [Expanded], not a bare child: the content is handed
+                // everything the ring does not want, so a picture that can
+                // grow — the board diagram — draws as large as the phone
+                // allows instead of at some size guessed here.
                 if (constraints.maxWidth <= 520) {
                   return Column(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      widget.content,
+                      Expanded(child: Center(child: widget.content)),
                       const SizedBox(height: 28),
                       ring,
                     ],
                   );
                 }
                 return Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(child: widget.content),
+                    Expanded(child: Center(child: widget.content)),
                     const SizedBox(width: 32),
                     ring,
                   ],
@@ -180,22 +190,25 @@ class _HoldRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     return SizedBox.square(
       dimension: _size,
       child: AnimatedBuilder(
         animation: Listenable.merge([progress, spin]),
         builder: (context, _) {
           final value = progress.value;
+          // Green once the promise is made, ink while it is being made: the
+          // same pair the results screen uses for a round won and a round
+          // merely played.
+          final arc = done ? LobbyFlowColors.green : LobbyFlowColors.ink;
           return CustomPaint(
             painter: _HoldRingPainter(
               progress: value,
               spin: spin.value,
-              track: scheme.onSurface.withValues(alpha: 0.12),
-              arc: done ? scheme.tertiary : scheme.primary,
-              idle: scheme.primary.withValues(alpha: 0.55 * (1 - value)),
+              track: LobbyFlowColors.field,
+              arc: arc,
+              // The idle sweep in the flow's purple, fading out as the hold
+              // takes over so the two never read as one arc changing colour.
+              idle: LobbyFlowColors.purple.withValues(alpha: 0.9 * (1 - value)),
             ),
             child: Center(
               child: Padding(
@@ -203,11 +216,8 @@ class _HoldRing extends StatelessWidget {
                 child: Text(
                   label,
                   textAlign: TextAlign.center,
-                  style: (done
-                          ? theme.textTheme.titleMedium
-                          : theme.textTheme.labelMedium)
-                      ?.copyWith(
-                    color: done ? scheme.tertiary : scheme.onSurfaceVariant,
+                  style: (done ? LobbyText.title : LobbyText.button).copyWith(
+                    fontSize: done ? 22 : 15,
                     height: 1.15,
                   ),
                 ),
@@ -239,7 +249,9 @@ class _HoldRingPainter extends CustomPainter {
   final Color arc;
   final Color idle;
 
-  static const _stroke = 9.0;
+  /// Matches the edge stripes' new width, so the ring and the bands on the
+  /// glass are strokes of one weight rather than two.
+  static const _stroke = 18.0;
 
   @override
   void paint(Canvas canvas, Size size) {
