@@ -127,6 +127,19 @@ void main() {
       SharedPreferences.setMockInitialValues({'ageBand': 'grown-up'});
       expect(await AgeGatePref.load(), AgeBand.unknown);
     });
+
+    // The debug reset is the one thing allowed past the ratchet, because
+    // testing the gate otherwise means reinstalling the app. Worth pinning
+    // down from both sides: that it clears even a child, and that the ordinary
+    // path still refuses to.
+    test('the debug reset forgets what save will not overwrite', () async {
+      SharedPreferences.setMockInitialValues({'ageBand': 'child'});
+      await AgeGatePref.save(AgeBand.adult);
+      expect(await AgeGatePref.load(), AgeBand.child);
+
+      await AgeGatePref.debugForget();
+      expect(await AgeGatePref.load(), AgeBand.unknown);
+    });
   });
 
   group('isGenerated', () {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Which of two groups this device's owner falls into, and nothing finer.
@@ -73,6 +74,21 @@ class AgeGatePref {
     final prefs = await SharedPreferences.getInstance();
     if (parse(prefs.getString(_key)) == AgeBand.child) return;
     await prefs.setString(_key, _wire[band]!);
+  }
+
+  /// Debug builds only: forgets the answer, so the gate asks again on the next
+  /// launch.
+  ///
+  /// Deliberately not routed through [save]. The ratchet there exists to make
+  /// precisely this impossible, and the moment a second path can undo a
+  /// `child` the ratchet is decoration. So this one removes the key outright
+  /// and refuses to run at all outside a debug build — the guard lives here,
+  /// next to the thing it protects, rather than in whichever screen happens to
+  /// offer the button.
+  static Future<void> debugForget() async {
+    if (!kDebugMode) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
   }
 
   /// Anything unrecognised reads as [AgeBand.unknown] — nothing stored, a value

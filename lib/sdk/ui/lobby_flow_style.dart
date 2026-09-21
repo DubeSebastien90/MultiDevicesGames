@@ -516,7 +516,21 @@ class LobbyHeader extends StatelessWidget {
             )
           else
             const SizedBox(width: _sideWidth),
-          Expanded(child: LobbyTitle(title)),
+          // Air on both sides of the title. A lobby is named after whoever is
+          // hosting it, so this is usually a long word or two, and without the
+          // gap it ends up touching the back pill.
+          //
+          // [FittedBox] rather than wrapping: a header is one line by
+          // definition, and a title that grows to two pushes the screen's
+          // first row down by the height of a line. A long name gives up size
+          // instead — it is still the biggest type on the screen, just not as
+          // big as a short name gets to be.
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: FittedBox(fit: BoxFit.scaleDown, child: LobbyTitle(title)),
+            ),
+          ),
           if (onSettings != null)
             LobbyIconButton(
               icon: Icons.settings,

@@ -15,6 +15,14 @@ import 'join_sheet.dart';
 import 'lobby_flow_style.dart';
 import 'settings_screen.dart';
 
+/// The longest a board may be called, typed or generated.
+///
+/// A board's name is read off a header on every phone at the table and off the
+/// join list on phones that have not arrived yet. Past this it stops being a
+/// name and starts being a paragraph — and the header answers a long one by
+/// setting it smaller, which only works while "long" has an end.
+const int kBoardNameMaxLength = 25;
+
 /// Pick a role. One app, two jobs: run the world, or be a window onto it.
 class RoleScreen extends StatefulWidget {
   const RoleScreen({
@@ -196,13 +204,22 @@ class _RoleScreenState extends State<RoleScreen> {
     return name.isEmpty ? 'phone' : name;
   }
 
-  /// Debug-only: forgets whatever this phone answered about NameDrop, so
-  /// [NameDropGate] asks again the next time the lobby opens.
-  Future<void> _reloadNameDropState() async {
+  /// Debug-only: forgets what this phone has been asked, so both questions
+  /// come back.
+  ///
+  /// The two answers come back at different moments, and the message says so:
+  /// [NameDropGate] asks on the way into the next lobby, while the age gate is
+  /// read once at launch and so cannot ask again until the app is restarted.
+  Future<void> _reloadAskedState() async {
     await NameDropPref.save(NameDropStatus.waiting);
+    await AgeGatePref.debugForget();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('NameDrop status reset to waiting')),
+      const SnackBar(
+        content: Text(
+          'Reset. NameDrop asks at the next lobby, age at the next launch.',
+        ),
+      ),
     );
   }
 
@@ -225,7 +242,15 @@ class _RoleScreenState extends State<RoleScreen> {
   /// showing three separate entries called "My board" is a coin toss, and the
   /// person hosting is the one thing everyone at the table can already identify.
   /// It also means a child's board is named after a made-up animal for free.
-  String _defaultBoardName() => "${_currentLabel()}'s board";
+  String _defaultBoardName() {
+    const suffix = "'s board";
+    final label = _currentLabel();
+    // Trim the name rather than the shape: cutting the whole string at 25
+    // would leave boards called "Bartholomew's bo", which reads as a bug.
+    final room = kBoardNameMaxLength - suffix.length;
+    final short = label.length > room ? label.substring(0, room) : label;
+    return '$short$suffix';
+  }
 
   Future<void> _host() async {
     final name = await showDialog<String>(
@@ -301,17 +326,17 @@ class _RoleScreenState extends State<RoleScreen> {
   /// Pinned to the top, so it lines up with the gear on the other screens
   /// instead of riding the centred content down the page.
   Widget _gear() => Padding(
-        padding: const EdgeInsets.only(right: 12, top: 4),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: LobbyIconButton(
-            icon: Icons.settings,
-            size: 30,
-            tooltip: 'Settings',
-            onPressed: _metrics == null ? null : _openSettings,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(right: 12, top: 4),
+    child: Align(
+      alignment: Alignment.centerRight,
+      child: LobbyIconButton(
+        icon: Icons.settings,
+        size: 30,
+        tooltip: 'Settings',
+        onPressed: _metrics == null ? null : _openSettings,
+      ),
+    ),
+  );
 
   Widget _nameField() {
     // A child gets the name as a fact rather than a field: not a read-only
@@ -340,10 +365,7 @@ class _RoleScreenState extends State<RoleScreen> {
         const SizedBox(height: 14),
       ],
       if (error != null) ...[
-        _ErrorBanner(
-          message: error,
-          onDismiss: widget.controller.clearError,
-        ),
+        _ErrorBanner(message: error, onDismiss: widget.controller.clearError),
         const SizedBox(height: 14),
       ],
     ];
@@ -378,17 +400,18 @@ class _RoleScreenState extends State<RoleScreen> {
     );
   }
 
-  /// A hidden reset so testing NameDrop repeatedly doesn't mean reinstalling.
+  /// A hidden reset so testing the two gates repeatedly doesn't mean
+  /// reinstalling.
   Widget _debugReload() => Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Center(
-          child: TextButton.icon(
-            onPressed: _reloadNameDropState,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('Reload state'),
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(top: 8),
+    child: Center(
+      child: TextButton.icon(
+        onPressed: _reloadAskedState,
+        icon: const Icon(Icons.refresh, size: 16),
+        label: const Text('Reload state'),
+      ),
+    ),
+  );
 }
 
 /// The player name as a fact rather than a field, with a dice to change it.
@@ -536,7 +559,7 @@ class _NameDialogState extends State<_NameDialog> {
               LobbyChipField(
                 controller: _controller,
                 autofocus: true,
-                maxLength: 40,
+                maxLength: kBoardNameMaxLength,
                 hintText: 'Enter Lobby Name',
                 onSubmitted: (_) => _submit(),
               ),
