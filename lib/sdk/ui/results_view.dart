@@ -188,31 +188,9 @@ class VerdictMark extends StatelessWidget {
 
   final bool won;
 
-  static const _size = 78.0;
-
   @override
-  Widget build(BuildContext context) {
-    final color = won ? LobbyFlowColors.green : LobbyFlowColors.coral;
-
-    return Container(
-      width: _size,
-      height: _size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: LobbyFlowColors.shadeOf(color),
-            offset: const Offset(0, LobbyMetrics.plateOffset),
-            blurRadius: 0,
-          ),
-        ],
-      ),
-      child: Icon(
-        won ? Icons.emoji_events : Icons.replay_rounded,
-        size: 40,
-        color: LobbyFlowColors.ink,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => LobbyMark(
+    icon: won ? Icons.emoji_events : Icons.replay_rounded,
+    color: won ? LobbyFlowColors.green : LobbyFlowColors.coral,
+  );
 }

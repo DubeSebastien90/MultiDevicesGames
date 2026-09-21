@@ -351,7 +351,7 @@ class _RoleScreenState extends State<RoleScreen> {
 
   Widget _actions() {
     if (widget.controller.busy) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: LobbySpinner());
     }
     // Nothing can start until this screen knows how big it is.
     final ready = _metrics != null;

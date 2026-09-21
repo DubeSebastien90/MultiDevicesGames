@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../score/scoreboard.dart';
 import '../model/player_color.dart';
+import 'lobby_flow_style.dart';
 import 'standings_card.dart';
 
 /// Connected, and sitting this one out.
@@ -40,10 +41,8 @@ class WaitingRoomView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -54,29 +53,14 @@ class WaitingRoomView extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 34,
-                      height: 34,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: scheme.primary,
-                      ),
-                    ),
+                    const LobbySpinner(),
                     const SizedBox(height: 24),
-                    Text(
-                      'Waiting for the minigame to start',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    const LobbyTitle('Waiting for the minigame to start'),
                     const SizedBox(height: 10),
                     Text(
                       'You will join in the next one.',
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                      style: LobbyText.body,
                     ),
 
                     // Which round they are sitting out, when the host has said.
@@ -85,18 +69,18 @@ class WaitingRoomView extends StatelessWidget {
                       const SizedBox(height: 20),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
+                          horizontal: 18,
+                          vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(20),
+                          color: LobbyFlowColors.field,
+                          borderRadius: BorderRadius.circular(
+                            LobbyMetrics.pillRadius,
+                          ),
                         ),
                         child: Text(
                           'Now playing: $playing',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                          style: LobbyText.label,
                         ),
                       ),
                     ],

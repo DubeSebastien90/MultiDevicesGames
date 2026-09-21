@@ -30,7 +30,8 @@ class LobbyFlowColors {
   /// The colour a plate casts as its shadow: itself, darker.
   static Color shadeOf(Color color) {
     final hsl = HSLColor.fromColor(color);
-    return hsl.withLightness((hsl.lightness - _shadeStep).clamp(0.0, 1.0))
+    return hsl
+        .withLightness((hsl.lightness - _shadeStep).clamp(0.0, 1.0))
         .toColor();
   }
 
@@ -39,8 +40,10 @@ class LobbyFlowColors {
   /// phones. Spelled out rather than leaning on [String.hashCode], which
   /// promises nothing across runs or platforms.
   static Color colorForLobby(String name) {
-    final hash = name.codeUnits
-        .fold<int>(0, (h, unit) => (h * 31 + unit) & 0x7fffffff);
+    final hash = name.codeUnits.fold<int>(
+      0,
+      (h, unit) => (h * 31 + unit) & 0x7fffffff,
+    );
     return lobbyPalette[hash % lobbyPalette.length];
   }
 }
@@ -236,11 +239,11 @@ class LobbyPillButton extends StatelessWidget {
     required this.background,
     this.onPressed,
     this.padding = const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
-  })  : foreground = LobbyFlowColors.ink,
-        fontSize = 17,
-        radius = LobbyMetrics.bigRadius,
-        stacked = true,
-        iconSize = 54;
+  }) : foreground = LobbyFlowColors.ink,
+       fontSize = 17,
+       radius = LobbyMetrics.bigRadius,
+       stacked = true,
+       iconSize = 54;
 
   /// Null for an icon-only button, which is the one shape where the icon is
   /// expected to sit dead centre rather than beside something.
@@ -266,8 +269,10 @@ class LobbyPillButton extends StatelessWidget {
         : Text(
             words,
             textAlign: TextAlign.center,
-            style: LobbyText.button
-                .copyWith(color: foreground, fontSize: fontSize),
+            style: LobbyText.button.copyWith(
+              color: foreground,
+              fontSize: fontSize,
+            ),
           );
     final art = icon == null
         ? null
@@ -283,8 +288,10 @@ class LobbyPillButton extends StatelessWidget {
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (art != null) ...[art, if (text != null)
-                    const SizedBox(height: 10)],
+                  if (art != null) ...[
+                    art,
+                    if (text != null) const SizedBox(height: 10),
+                  ],
                   ?text,
                 ],
               )
@@ -292,8 +299,10 @@ class LobbyPillButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (art != null) ...[art, if (text != null)
-                    const SizedBox(width: 8)],
+                  if (art != null) ...[
+                    art,
+                    if (text != null) const SizedBox(width: 8),
+                  ],
                   // Flexible, not bare: a label long enough to be a sentence —
                   // the lobby's disabled Play button says why it is disabled —
                   // wraps inside the pill instead of running off its end.
@@ -345,8 +354,10 @@ class LobbyChipField extends StatelessWidget {
         hintStyle: LobbyText.hint,
         filled: true,
         fillColor: LobbyFlowColors.field,
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 16,
+          horizontal: 20,
+        ),
         suffixIcon: suffixIcon == null
             ? null
             : IconButton(
@@ -451,12 +462,12 @@ class LobbyTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-        text,
-        textAlign: TextAlign.center,
-        style: fontSize == null
-            ? LobbyText.title
-            : LobbyText.title.copyWith(fontSize: fontSize),
-      );
+    text,
+    textAlign: TextAlign.center,
+    style: fontSize == null
+        ? LobbyText.title
+        : LobbyText.title.copyWith(fontSize: fontSize),
+  );
 }
 
 /// Back pill, centred title, optional gear — the header every screen in the
@@ -506,6 +517,101 @@ class LobbyHeader extends StatelessWidget {
           else
             const SizedBox(width: _sideWidth),
         ],
+      ),
+    );
+  }
+}
+
+/// A coloured disc with an icon on it — the flow's plate, made round.
+///
+/// The results screen's won/lost mark generalised: the same shape says "the
+/// table changed" on the warning screen and "you lost the connection" on the
+/// disconnected one. One vocabulary, so a player reads the colour before the
+/// words on any of them.
+class LobbyMark extends StatelessWidget {
+  const LobbyMark({
+    super.key,
+    required this.icon,
+    required this.color,
+    this.size = 78,
+  });
+
+  final IconData icon;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: LobbyFlowColors.shadeOf(color),
+            offset: const Offset(0, LobbyMetrics.plateOffset),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Icon(icon, size: size * 0.51, color: LobbyFlowColors.ink),
+    );
+  }
+}
+
+/// The flow's spinner: ink on paper, at whatever size the caller needs.
+///
+/// Material's default takes the theme's primary colour, which on the app's dark
+/// [ThemeData] is a bright blue — the one thing on an otherwise pastel screen
+/// that belongs to another design.
+class LobbySpinner extends StatelessWidget {
+  const LobbySpinner({
+    super.key,
+    this.size = 34,
+    this.color = LobbyFlowColors.ink,
+    this.strokeWidth = 3,
+  });
+
+  final double size;
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: CircularProgressIndicator(strokeWidth: strokeWidth, color: color),
+  );
+}
+
+/// A whole screen that is only waiting: the spinner, and what it is waiting for.
+///
+/// Every dead moment in the flow — connecting to a host, a board that has not
+/// arrived yet — lands here rather than on a bare [Scaffold], which would take
+/// the app's dark [ThemeData] background and read as a different app for as
+/// long as the wait lasts.
+class LobbyLoadingScreen extends StatelessWidget {
+  const LobbyLoadingScreen({super.key, this.message});
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    final words = message;
+    return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const LobbySpinner(),
+            if (words != null) ...[
+              const SizedBox(height: 18),
+              Text(words, style: LobbyText.label, textAlign: TextAlign.center),
+            ],
+          ],
+        ),
       ),
     );
   }

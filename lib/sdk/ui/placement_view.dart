@@ -45,7 +45,7 @@ class PlacementView extends StatelessWidget {
     // diagram exists: "Ready" over an empty space asks people to promise they
     // are somewhere they have not been told about.
     if (layout == null || client.slices.isEmpty) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const LobbyLoadingScreen();
     }
 
     // Confirmation state comes from the lobby list, but *positions* come from

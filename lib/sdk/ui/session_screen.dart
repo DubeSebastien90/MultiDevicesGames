@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import '../client/client_session.dart';
 import 'game_view.dart';
+import 'lobby_flow_style.dart';
 import 'lobby_view.dart';
 import 'name_drop_notice.dart';
 import 'intro_animation.dart';
@@ -52,8 +53,8 @@ class SessionScreen extends StatelessWidget {
         onDismiss: host == null
             ? null
             : (change.carriesOn
-                ? host.dismissTableChange
-                : host.showScoreboard),
+                  ? host.dismissTableChange
+                  : host.showScoreboard),
       );
     }
 
@@ -77,7 +78,7 @@ class SessionScreen extends StatelessWidget {
   Widget _screenFor(BuildContext context, ClientSession client) {
     switch (client.phase) {
       case ClientPhase.connecting:
-        return const _Waiting(message: 'Connecting…');
+        return const LobbyLoadingScreen(message: 'Connecting…');
 
       case ClientPhase.lobby:
         // The NameDrop question belongs to *arriving at* the lobby, which is a
@@ -153,9 +154,19 @@ class SessionScreen extends StatelessWidget {
           onBackToLobby: controller.host?.returnToLobby,
         );
 
+      // Two endings, one screen, two headlines: a phone that was turned away
+      // never had a connection to lose, and telling it that it lost one sends
+      // somebody looking at their wifi over a lobby that was simply full.
       case ClientPhase.rejected:
+        return _Problem(
+          title: 'Cannot join',
+          message: client.message ?? 'The host turned this phone away.',
+          onBack: controller.leave,
+        );
+
       case ClientPhase.disconnected:
         return _Problem(
+          title: 'Connection lost',
           message: client.message ?? 'Disconnected.',
           onBack: controller.leave,
         );
@@ -163,58 +174,65 @@ class SessionScreen extends StatelessWidget {
   }
 }
 
-class _Waiting extends StatelessWidget {
-  const _Waiting({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 14),
-          Text(message),
-        ],
-      ),
-    ),
-  );
-}
-
+/// The connection is gone, or was never granted.
+///
+/// Dressed like the rest of the flow rather than like an error dialog: a coral
+/// mark, the reason in plain words, and the same pill every other screen ends
+/// with. Coral because this is the one screen in the flow you cannot carry on
+/// from — it is the back button's colour, and back is the only thing left.
 class _Problem extends StatelessWidget {
-  const _Problem({required this.message, required this.onBack});
+  const _Problem({
+    required this.title,
+    required this.message,
+    required this.onBack,
+  });
 
+  final String title;
   final String message;
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
         child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.wifi_tethering_off,
-                    size: 34,
-                    color: theme.colorScheme.error,
+                  const LobbyMark(
+                    icon: Icons.wifi_tethering_off,
+                    color: LobbyFlowColors.coral,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 18),
+                  LobbyTitle(title),
+                  const SizedBox(height: 10),
+                  // What the host actually said, under the headline rather
+                  // than instead of it: 'Lobby is full' is the useful half, and
+                  // a headline alone is not enough to act on.
                   Text(
                     message,
                     textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium,
+                    style: LobbyText.body,
                   ),
-                  const SizedBox(height: 18),
-                  FilledButton(onPressed: onBack, child: const Text('Back')),
+                  const SizedBox(height: 24),
+                  LobbyPillButton(
+                    onPressed: onBack,
+                    icon: Icons.arrow_back,
+                    label: 'Back',
+                    background: LobbyFlowColors.coral,
+                    fontSize: 17,
+                    iconSize: 20,
+                    radius: LobbyMetrics.bigRadius,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 28,
+                    ),
+                  ),
                 ],
               ),
             ),
