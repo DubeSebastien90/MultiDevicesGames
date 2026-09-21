@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Visual tokens for the pre-game flow (entry, create-lobby, join-lobby,
 /// settings). Local to those screens — the app's global [ThemeData] is
@@ -327,6 +328,8 @@ class LobbyChipField extends StatelessWidget {
     this.onChanged,
     this.onSubmitted,
     this.autofocus = false,
+    this.keyboardType,
+    this.inputFormatters,
   });
 
   final TextEditingController controller;
@@ -338,6 +341,11 @@ class LobbyChipField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
   final bool autofocus;
 
+  /// For the one field in the flow that takes a number rather than a name: the
+  /// measurements on the screen-size page.
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+
   @override
   Widget build(BuildContext context) {
     return TextField(
@@ -346,6 +354,8 @@ class LobbyChipField extends StatelessWidget {
       onChanged: onChanged,
       onSubmitted: onSubmitted,
       autofocus: autofocus,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       textCapitalization: TextCapitalization.words,
       style: LobbyText.field,
       decoration: InputDecoration(
