@@ -50,12 +50,7 @@ ArenaSim start(int phoneCount) {
 }
 
 void touch(ArenaSim sim, String phoneId, String phase, double x, double y) {
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: x,
-    worldY: y,
-    phase: phase,
-  ));
+  sim.onTouch(TouchEvent(phoneId: phoneId, worldX: x, worldY: y, phase: phase));
 }
 
 void run(ArenaSim sim, double seconds) {
@@ -72,10 +67,23 @@ void run(ArenaSim sim, double seconds) {
 
 /// A tap: down and up with nothing stepped between, which is what separates it
 /// from a hold.
+///
+/// It no longer hits anybody by itself — it starts a swing, and the blade cuts
+/// what it reaches on the frames that follow. [swing] is the whole gesture.
 void attack(ArenaSim sim, String phoneId) {
   final at = positionOf(sim, phoneId == 'p1' ? 0 : 1);
   touch(sim, phoneId, TouchPhase.down, at.x, at.y);
   touch(sim, phoneId, TouchPhase.up, at.x, at.y);
+}
+
+/// A tap, and the blade's whole trip round: up to the shoulder, then the cut.
+///
+/// Longer than [ArenaConfig.attackSwing], which times the cut alone — how long
+/// the blade takes to *reach* the shoulder depends on where it started, and
+/// half a turn is the worst it can be.
+void swing(ArenaSim sim, String phoneId) {
+  attack(sim, phoneId);
+  run(sim, math.pi / ArenaConfig.swordSlew + ArenaConfig.attackSwing + 4 / 60);
 }
 
 /// Walks the first fighter onto the second until they are inside its reach and
@@ -129,36 +137,45 @@ void main() {
     test('a drag shorter than the dead zone draws nothing either', () {
       final sim = start(2);
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      touch(sim, 'p1', TouchPhase.move,
-          4.0 + ArenaConfig.minMoveDistance / 2, 5.0);
+      touch(
+        sim,
+        'p1',
+        TouchPhase.move,
+        4.0 + ArenaConfig.minMoveDistance / 2,
+        5.0,
+      );
       expect(anchorOf(sim, 'p0'), isNull);
     });
 
-    test('the anchor is where the finger landed, and stays put as it drags',
-        () {
-      final sim = start(2);
-      touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
-      // The anchor does not chase the finger — that is the whole point of it.
-      expect(anchorOf(sim, 'p0'), (x: 4.0, y: 5.0));
-      expect(knobOf(sim, 'p0'), (x: 6.5, y: 5.0));
-    });
+    test(
+      'the anchor is where the finger landed, and stays put as it drags',
+      () {
+        final sim = start(2);
+        touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
+        touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
+        // The anchor does not chase the finger — that is the whole point of it.
+        expect(anchorOf(sim, 'p0'), (x: 4.0, y: 5.0));
+        expect(knobOf(sim, 'p0'), (x: 6.5, y: 5.0));
+      },
+    );
 
-    test('coming back to the middle puts the stick away and stops the fighter',
-        () {
-      final sim = start(2);
-      run(sim, ArenaConfig.spawnInvincibility + 0.1);
-      touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
-      run(sim, 0.2);
+    test(
+      'coming back to the middle puts the stick away and stops the fighter',
+      () {
+        final sim = start(2);
+        run(sim, ArenaConfig.spawnInvincibility + 0.1);
+        touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
+        touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
+        run(sim, 0.2);
 
-      touch(sim, 'p1', TouchPhase.move, 4.1, 5.0);
-      expect(anchorOf(sim, 'p0'), isNull);
+        touch(sim, 'p1', TouchPhase.move, 4.1, 5.0);
+        expect(anchorOf(sim, 'p0'), isNull);
 
-      final at = positionOf(sim, 0);
-      run(sim, 0.5);
-      expect(positionOf(sim, 0).x, closeTo(at.x, 0.001));
-    });
+        final at = positionOf(sim, 0);
+        run(sim, 0.5);
+        expect(positionOf(sim, 0).x, closeTo(at.x, 0.001));
+      },
+    );
   });
 
   group('how far the stick is pushed is how fast the fighter goes', () {
@@ -170,7 +187,8 @@ void main() {
       expect(ArenaConfig.moveScaleFor(ArenaConfig.joystickRadius * 10), 1);
       expect(
         ArenaConfig.moveScaleFor(
-            (ArenaConfig.minMoveDistance + ArenaConfig.joystickRadius) / 2),
+          (ArenaConfig.minMoveDistance + ArenaConfig.joystickRadius) / 2,
+        ),
         closeTo(0.5, 1e-9),
       );
     });
@@ -190,16 +208,15 @@ void main() {
 
       final full = coveredPushing(ArenaConfig.joystickRadius);
       final half = coveredPushing(
-          (ArenaConfig.minMoveDistance + ArenaConfig.joystickRadius) / 2);
+        (ArenaConfig.minMoveDistance + ArenaConfig.joystickRadius) / 2,
+      );
 
       // Full tilt is the old speed, unchanged: this made the stick finer, not
       // the game slower.
       expect(full, closeTo(ArenaConfig.moveSpeed * seconds, 0.2));
       expect(half, closeTo(full / 2, 0.2));
     });
-
   });
-
 
   group('the stick is put away when it stops meaning anything', () {
     test('it goes when the finger comes off', () {
@@ -211,36 +228,41 @@ void main() {
       expect(knobOf(sim, 'p0'), isNull);
     });
 
-    test('a fighter cut down with their finger down leaves no stick behind',
-        () {
-      final sim = start(2);
-      run(sim, ArenaConfig.spawnInvincibility + 0.1);
-      walkTogether(sim);
+    test(
+      'a fighter cut down with their finger down leaves no stick behind',
+      () {
+        final sim = start(2);
+        run(sim, ArenaConfig.spawnInvincibility + 0.1);
+        walkTogether(sim);
 
-      // Three blows land on a fighter who is not touching anything.
-      for (var i = 0; i < 3; i++) {
-        attack(sim, 'p1');
-        run(sim, ArenaConfig.attackCooldown + 0.1);
-      }
-      expect(sim.sharedState['hp_p1'], ArenaConfig.attackDamage);
+        // Two of the three lives, taken off a fighter who is not touching
+        // anything. The grace after a hit has to run out between them, or the
+        // second blade passes through somebody still flashing.
+        for (var i = 0; i < ArenaConfig.maxLives - 1; i++) {
+          swing(sim, 'p1');
+          run(sim, ArenaConfig.attackCooldown + ArenaConfig.hitInvincibility);
+        }
+        expect(sim.sharedState['lives_p1'], 1);
+        expect(sim.sharedState['alive_p1'], isTrue);
 
-      // The fourth lands while their finger is on the glass. Their own
-      // touch-up never reaches the sim — [onTouch] turns a dead fighter away —
-      // so if the fall does not clear the stick, it is painted on the floor
-      // for the rest of the round. Not stepped between the two, or the held
-      // touch would turn into a block and reflect the attack.
-      final at = positionOf(sim, 1);
-      touch(sim, 'p2', TouchPhase.down, at.x, at.y);
-      touch(sim, 'p2', TouchPhase.move, at.x,
-          at.y + ArenaConfig.joystickRadius);
-      expect(anchorOf(sim, 'p1'), isNotNull);
-      // Nothing is stepped, so they have not actually walked out of reach yet.
-      expect(positionOf(sim, 1).y, closeTo(at.y, 0.001));
+        // The last one lands while their finger is on the glass, and dragging —
+        // *towards* the blade, so the swing does not simply miss a fighter who
+        // ran away from it, and far enough out of the dead zone that they are
+        // steering rather than raising a guard.
+        final me = positionOf(sim, 0);
+        final them = positionOf(sim, 1);
+        touch(sim, 'p2', TouchPhase.down, them.x, them.y);
+        touch(sim, 'p2', TouchPhase.move, me.x, me.y);
+        expect(anchorOf(sim, 'p1'), isNotNull);
 
-      attack(sim, 'p1');
-      expect(sim.sharedState['alive_p1'], isFalse);
-      expect(anchorOf(sim, 'p1'), isNull);
-    });
+        // Their own touch-up never reaches the sim — [onTouch] turns a dead
+        // fighter away — so if the fall does not clear the stick, it is painted
+        // on the floor for the rest of the round.
+        swing(sim, 'p1');
+        expect(sim.sharedState['alive_p1'], isFalse);
+        expect(anchorOf(sim, 'p1'), isNull);
+      },
+    );
 
     test('a replay starts with no stick showing', () {
       final sim = start(2);

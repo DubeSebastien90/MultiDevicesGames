@@ -6,15 +6,95 @@ class ArenaConfig {
   static const double moveSpeed = 8.0; // cm/s (world units/s)
   static const double characterRadius = 0.6; // cm
 
-  // -- health -----------------------------------------------------------------
-  static const int maxHp = 100;
-  static const int attackDamage = 25;
+  // -- lives ------------------------------------------------------------------
+  /// Three hits and you are out, shown as three dots rather than a bar. A bar
+  /// asks to be read; three dots are counted without looking.
+  static const int maxLives = 3;
+
+  // -- the sword --------------------------------------------------------------
+  /// The blade, measured from the hilt.
+  ///
+  /// Shorter than the arm that holds it: a long blade growing straight out of
+  /// a body reads as a spike, and the gap below is what makes it a sword being
+  /// held rather than one stuck on.
+  static const double swordLength = 1.80; // cm
+
+  static const double swordWidth = 0.22; // cm
+
+  /// How far the hilt sits from the body's centre — the fist at the end of a
+  /// bent arm, close enough that the sword is plainly being *held*.
+  ///
+  /// Chosen against [swordLength] so that the two still add up to the reach
+  /// this game was tuned around: every time the hand has moved, the blade has
+  /// been given the difference back, and nobody's range has changed.
+  static const double swordGrip = 0.85; // cm
+
+  /// How far a blade can reach from the body's centre. Derived, never tuned:
+  /// it is the geometry above, and it exists so nothing has to recompute it.
+  static const double attackRange = swordGrip + swordLength;
+
+  /// Where the blade rests, as an angle off the way the fighter is facing:
+  /// straight ahead, so a fighter's reach is visible to everybody.
+  static const double swordIdleAngle = 0.0;
+
+  /// Blocking: the blade turned across the line of the body and held out in
+  /// front, so it covers what is coming rather than pointing at it. A bar
+  /// between you and the other sword, which is what a guard looks like.
+  static const double swordBlockTilt = 1.5708; // rad, a quarter turn
+
+  /// How far in front of the body the middle of that bar sits.
+  static const double swordBlockReach = swordGrip; // cm
+
+  /// How fast the hilt travels when the pose moves it — raising a guard slides
+  /// the hand across, and a hand that jumps is the same fault as a blade that
+  /// jumps.
+  static const double swordReachSlew = 9.0; // cm/s
+
+  /// Stunned: the arm drops and the blade trails behind.
+  static const double swordStunAngle = 2.5; // rad
+
+  /// How fast the blade travels between resting, blocking and stunned.
+  ///
+  /// The whole point of a slew rather than an assignment: a sword that
+  /// teleports between poses reads as a bug, and the swing below is only
+  /// legible because every *other* move is continuous too.
+  static const double swordSlew = 11.0; // rad/s
 
   // -- attack -----------------------------------------------------------------
-  static const double attackRange = 2.5; // cm
-  static const double attackArc = 0.7; // rad (~40 deg)
+  /// The slash, as two angles off the fighter's facing: drawn back to one
+  /// side and cut across to the other, passing straight through where they are
+  /// looking.
+  ///
+  /// Seventy degrees each way rather than the ninety-odd it used to be. A
+  /// blade that starts square across the body is winding up *behind* the
+  /// shoulder, which reads as a wind-mill; a slash that starts and ends inside
+  /// the shoulders is a cut.
+  static const double attackWindup = 1.2217; // rad, 70 degrees
+  static const double attackFollow = -1.2217; // rad, -70 degrees
+
+  /// How fast the blade travels while slashing.
+  ///
+  /// A speed rather than a duration, so that the cut is the same cut whatever
+  /// the blade was doing a moment before. Everything else about the timing
+  /// follows from it.
+  static const double swingSpeed = 13.0; // rad/s
+
+  /// How long the slash itself takes: the whole 140 degrees, at [swingSpeed].
+  ///
+  /// Derived, and deliberately *only* the slash. Getting the blade to
+  /// [attackWindup] in the first place is a move between poses like any other
+  /// and takes as long as it takes — it is not part of the cut, it does not
+  /// cut anybody, and it does not eat into this.
+  static const double attackSwing =
+      (attackWindup - attackFollow) / swingSpeed; // seconds
+
   static const double attackCooldown = 1.0; // seconds
-  static const double attackFlash = 0.2; // seconds the cone shows
+
+  /// Grace after losing a life, so one exchange cannot take two.
+  static const double hitInvincibility = 0.9; // seconds
+
+  /// The blade's colour. A grey rectangle until there is artwork for it.
+  static const int swordColor = 0xFFC3C7D1;
 
   // -- block ------------------------------------------------------------------
   static const double blockCooldown = 2.0; // seconds
@@ -23,6 +103,48 @@ class ArenaConfig {
   // -- status effects ---------------------------------------------------------
   static const double stunDuration = 1.5; // seconds
   static const double spawnInvincibility = 2.0; // seconds
+
+  // -- falling ----------------------------------------------------------------
+  /// How long the round waits after the last fighter falls before it ends.
+  ///
+  /// The round is decided the instant it happens, and a decided round used to
+  /// cut to the score in the same frame — so the burst that says *how* it was
+  /// decided played to nobody. A second is long enough to watch somebody come
+  /// apart and short enough that nobody taps the screen wondering.
+  static const double deathShowSeconds = 1.0;
+
+  /// The burst itself: a ring of round bits of the player's own colour, thrown
+  /// outwards and slowing as they fade.
+  static const int deathParticles = 16;
+  static const double deathBurstSeconds = 1.0;
+
+  /// How fast the fastest bits leave, in world units per second.
+  static const double deathBurstSpeed = 7.0;
+
+  /// The size of a bit, as a fraction of the body it came out of.
+  static const double deathParticleScale = 0.22;
+
+  // -- being hit --------------------------------------------------------------
+  /// A blow that lands throws the same burst at seven tenths of the size.
+  ///
+  /// Written as a fraction of the death burst rather than as numbers of its
+  /// own, because proportion is the whole point: a hit and a death are the
+  /// same event at two strengths, and a player should read how much trouble
+  /// somebody is in from the corner of their eye without counting anything.
+  ///
+  /// It started at a third and could not be seen across a table. A burst the
+  /// eye misses is the same as no burst at all — and this one is the only
+  /// thing that says a blow landed at all.
+  static const double hitBurstScale = 0.7;
+
+  static const int hitParticles = (deathParticles * hitBurstScale) ~/ 1;
+  static const double hitBurstSeconds = deathBurstSeconds * hitBurstScale;
+  static const double hitBurstSpeed = deathBurstSpeed * hitBurstScale;
+
+  /// A blow that was turned away throws white ones instead of the player's
+  /// colour — sparks off a guard, and the one thing on the floor that belongs
+  /// to neither fighter.
+  static const int parryColor = 0xFFFFFFFF;
 
   // -- scoring ----------------------------------------------------------------
   static const int pointsPerKill = 10;

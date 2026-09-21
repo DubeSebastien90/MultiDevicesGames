@@ -17,12 +17,12 @@ class ArenaGame implements MultiscreenGame {
 
   @override
   GameManifest get manifest => const GameManifest(
-        id: 'arena',
-        title: 'Arena',
-        tagline: 'Fight to be the last one standing.',
-        goal: 'Eliminate everyone. Drag, tap, hold.',
-        players: PlayerCount.range(min: 2, max: 8),
-      );
+    id: 'arena',
+    title: 'Arena',
+    tagline: 'Fight to be the last one standing.',
+    goal: 'Eliminate everyone. Drag, tap, hold.',
+    players: PlayerCount.range(min: 2, max: 8),
+  );
 
   @override
   BoardPlan planBoard(LobbyInfo lobby) {
@@ -33,7 +33,8 @@ class ArenaGame implements MultiscreenGame {
         sort: PhoneSort.joinOrder,
         orientation: PhoneOrientation.sideways,
         gap: Gaps.casingsTouching,
-        instruction: 'Lay your phones side by side on their sides, '
+        instruction:
+            'Lay your phones side by side on their sides, '
             'short edges touching.',
       );
     }
@@ -44,7 +45,8 @@ class ArenaGame implements MultiscreenGame {
         sort: PhoneSort.joinOrder,
         orientation: PhoneOrientation.sideways,
         gap: Gaps.casingsTouching,
-        instruction: 'Two rows facing each other, phones on their sides, '
+        instruction:
+            'Two rows facing each other, phones on their sides, '
             'edges touching.',
       );
     }
@@ -54,7 +56,8 @@ class ArenaGame implements MultiscreenGame {
       sort: PhoneSort.joinOrder,
       orientation: PhoneOrientation.sideways,
       gap: Gaps.casingsTouching,
-      instruction: 'Lay your phones side by side on their sides, '
+      instruction:
+          'Lay your phones side by side on their sides, '
           'short edges touching.',
     );
   }
@@ -64,8 +67,8 @@ class ArenaGame implements MultiscreenGame {
 
   @override
   GameView createView(ViewContext context) => ArenaView(
-        phoneId: context.phoneId,
-        characters: context.characters,
-        roster: context.roster,
-      );
+    phoneId: context.phoneId,
+    characters: context.characters,
+    roster: context.roster,
+  );
 }
