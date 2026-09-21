@@ -22,7 +22,8 @@ class SubwaySkaterGame implements MultiscreenGame {
   GameManifest get manifest => const GameManifest(
     id: 'subway_skater',
     title: 'Subway Skater',
-    tagline: 'Swipe to dodge. The front of the line scores most and gets hit '
+    tagline:
+        'Swipe to dodge. The front of the line scores most and gets hit '
         'first.',
     goal: 'Spend as much of the minute as far up the line as you can.',
     // Two is a line, barely — one hit and you have swapped ends. Beyond about
@@ -48,7 +49,8 @@ class SubwaySkaterGame implements MultiscreenGame {
     sort: PhoneSort.joinOrder,
     align: CrossAlign.center,
     gap: Gaps.casingsTouching,
-    instruction: 'Lay the phones on their sides in one long line, short edges '
+    instruction:
+        'Lay the phones on their sides in one long line, short edges '
         'touching and centred on each other — it is one corridor.',
   );
 

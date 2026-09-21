@@ -31,7 +31,7 @@ import 'subway_skater_config.dart';
 /// be a second punishment for the people it rewards.
 class SubwaySkaterSim implements GameSim, PlayerPresence {
   SubwaySkaterSim(this.context, {math.Random? random})
-      : _random = random ?? math.Random() {
+    : _random = random ?? math.Random() {
     _build();
   }
 
@@ -77,20 +77,21 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     _order.clear();
     for (var i = 0; i < context.slices.length; i++) {
       final slice = context.slices[i];
-      final skater = _Skater(
-        phoneId: slice.phoneId,
-        descriptor: EntityDescriptor(
-          id: 'skater-${slice.phoneId}',
-          kind: 'skater',
-          props: {
-            'phone': slice.phoneId,
-            'color': slice.color?.id,
-            'r': SubwaySkaterConfig.skaterRadius,
-          },
-        ),
-      )
-        ..lane = middle
-        ..y = SubwaySkaterConfig.laneCenter(board, middle);
+      final skater =
+          _Skater(
+              phoneId: slice.phoneId,
+              descriptor: EntityDescriptor(
+                id: 'skater-${slice.phoneId}',
+                kind: 'skater',
+                props: {
+                  'phone': slice.phoneId,
+                  'color': slice.color?.id,
+                  'r': SubwaySkaterConfig.skaterRadius,
+                },
+              ),
+            )
+            ..lane = middle
+            ..y = SubwaySkaterConfig.laneCenter(board, middle);
       skater.x = _anchorX(i);
       _skaters[slice.phoneId] = skater;
       _order.add(slice.phoneId);
@@ -101,21 +102,25 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
       ..clear()
       ..addAll([
         for (var i = 0; i < SubwaySkaterConfig.obstaclePool; i++)
-          _Obstacle(EntityDescriptor(
-            id: 'block$i',
-            kind: 'obstacle',
-            props: {
-              'w': SubwaySkaterConfig.obstacleLength,
-              'h': SubwaySkaterConfig.laneHeight(board) *
-                  SubwaySkaterConfig.obstacleLaneFraction,
-            },
-          )),
+          _Obstacle(
+            EntityDescriptor(
+              id: 'block$i',
+              kind: 'obstacle',
+              props: {
+                'w': SubwaySkaterConfig.obstacleLength,
+                'h':
+                    SubwaySkaterConfig.laneHeight(board) *
+                    SubwaySkaterConfig.obstacleLaneFraction,
+              },
+            ),
+          ),
       ]);
 
     _bursts
       ..clear()
       ..addAll([
-        for (var i = 0; i < SubwaySkaterConfig.burstPool; i++) _Burst('burst$i'),
+        for (var i = 0; i < SubwaySkaterConfig.burstPool; i++)
+          _Burst('burst$i'),
       ]);
 
     _elapsed = 0;
@@ -175,7 +180,8 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
   void _spawnDue() {
     if (_elapsed < _nextSpawnAt) return;
     _launchWave();
-    _nextSpawnAt = _elapsed +
+    _nextSpawnAt =
+        _elapsed +
         _ramp(
           SubwaySkaterConfig.firstSpawnGap,
           SubwaySkaterConfig.lastSpawnGap,
@@ -218,8 +224,7 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
   }
 
   void _moveObstacles(double dt) {
-    final limit =
-        context.board.right + SubwaySkaterConfig.obstacleLength * 2;
+    final limit = context.board.right + SubwaySkaterConfig.obstacleLength * 2;
     final speed = SubwaySkaterConfig.speedAt(_elapsed);
     for (final o in _obstacles) {
       if (!o.active) continue;
@@ -244,7 +249,8 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
         s.y = SubwaySkaterConfig.laneCenter(board, riding.lane);
         s.spin += SubwaySkaterConfig.speedAt(_elapsed) * dt;
 
-        final done = s.tumbleFor >= SubwaySkaterConfig.minTumbleSeconds &&
+        final done =
+            s.tumbleFor >= SubwaySkaterConfig.minTumbleSeconds &&
             (riding.x >= _backAnchorX ||
                 s.tumbleFor >= SubwaySkaterConfig.maxTumbleSeconds);
         if (done) _land(s);
@@ -381,7 +387,8 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
         x: o.x,
         y: SubwaySkaterConfig.laneCenter(context.board, o.lane),
         bornMs: _elapsed * 1000,
-        size: SubwaySkaterConfig.laneHeight(context.board) *
+        size:
+            SubwaySkaterConfig.laneHeight(context.board) *
             SubwaySkaterConfig.obstacleLaneFraction,
         tilt: _random.nextDouble() * math.pi,
       );
@@ -430,8 +437,7 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
   /// still standing, so a battery dying does not shrink the prize halfway
   /// through — the people who spent the first half of the minute earning a
   /// share of it would find their share had been quietly revalued.
-  int get _pot =>
-      SubwaySkaterConfig.pointsPerPlayer * context.phoneIds.length;
+  int get _pot => SubwaySkaterConfig.pointsPerPlayer * context.phoneIds.length;
 
   /// [phoneId]'s slice of the pot, and the only place the split is worked out.
   ///
@@ -627,10 +633,9 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     // Nobody wins a corridor. Everyone ran the same minute and the only thing
     // to report is how much of it each of them spent near the front. Built once
     // and kept: `outcome` is polled several times a tick.
-    return _outcome ??= GameOutcome.perPhone(
-      {for (final id in context.phoneIds) id: _lineFor(id)},
-      summary: _summary(),
-    );
+    return _outcome ??= GameOutcome.perPhone({
+      for (final id in context.phoneIds) id: _lineFor(id),
+    }, summary: _summary());
   }
 
   String _lineFor(String phoneId) {
@@ -655,8 +660,8 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     if (ranked.length > 1 && ranked[0].points == ranked[1].points) {
       return 'the line never settled';
     }
-    final label = context.scores.view.entryFor(ranked.first.id)?.label ??
-        ranked.first.id;
+    final label =
+        context.scores.view.entryFor(ranked.first.id)?.label ?? ranked.first.id;
     return '$label led the line, ${ranked.first.points} points';
   }
 

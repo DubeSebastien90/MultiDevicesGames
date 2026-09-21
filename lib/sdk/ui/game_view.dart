@@ -142,13 +142,12 @@ class _GameViewState extends State<GameView> {
                         : '${client.phoneId} · '
                               '${layout.index + 1}/${layout.total}',
                   ),
-                // The score and the game's own HUD stay: both are the game
-                // talking to the player, not the platform talking to us.
-                if (client.scores.isUsed)
-                  _Badge(
-                    text: '${client.scores[client.phoneId ?? '']} pts',
-                    highlight: true,
-                  ),
+                // The game's own HUD, and nothing else of the platform's.
+                //
+                // A running total used to sit here. It came off: a score is
+                // read between games, on a screen built for it, and a number
+                // ticking over the corner of a round is one more thing asking
+                // to be looked at while somebody is trying to play.
                 ?_hud,
               ],
             ),
@@ -194,27 +193,20 @@ class _GameViewState extends State<GameView> {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({required this.text, this.highlight = false});
+  const _Badge({required this.text});
 
   final String text;
-
-  /// Used for the score, which is the one badge worth glancing at mid-game.
-  final bool highlight;
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
-      color: Colors.black.withValues(alpha: highlight ? 0.5 : 0.35),
+      color: Colors.black.withValues(alpha: 0.35),
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(
       text,
-      style: TextStyle(
-        fontSize: highlight ? 12.5 : 11,
-        fontWeight: highlight ? FontWeight.w600 : FontWeight.normal,
-        color: highlight ? const Color(0xFFFFD166) : Colors.white70,
-      ),
+      style: const TextStyle(fontSize: 11, color: Colors.white70),
     ),
   );
 }

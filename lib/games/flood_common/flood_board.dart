@@ -130,8 +130,7 @@ class FloodBoard {
 
     return {
       for (var i = 0; i < slices.length; i++)
-        slices[i].phoneId:
-            i < cutAfter ? FloodConfig.blue : FloodConfig.red,
+        slices[i].phoneId: i < cutAfter ? FloodConfig.blue : FloodConfig.red,
     };
   }
 

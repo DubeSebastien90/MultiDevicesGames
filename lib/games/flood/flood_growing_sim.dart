@@ -13,7 +13,7 @@ import '../flood_common/flood_sim.dart';
 /// faster, and the round breaks open rather than grinding.
 class FloodGrowingSim extends FloodSim {
   FloodGrowingSim(BoardContext context)
-      : super(context, FloodBoard.teamsFor(context));
+    : super(context, FloodBoard.teamsFor(context));
 
   /// `basePush * (1 + elapsed / rampWindow)` — doubled at one rampWindow,
   /// tripled at two.

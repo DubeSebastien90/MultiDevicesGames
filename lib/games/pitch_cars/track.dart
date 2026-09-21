@@ -77,8 +77,7 @@ class PitchTrack {
     return best;
   }
 
-  bool isOnTrack(double x, double y) =>
-      lateralDistance(x, y) <= widthWorld / 2;
+  bool isOnTrack(double x, double y) => lateralDistance(x, y) <= widthWorld / 2;
 
   /// Arclength of the point on the centerline nearest to (x, y), from 0 at
   /// the start up to [length].
@@ -110,9 +109,7 @@ class PitchTrack {
 
   /// The centerline point at arclength [s]. Wraps for a closed track.
   Waypoint pointAtArclength(double s) {
-    final clamped = closed
-        ? s % length
-        : s.clamp(0.0, length);
+    final clamped = closed ? s % length : s.clamp(0.0, length);
     for (var i = 0; i < _cumulative.length - 1; i++) {
       if (clamped <= _cumulative[i + 1] || i == _cumulative.length - 2) {
         final segLen = _cumulative[i + 1] - _cumulative[i];
@@ -146,7 +143,11 @@ class PitchTrack {
   }
 
   static double _pointToSegmentDistance(
-      double x, double y, Waypoint a, Waypoint b) {
+    double x,
+    double y,
+    Waypoint a,
+    Waypoint b,
+  ) {
     final t = _projectT(x, y, a, b);
     final px = a.x + (b.x - a.x) * t;
     final py = a.y + (b.y - a.y) * t;
@@ -181,30 +182,45 @@ class TrackGenerator {
     final control = <Waypoint>[];
     for (var i = 0; i < chain.length; i++) {
       final viewport = chain[i].viewport;
-      final entry = i == 0 ? _outerPoint(viewport, seams[0], widthWorld) : seams[i - 1];
-      final exit =
-          i == chain.length - 1 ? _outerPoint(viewport, seams[i - 1], widthWorld) : seams[i];
+      final entry = i == 0
+          ? _outerPoint(viewport, seams[0], widthWorld)
+          : seams[i - 1];
+      final exit = i == chain.length - 1
+          ? _outerPoint(viewport, seams[i - 1], widthWorld)
+          : seams[i];
       // First and last phone are treated as straight-through for amplitude
       // purposes — there is no second seam on that phone to be "adjacent
       // to", so the corner classification below does not apply to them.
       final relation = i == 0 || i == chain.length - 1
           ? _Relation.opposite
-          : _classify(_nearestEdge(entry, viewport), _nearestEdge(exit, viewport));
+          : _classify(
+              _nearestEdge(entry, viewport),
+              _nearestEdge(exit, viewport),
+            );
 
       if (i == 0) control.add(entry);
-      control.addAll(_bendPoints(
-        entry: entry,
-        exit: exit,
-        viewport: viewport,
-        straightThrough: relation == _Relation.opposite,
-        tuning: tuning,
-        random: random,
-      ));
+      control.addAll(
+        _bendPoints(
+          entry: entry,
+          exit: exit,
+          viewport: viewport,
+          straightThrough: relation == _Relation.opposite,
+          tuning: tuning,
+          random: random,
+        ),
+      );
       control.add(exit);
     }
 
-    final waypoints = _sampleCatmullRom(control, PitchCarsConfig.splineSamplesPerSegment);
-    return PitchTrack(waypoints: waypoints, widthWorld: widthWorld, closed: false);
+    final waypoints = _sampleCatmullRom(
+      control,
+      PitchCarsConfig.splineSamplesPerSegment,
+    );
+    return PitchTrack(
+      waypoints: waypoints,
+      widthWorld: widthWorld,
+      closed: false,
+    );
   }
 
   /// Recovers the phones in physical connection order from the compiled,
@@ -229,8 +245,10 @@ class TrackGenerator {
       while (true) {
         ordered.add(current);
         visited.add(current);
-        final next =
-            neighbors[current]!.firstWhere((id) => !visited.contains(id), orElse: () => '');
+        final next = neighbors[current]!.firstWhere(
+          (id) => !visited.contains(id),
+          orElse: () => '',
+        );
         if (next.isEmpty) break;
         current = next;
       }
@@ -243,9 +261,12 @@ class TrackGenerator {
     // reach are dropped rather than spliced in non-adjacently — a spliced
     // phone would have no join marker to its "neighbour" and crash the seam
     // lookup in `generate` right after this returns.
-    final degreeOneStarts =
-        neighbors.entries.where((e) => e.value.length <= 1).map((e) => e.key);
-    final starts = degreeOneStarts.isNotEmpty ? degreeOneStarts : neighbors.keys;
+    final degreeOneStarts = neighbors.entries
+        .where((e) => e.value.length <= 1)
+        .map((e) => e.key);
+    final starts = degreeOneStarts.isNotEmpty
+        ? degreeOneStarts
+        : neighbors.keys;
 
     var best = <String>[];
     for (final start in starts) {
@@ -361,7 +382,8 @@ class TrackGenerator {
     final dx = exit.x - entry.x;
     final dy = exit.y - entry.y;
     final len = math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) return [Waypoint((entry.x + exit.x) / 2, (entry.y + exit.y) / 2)];
+    if (len < 1e-6)
+      return [Waypoint((entry.x + exit.x) / 2, (entry.y + exit.y) / 2)];
     final nx = -dy / len;
     final ny = dx / len;
 
@@ -435,7 +457,10 @@ class TrackGenerator {
   /// and last points as phantom neighbours so the curve starts and ends
   /// exactly at them. Segment boundaries are shared, not duplicated, so
   /// consecutive segments' sample lists join with no repeated point.
-  static List<Waypoint> _sampleCatmullRom(List<Waypoint> control, int samplesPerSegment) {
+  static List<Waypoint> _sampleCatmullRom(
+    List<Waypoint> control,
+    int samplesPerSegment,
+  ) {
     if (control.length < 2) return control;
     final pts = [control.first, ...control, control.last];
     final result = <Waypoint>[];
@@ -466,15 +491,25 @@ class TrackGenerator {
     return result;
   }
 
-  static Waypoint _catmullRomPoint(Waypoint p0, Waypoint p1, Waypoint p2, Waypoint p3, double t) {
+  static Waypoint _catmullRomPoint(
+    Waypoint p0,
+    Waypoint p1,
+    Waypoint p2,
+    Waypoint p3,
+    double t,
+  ) {
     final t2 = t * t;
     final t3 = t2 * t;
-    double blend(double v0, double v1, double v2, double v3) => 0.5 *
+    double blend(double v0, double v1, double v2, double v3) =>
+        0.5 *
         ((2 * v1) +
             (-v0 + v2) * t +
             (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
             (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
-    return Waypoint(blend(p0.x, p1.x, p2.x, p3.x), blend(p0.y, p1.y, p2.y, p3.y));
+    return Waypoint(
+      blend(p0.x, p1.x, p2.x, p3.x),
+      blend(p0.y, p1.y, p2.y, p3.y),
+    );
   }
 }
 

@@ -102,10 +102,12 @@ class SubwaySkaterConfig {
   /// drift out of step with the phone beside it.
   static double travelAt(double elapsed) {
     final winding = elapsed.clamp(0.0, rampSeconds);
-    final ramped = obstacleSpeed * winding +
+    final ramped =
+        obstacleSpeed * winding +
         (endSpeed - obstacleSpeed) * winding * winding / (2 * rampSeconds);
-    final flatOut =
-        elapsed > rampSeconds ? (elapsed - rampSeconds) * endSpeed : 0.0;
+    final flatOut = elapsed > rampSeconds
+        ? (elapsed - rampSeconds) * endSpeed
+        : 0.0;
     return ramped + flatOut;
   }
 

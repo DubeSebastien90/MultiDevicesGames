@@ -129,15 +129,17 @@ class DodgeballView extends GameView {
       final here = Offset(e.x, e.y);
       final before = _lastSeen[e.id];
       _lastSeen[e.id] = here;
-      final moving = before != null &&
+      final moving =
+          before != null &&
           frame.dt > 0 &&
           (here - before).distance / frame.dt > _walkingSpeed;
 
       // A seat nobody is sitting in yet has no platform colour to ask for a
       // character with, so it stays the sim's own circle.
       if (seated == null) {
-        _fill.color =
-            isDashing ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)! : color;
+        _fill.color = isDashing
+            ? Color.lerp(color, const Color(0xFFFFFFFF), 0.4)!
+            : color;
         canvas.drawCircle(here, radius, _fill);
       } else {
         final character = characters.of(seated.color);
@@ -234,8 +236,9 @@ class DodgeballView extends GameView {
     // The knob in the player's own colour — the one their body is wearing, so
     // at a glance the ring belongs to somebody.
     final me = roster.byPhone(phoneId);
-    _fill.color =
-        (me?.color.value ?? white).withAlpha(DodgeballConfig.joystickKnobAlpha);
+    _fill.color = (me?.color.value ?? white).withAlpha(
+      DodgeballConfig.joystickKnobAlpha,
+    );
     canvas.drawCircle(knob, DodgeballConfig.joystickKnobRadius, _fill);
     _stroke
       ..color = white.withAlpha(DodgeballConfig.joystickRingAlpha)
@@ -253,16 +256,22 @@ class DodgeballView extends GameView {
   }
 
   void _drawCenteredText(
-      Canvas canvas, Frame frame, String text, double fontSize) {
-    final builder = ui.ParagraphBuilder(ui.ParagraphStyle(
-      textAlign: TextAlign.center,
-      fontSize: fontSize,
-    ))
-      ..pushStyle(ui.TextStyle(
-        color: const Color(0xFFFFFFFF),
-        fontWeight: FontWeight.w900,
-      ))
-      ..addText(text);
+    Canvas canvas,
+    Frame frame,
+    String text,
+    double fontSize,
+  ) {
+    final builder =
+        ui.ParagraphBuilder(
+            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: fontSize),
+          )
+          ..pushStyle(
+            ui.TextStyle(
+              color: const Color(0xFFFFFFFF),
+              fontWeight: FontWeight.w900,
+            ),
+          )
+          ..addText(text);
     final paragraph = builder.build()
       ..layout(ui.ParagraphConstraints(width: frame.visible.width));
     canvas.drawParagraph(
@@ -284,10 +293,8 @@ class DodgeballView extends GameView {
     if (key == null) return null;
 
     final alive = frame.sharedState['alive_$key'] == true;
-    final dashCd =
-        (frame.sharedState['dashCd_$key'] as num?)?.toDouble() ?? 0;
-    final ballCount =
-        (frame.sharedState['ballCount'] as num?)?.toInt() ?? 0;
+    final dashCd = (frame.sharedState['dashCd_$key'] as num?)?.toDouble() ?? 0;
+    final ballCount = (frame.sharedState['ballCount'] as num?)?.toInt() ?? 0;
 
     if (!alive) {
       return Container(
@@ -328,33 +335,36 @@ class DodgeballView extends GameView {
     final parts = <Widget>[];
 
     // Ball count.
-    parts.add(Text(
-      'Balls: $ballCount',
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: Color(0xFFFF6666),
+    parts.add(
+      Text(
+        'Balls: $ballCount',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFFFF6666),
+        ),
       ),
-    ));
+    );
 
     // Dash status.
     if (dashCd > 0) {
-      parts.add(Text(
-        '  DASH ${dashCd.toStringAsFixed(1)}',
-        style: const TextStyle(
-          fontSize: 11,
-          color: Color(0xFF999999),
+      parts.add(
+        Text(
+          '  DASH ${dashCd.toStringAsFixed(1)}',
+          style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
         ),
-      ));
+      );
     } else {
-      parts.add(const Text(
-        '  DASH READY',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF44FF44),
+      parts.add(
+        const Text(
+          '  DASH READY',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF44FF44),
+          ),
         ),
-      ));
+      );
     }
 
     return Container(

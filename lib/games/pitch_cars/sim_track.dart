@@ -21,33 +21,34 @@ extension _TrackBuilding on PitchCarsSim {
   void _placeCars() {
     for (var i = 0; i < _order.length; i++) {
       final pos = _startPositionFor(i);
-      _fixtureOf[_order[i]] = addBody(
-        _order[i],
-        'car',
-        BodyDef(
-          type: BodyType.dynamic,
-          position: pos,
-          linearDamping: PitchCarsConfig.carLinearDamping,
-          angularDamping: PitchCarsConfig.carAngularDamping,
-          bullet: true,
-        ),
-        props: {
-          ShapeProps.shape: ShapeKind.circle,
-          ShapeProps.radius: scale.carVisualRadius,
-          ShapeProps.color: _colorOf[_order[i]]!.value.toARGB32(),
-          ShapeProps.spin: true,
-          // The entity id is the phone id, so a car already knows whose it is;
-          // this says it in the one place `ShapeView` looks.
-          ShapeProps.player: _order[i],
-        },
-      ).createFixture(
-        FixtureDef(
-          CircleShape(radius: scale.carRadius),
-          density: PitchCarsConfig.carDensity,
-          friction: PitchCarsConfig.carFriction,
-          restitution: PitchCarsConfig.carRestitution,
-        ),
-      );
+      _fixtureOf[_order[i]] =
+          addBody(
+            _order[i],
+            'car',
+            BodyDef(
+              type: BodyType.dynamic,
+              position: pos,
+              linearDamping: PitchCarsConfig.carLinearDamping,
+              angularDamping: PitchCarsConfig.carAngularDamping,
+              bullet: true,
+            ),
+            props: {
+              ShapeProps.shape: ShapeKind.circle,
+              ShapeProps.radius: scale.carVisualRadius,
+              ShapeProps.color: _colorOf[_order[i]]!.value.toARGB32(),
+              ShapeProps.spin: true,
+              // The entity id is the phone id, so a car already knows whose it is;
+              // this says it in the one place `ShapeView` looks.
+              ShapeProps.player: _order[i],
+            },
+          ).createFixture(
+            FixtureDef(
+              CircleShape(radius: scale.carRadius),
+              density: PitchCarsConfig.carDensity,
+              friction: PitchCarsConfig.carFriction,
+              restitution: PitchCarsConfig.carRestitution,
+            ),
+          );
     }
   }
 
@@ -119,8 +120,7 @@ extension _TrackBuilding on PitchCarsSim {
           id: 'cornerWall$i',
           kind: PitchCarsConfig.wallKind,
           points: points,
-          thickness:
-              track.widthWorld * PitchCarsConfig.wallThicknessFraction,
+          thickness: track.widthWorld * PitchCarsConfig.wallThicknessFraction,
           color: PitchCarsConfig.colorWall,
         ),
       );

@@ -17,12 +17,12 @@ class DodgeballGame implements MultiscreenGame {
 
   @override
   GameManifest get manifest => const GameManifest(
-        id: 'dodgeball',
-        title: 'Dodgeball',
-        tagline: 'Dodge the bouncing balls!',
-        goal: 'Be the last one standing. Drag to move, tap to dash.',
-        players: PlayerCount.range(min: 2, max: 8),
-      );
+    id: 'dodgeball',
+    title: 'Dodgeball',
+    tagline: 'Dodge the bouncing balls!',
+    goal: 'Be the last one standing. Drag to move, tap to dash.',
+    players: PlayerCount.range(min: 2, max: 8),
+  );
 
   @override
   BoardPlan planBoard(LobbyInfo lobby) {
@@ -33,7 +33,8 @@ class DodgeballGame implements MultiscreenGame {
         sort: PhoneSort.joinOrder,
         orientation: PhoneOrientation.sideways,
         gap: Gaps.casingsTouching,
-        instruction: 'Lay your phones side by side on their sides, '
+        instruction:
+            'Lay your phones side by side on their sides, '
             'short edges touching.',
       );
     }
@@ -44,7 +45,8 @@ class DodgeballGame implements MultiscreenGame {
         sort: PhoneSort.joinOrder,
         orientation: PhoneOrientation.sideways,
         gap: Gaps.casingsTouching,
-        instruction: 'Two rows facing each other, phones on their sides, '
+        instruction:
+            'Two rows facing each other, phones on their sides, '
             'edges touching.',
       );
     }
@@ -53,7 +55,8 @@ class DodgeballGame implements MultiscreenGame {
       sort: PhoneSort.joinOrder,
       orientation: PhoneOrientation.sideways,
       gap: Gaps.casingsTouching,
-      instruction: 'Lay your phones side by side on their sides, '
+      instruction:
+          'Lay your phones side by side on their sides, '
           'short edges touching.',
     );
   }
@@ -62,10 +65,9 @@ class DodgeballGame implements MultiscreenGame {
   GameSim createSim(BoardContext context) => DodgeballSim(context);
 
   @override
-  GameView createView(ViewContext context) =>
-      DodgeballView(
-        phoneId: context.phoneId,
-        characters: context.characters,
-        roster: context.roster,
-      );
+  GameView createView(ViewContext context) => DodgeballView(
+    phoneId: context.phoneId,
+    characters: context.characters,
+    roster: context.roster,
+  );
 }

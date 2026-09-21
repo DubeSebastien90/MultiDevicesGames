@@ -7,13 +7,11 @@ import '../../sdk/contract/view.dart';
 import '../../sdk/render/shape_view.dart';
 import 'pitch_cars_config.dart';
 
-/// Pitch Cars' look: the default shapes for cars and track segments, plus a
-/// turn/progress readout.
+/// Pitch Cars' look: the default shapes for cars and track segments, with the
+/// aiming ring drawn over whichever car is being pulled back.
 class PitchCarsView extends ShapeView {
-  PitchCarsView({required this.phoneId, super.roster})
+  PitchCarsView({super.roster})
     : super(grid: false, playfield: const Color(0xFF141C33));
-
-  final String phoneId;
 
   final _aim = Paint()..style = PaintingStyle.stroke;
   final _finishedFill = Paint();
@@ -263,29 +261,7 @@ class PitchCarsView extends ShapeView {
     canvas.drawCircle(Offset(car.x, car.y), r, _aim);
   }
 
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) {
-    final winner = frame.sharedState['winner'];
-    if (winner is String) {
-      final mine = winner == phoneId;
-      return _pill(mine ? 'You win!' : 'Race over', highlight: mine);
-    }
-    return null;
-  }
-
-  Widget _pill(String label, {required bool highlight}) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    decoration: BoxDecoration(
-      color: const Color(0x99000000),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        color: highlight ? const Color(0xFFFFD166) : const Color(0xFFFFFFFF),
-      ),
-    ),
-  );
+  // No HUD. A race that is over looks like a race that is over — the cars are
+  // stopped and one of them is past the line — and a pill saying so is a
+  // caption on a picture that already reads.
 }

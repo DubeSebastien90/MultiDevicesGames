@@ -41,8 +41,8 @@ class DodgeballSim implements GameSim {
           index: i,
           x: context.slices[i].screen.centerX,
           y: context.slices[i].screen.centerY,
-          color: DodgeballConfig.playerColors[
-              i % DodgeballConfig.playerColors.length],
+          color: DodgeballConfig
+              .playerColors[i % DodgeballConfig.playerColors.length],
         ),
     ];
   }
@@ -166,7 +166,8 @@ class DodgeballSim implements GameSim {
         final dx = p.x - ball.x;
         final dy = p.y - ball.y;
         final dist = math.sqrt(dx * dx + dy * dy);
-        if (dist < DodgeballConfig.characterRadius + DodgeballConfig.ballRadius) {
+        if (dist <
+            DodgeballConfig.characterRadius + DodgeballConfig.ballRadius) {
           p.alive = false;
           p.moveAngle = null;
           p.moveScale = 0;
@@ -210,14 +211,16 @@ class DodgeballSim implements GameSim {
       vy = -vy;
     }
 
-    _balls.add(_Ball(
-      id: _nextBallId++,
-      x: spawn.x,
-      y: spawn.y,
-      vx: vx,
-      vy: vy,
-      speed: _currentBallSpeed,
-    ));
+    _balls.add(
+      _Ball(
+        id: _nextBallId++,
+        x: spawn.x,
+        y: spawn.y,
+        vx: vx,
+        vy: vy,
+        speed: _currentBallSpeed,
+      ),
+    );
   }
 
   void _tryDash(_Player p) {
@@ -340,9 +343,7 @@ class DodgeballSim implements GameSim {
         descriptor: EntityDescriptor(
           id: 'ball_${ball.id}',
           kind: 'ball',
-          props: {
-            'radius': DodgeballConfig.ballRadius,
-          },
+          props: {'radius': DodgeballConfig.ballRadius},
         ),
         x: ball.x,
         y: ball.y,
@@ -354,8 +355,7 @@ class DodgeballSim implements GameSim {
 
   // -- shared state -----------------------------------------------------------
 
-  double _quantize(double v) =>
-      (v * 10).roundToDouble() / 10;
+  double _quantize(double v) => (v * 10).roundToDouble() / 10;
 
   @override
   Map<String, Object?> get sharedState {
@@ -396,15 +396,10 @@ class DodgeballSim implements GameSim {
   @override
   GameOutcome? get outcome {
     if (_phase != 'finished') return null;
-    return _outcome ??= GameOutcome.perPhone(
-      {
-        for (final p in _players)
-          p.phoneId: _winnerId == p.phoneId
-              ? 'Last one standing!'
-              : 'Eliminated',
-      },
-      summary: _winnerId != null ? 'last one standing' : 'mutual destruction',
-    );
+    return _outcome ??= GameOutcome.perPhone({
+      for (final p in _players)
+        p.phoneId: _winnerId == p.phoneId ? 'Last one standing!' : 'Eliminated',
+    }, summary: _winnerId != null ? 'last one standing' : 'mutual destruction');
   }
 
   // -- reset ------------------------------------------------------------------

@@ -57,25 +57,6 @@ class SubwaySkaterView extends GameView {
     }
   }
 
-  /// This phone's place in the line, and whose circle is standing in it.
-  ///
-  /// [owner] is null for a phone past the end of a line that has got shorter —
-  /// nobody is standing there and nothing this screen is touched with moves.
-  ///
-  /// Read from the broadcast rather than from this device's own layout, and
-  /// answered here for the canvas and the HUD both: those two disagreeing about
-  /// which circle is yours is the one thing this game cannot survive, since the
-  /// ring is the only thing telling a player which phone to reach for.
-  static ({int place, String? owner}) postOf(
-    String? phoneId,
-    List<String> phones,
-    List<String> order,
-  ) {
-    final place = phones.indexOf(phoneId ?? '');
-    final standing = place >= 0 && place < order.length;
-    return (place: place, owner: standing ? order[place] : null);
-  }
-
   void _readShared(Frame frame) {
     final tumbling = frame.sharedState['tumbling'] as String? ?? '';
     if (tumbling != _tumblingRaw) {
@@ -114,11 +95,7 @@ class SubwaySkaterView extends GameView {
     _stroke
       ..color = _rail
       ..strokeWidth = frame.onePixel * 2;
-    canvas.drawLine(
-      Offset(left, board.top),
-      Offset(right, board.top),
-      _stroke,
-    );
+    canvas.drawLine(Offset(left, board.top), Offset(right, board.top), _stroke);
     canvas.drawLine(
       Offset(left, board.bottom),
       Offset(right, board.bottom),
@@ -164,8 +141,7 @@ class SubwaySkaterView extends GameView {
   void _drawObstacle(Canvas canvas, RenderEntity o) {
     final w = o.propDouble('w', SubwaySkaterConfig.obstacleLength);
     final h = o.propDouble('h', 1);
-    final rect =
-        Rect.fromCenter(center: Offset(o.x, o.y), width: w, height: h);
+    final rect = Rect.fromCenter(center: Offset(o.x, o.y), width: w, height: h);
     final rounded = RRect.fromRectXY(rect, h * 0.25, h * 0.25);
 
     _paint.color = _hazard;
@@ -209,7 +185,8 @@ class SubwaySkaterView extends GameView {
       // Tilted per burst, so five of them in a row do not look like one sprite
       // played five times.
       final a = b.angle + i * 2 * math.pi / 5;
-      final at = Offset(b.x, b.y) +
+      final at =
+          Offset(b.x, b.y) +
           Offset(math.cos(a), math.sin(a)) * (size * (0.2 + 1.7 * spread));
       canvas.drawRect(
         Rect.fromCenter(center: at, width: shard * 2, height: shard * 2),
@@ -252,7 +229,7 @@ class SubwaySkaterView extends GameView {
     if (player != null) {
       final speed =
           SubwaySkaterConfig.speedAt(frame.timeMs / 1000) /
-              SubwaySkaterConfig.obstacleSpeed;
+          SubwaySkaterConfig.obstacleSpeed;
       final character = context.characters.of(player.color);
       character.start();
       character.draw(
@@ -272,65 +249,9 @@ class SubwaySkaterView extends GameView {
       _paint.color = down ? color.withValues(alpha: 0.55) : color;
       canvas.drawCircle(center, r, _paint);
     }
-
   }
 
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) {
-    if (frame.sharedState['over'] == true) return null;
-
-    List<String> read(String key) => (frame.sharedState[key] as String? ?? '')
-        .split(',')
-        .where((id) => id.isNotEmpty)
-        .toList();
-
-    final order = read('order');
-    final post = postOf(frame.phoneId, read('phones'), order);
-
-    return Padding(
-      padding: const EdgeInsets.only(left: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (post.owner != null)
-            Text(
-              // This phone's place in the line, which is fixed — the leftmost
-              // phone is always the front. What changes is who is standing at
-              // it, and that is worth saying out loud, because the number is
-              // also what the place is paying whoever is there.
-              '${_ordinal(post.place + 1)} of ${order.length}',
-              style: TextStyle(
-                color: post.place == 0
-                    ? const Color(0xFFFFD166)
-                    : const Color(0xCCFFFFFF),
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          else
-            const Text(
-              // A phone past the end of a line that has got shorter. Nobody is
-              // standing here, so nothing this screen is touched with moves.
-              'out of the line',
-              style: TextStyle(color: Color(0x66FFFFFF), fontSize: 12),
-            ),
-          const SizedBox(width: 10),
-          Text(
-            '${frame.sharedState['secondsLeft']} s',
-            style: const TextStyle(color: Color(0x66FFFFFF), fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _ordinal(int n) {
-    if (n % 100 >= 11 && n % 100 <= 13) return '${n}th';
-    return switch (n % 10) {
-      1 => '${n}st',
-      2 => '${n}nd',
-      3 => '${n}rd',
-      _ => '${n}th',
-    };
-  }
+  // No HUD. Which place in the line a phone is holding is the phone's position
+  // on the table — the leftmost screen is the front of the line, and nobody
+  // has ever needed telling which screen they are holding.
 }

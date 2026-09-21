@@ -149,8 +149,7 @@ class PitchCarsScale {
   /// distance come out proportional to [reach] and nothing else. Getting this
   /// backwards is easy and quiet: `reach / size` reads just as plausibly and
   /// makes the big table's cars *slower* than the small one's.
-  double get impulsePerPull =>
-      PitchCarsConfig.impulsePerPull * reach * size;
+  double get impulsePerPull => PitchCarsConfig.impulsePerPull * reach * size;
 
   double get startLaneOffsetWorld =>
       PitchCarsConfig.startLaneOffsetWorld * size;

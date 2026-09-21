@@ -177,17 +177,14 @@ class PitchCarsSim extends Forge2DGameSim {
         final speed = carOf(id).linearVelocity.length;
         if (speed > maxSpeed) maxSpeed = speed;
       }
-      _atRest = maxSpeed < scale.restSpeed
-          ? _atRest + elapsed
-          : Duration.zero;
+      _atRest = maxSpeed < scale.restSpeed ? _atRest + elapsed : Duration.zero;
 
       // Angular damping should stop a car spinning-in-place well before
       // this, but this watchdog is the actual guarantee: force the turn to
       // end if the car hasn't translated in a while, regardless of why.
       final currentPos = carOf(currentTurn).position;
       if (_stallAnchor == null ||
-          currentPos.distanceTo(_stallAnchor!) >
-              scale.stallDisplacement) {
+          currentPos.distanceTo(_stallAnchor!) > scale.stallDisplacement) {
         _stallAnchor = currentPos.clone();
         _sinceStallAnchor = Duration.zero;
       } else {

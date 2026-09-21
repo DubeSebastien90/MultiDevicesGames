@@ -51,11 +51,7 @@ class HungryHipposView extends ShapeView {
   double _dishRadius(Frame frame) =>
       (frame.sharedState['dish'] as num?)?.toDouble() ?? 0;
 
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) => Text(
-    frame.sharedState['over'] == true
-        ? 'All gone'
-        : '${frame.sharedState['marblesLeft']} left',
-    style: const TextStyle(color: Color(0x88FFFFFF), fontSize: 12),
-  );
+  // No HUD. The marbles are on the table: a count of them in the corner was
+  // the same fact written twice, once where the players are looking and once
+  // where they are not.
 }

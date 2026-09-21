@@ -235,8 +235,11 @@ class CornerWalls {
     for (final run in runs) {
       final last = merged.isEmpty ? null : merged.last;
       if (last != null && last.side == run.side && run.start <= last.end) {
-        merged[merged.length - 1] =
-            _Run(last.start, math.max(last.end, run.end), last.side);
+        merged[merged.length - 1] = _Run(
+          last.start,
+          math.max(last.end, run.end),
+          last.side,
+        );
       } else {
         merged.add(run);
       }
@@ -255,11 +258,7 @@ class CornerWalls {
   /// outside it. That is the right way round to be wrong: a car held by this
   /// wall is unambiguously still on the track by `PitchTrack.isOnTrack`, and
   /// will not be reset out from under the player.
-  static List<Waypoint> _outerEdge(
-    List<Waypoint> pts,
-    _Run run,
-    double width,
-  ) {
+  static List<Waypoint> _outerEdge(List<Waypoint> pts, _Run run, double width) {
     final half = width / 2;
     final edge = <Waypoint>[];
 

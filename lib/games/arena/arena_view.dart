@@ -572,9 +572,6 @@ class ArenaView extends GameView {
     if (key == null) return null;
 
     final alive = frame.sharedState['alive_$key'] == true;
-    final lives =
-        (frame.sharedState['lives_$key'] as num?)?.toInt() ??
-        ArenaConfig.maxLives;
     final stunned = frame.sharedState['stunned_$key'] == true;
     final atkCd = (frame.sharedState['atkCd_$key'] as num?)?.toDouble() ?? 0;
     final blkCd = (frame.sharedState['blkCd_$key'] as num?)?.toDouble() ?? 0;
@@ -615,23 +612,10 @@ class ArenaView extends GameView {
       );
     }
 
+    // No lives here. They are already drawn over the fighter's own head, on
+    // the floor where the player is looking, and a second copy in the corner
+    // was the same fact twice — read from the further of the two places.
     final parts = <Widget>[];
-
-    // Lives, the same three dots the fighter wears — the badge and the board
-    // must never disagree about how much trouble somebody is in.
-    for (var i = 0; i < lives; i++) {
-      parts.add(
-        Container(
-          width: 9,
-          height: 9,
-          margin: const EdgeInsets.only(right: 4),
-          decoration: const BoxDecoration(
-            color: Color(0xFFFF4444),
-            shape: BoxShape.circle,
-          ),
-        ),
-      );
-    }
 
     if (stunned) {
       parts.add(
@@ -663,6 +647,11 @@ class ArenaView extends GameView {
         ),
       );
     }
+
+    // Nothing to say: no badge at all rather than an empty black pill in the
+    // corner. Most of a round is spent in this state now that the lives have
+    // gone back to the fighter.
+    if (parts.isEmpty) return null;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

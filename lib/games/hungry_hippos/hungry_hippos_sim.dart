@@ -49,7 +49,8 @@ class HungryHipposSim extends Forge2DGameSim {
   double get _centreX => board.centerX;
   double get _centreY => board.centerY;
 
-  bool get _over => _live.isEmpty || _elapsed >= HungryHipposConfig.maxRoundSeconds;
+  bool get _over =>
+      _live.isEmpty || _elapsed >= HungryHipposConfig.maxRoundSeconds;
 
   /// How many marbles [phoneId] has swallowed this round.
   int eatenBy(String phoneId) => _eaten[phoneId] ?? 0;
@@ -90,10 +91,13 @@ class HungryHipposSim extends Forge2DGameSim {
     final shortHalf = math.min(board.width, board.height) / 2;
     final byBoard = shortHalf - HungryHipposConfig.playerMarginWorld;
     final byHippos =
-        headroom - HungryHipposConfig.hippoRadius - HungryHipposConfig.hippoClearance;
+        headroom -
+        HungryHipposConfig.hippoRadius -
+        HungryHipposConfig.hippoClearance;
     _dishRadius = math.max(1.0, math.min(byBoard, byHippos));
 
-    final restDistance = _dishRadius +
+    final restDistance =
+        _dishRadius +
         HungryHipposConfig.hippoRadius +
         HungryHipposConfig.hippoClearance;
 
@@ -128,7 +132,8 @@ class HungryHipposSim extends Forge2DGameSim {
         props: {
           ShapeProps.shape: ShapeKind.circle,
           ShapeProps.radius: HungryHipposConfig.hippoRadius,
-          ShapeProps.color: context.colorOf(slice.phoneId)?.value.toARGB32() ??
+          ShapeProps.color:
+              context.colorOf(slice.phoneId)?.value.toARGB32() ??
               HungryHipposConfig.colorHippoFallback,
           ShapeProps.player: slice.phoneId,
         },
@@ -142,18 +147,20 @@ class HungryHipposSim extends Forge2DGameSim {
         ),
       );
 
-      _hippos.add(_Hippo(
-        phoneId: slice.phoneId,
-        id: id,
-        body: body,
-        restX: restX,
-        restY: restY,
-        dirX: -aim.awayX,
-        dirY: -aim.awayY,
-        // Right to the middle of the dish. The same for everyone, because they
-        // all start from the same place.
-        lungeDistance: along * HungryHipposConfig.lungeFraction,
-      ));
+      _hippos.add(
+        _Hippo(
+          phoneId: slice.phoneId,
+          id: id,
+          body: body,
+          restX: restX,
+          restY: restY,
+          dirX: -aim.awayX,
+          dirY: -aim.awayY,
+          // Right to the middle of the dish. The same for everyone, because they
+          // all start from the same place.
+          lungeDistance: along * HungryHipposConfig.lungeFraction,
+        ),
+      );
       _eaten[slice.phoneId] = 0;
     }
   }
@@ -198,7 +205,10 @@ class HungryHipposSim extends Forge2DGameSim {
         'marble',
         BodyDef(
           type: BodyType.dynamic,
-          position: Vector2(_centreX + r * math.cos(a), _centreY + r * math.sin(a)),
+          position: Vector2(
+            _centreX + r * math.cos(a),
+            _centreY + r * math.sin(a),
+          ),
           linearDamping: HungryHipposConfig.marbleDamping,
           angularDamping: HungryHipposConfig.marbleDamping,
         ),
@@ -229,15 +239,19 @@ class HungryHipposSim extends Forge2DGameSim {
 
   /// How far a ray from the middle of a rectangle travels before it leaves,
   /// given half-extents and a unit direction.
-  static double _edgeDistance(double halfW, double halfH, double dx, double dy) {
+  static double _edgeDistance(
+    double halfW,
+    double halfH,
+    double dx,
+    double dy,
+  ) {
     final tx = dx.abs() < 1e-9 ? double.infinity : halfW / dx.abs();
     final ty = dy.abs() < 1e-9 ? double.infinity : halfH / dy.abs();
     return math.min(tx, ty);
   }
 
   /// Where the marbles are dealt — a heap in the middle, not spread to the rim.
-  double _scatterRadius() =>
-      dishRadius * HungryHipposConfig.scatterFraction;
+  double _scatterRadius() => dishRadius * HungryHipposConfig.scatterFraction;
 
   // ------------------------------------------------------------------ step
 
@@ -277,10 +291,12 @@ class HungryHipposSim extends Forge2DGameSim {
       final dy = _centreY - body.position.y;
       // Proportional to displacement, which is what a spherical dish gives —
       // no normalising, because the distance *is* the slope.
-      body.applyForce(Vector2(
-        dx * HungryHipposConfig.bowlPull * body.mass,
-        dy * HungryHipposConfig.bowlPull * body.mass,
-      ));
+      body.applyForce(
+        Vector2(
+          dx * HungryHipposConfig.bowlPull * body.mass,
+          dy * HungryHipposConfig.bowlPull * body.mass,
+        ),
+      );
     }
   }
 
@@ -357,8 +373,10 @@ class HungryHipposSim extends Forge2DGameSim {
     'over': _over,
     // Whole seconds: shared state is diffed every tick, and a value that always
     // differs is a packet sixty times a second.
-    'secondsLeft':
-        (HungryHipposConfig.maxRoundSeconds - _elapsed).ceil().clamp(0, 999),
+    'secondsLeft': (HungryHipposConfig.maxRoundSeconds - _elapsed).ceil().clamp(
+      0,
+      999,
+    ),
   };
 
   // --------------------------------------------------------------- outcome
@@ -377,12 +395,9 @@ class HungryHipposSim extends Forge2DGameSim {
     // Every player for themselves: nobody is eliminated and nobody is chasing
     // anybody, so there is no winner to name — just what your own hippo
     // managed. Built once, because `outcome` is polled several times a tick.
-    return _outcome ??= GameOutcome.perPhone(
-      {
-        for (final h in _hippos) h.phoneId: _lineFor(h.phoneId),
-      },
-      summary: _summary(),
-    );
+    return _outcome ??= GameOutcome.perPhone({
+      for (final h in _hippos) h.phoneId: _lineFor(h.phoneId),
+    }, summary: _summary());
   }
 
   String _lineFor(String phoneId) {
@@ -450,8 +465,8 @@ class _Hippo {
     required this.dirX,
     required this.dirY,
     required this.lungeDistance,
-  })  : targetX = restX,
-        targetY = restY;
+  }) : targetX = restX,
+       targetY = restY;
 
   final String phoneId;
   final String id;

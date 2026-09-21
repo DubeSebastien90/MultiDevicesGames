@@ -54,8 +54,7 @@ class HotPotatoSim implements GameSim {
   }
 
   /// Phone ids in ring order — the passing order.
-  List<String> get _order =>
-      [for (final i in _ring) context.slices[i].phoneId];
+  List<String> get _order => [for (final i in _ring) context.slices[i].phoneId];
 
   static const _potatoId = 'potato';
 
@@ -84,8 +83,7 @@ class HotPotatoSim implements GameSim {
   }
 
   /// The screen sitting at a place in the ring.
-  PhoneSlice _sliceAt(int index) =>
-      context.slices[_ring[index % _ring.length]];
+  PhoneSlice _sliceAt(int index) => context.slices[_ring[index % _ring.length]];
 
   /// Which way the next seat round the ring lies from this one.
   _Point _towardNeighbour(int from, int step) {
@@ -215,7 +213,8 @@ class HotPotatoSim implements GameSim {
     // The fuse drives the potato's size and colour, so every screen sees it
     // swell and redden in step without a single extra message.
     final urgency = 1 - (_fuseLeft / HotPotatoConfig.fuseSeconds);
-    final radius = HotPotatoConfig.potatoRadius *
+    final radius =
+        HotPotatoConfig.potatoRadius *
         (1 + urgency * HotPotatoConfig.swellAtZero);
 
     yield Entity(
@@ -256,7 +255,10 @@ class HotPotatoSim implements GameSim {
     // Everyone who passed it on in time; the holder is the one person at the
     // table who did not. Built once — `outcome` is polled several times a tick.
     return _outcome ??= GameOutcome.contest(
-      winners: {for (final id in _order) if (id != holder) id},
+      winners: {
+        for (final id in _order)
+          if (id != holder) id,
+      },
       summary: 'the potato went off',
       lines: {holder: 'You were holding it'},
     );

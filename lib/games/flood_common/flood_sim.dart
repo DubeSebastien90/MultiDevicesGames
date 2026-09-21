@@ -99,7 +99,9 @@ abstract class FloodSim extends GameSim {
   double get roundElapsed => _elapsed < 0 ? 0 : _elapsed;
 
   bool get isLive =>
-      _elapsed >= 0 && _outcome == null && _elapsed < FloodConfig.maxRoundLength;
+      _elapsed >= 0 &&
+      _outcome == null &&
+      _elapsed < FloodConfig.maxRoundLength;
 
   String get phase {
     if (_outcome != null) return FloodPhase.over;
@@ -138,8 +140,7 @@ abstract class FloodSim extends GameSim {
 
     // Rate limit per phone, on round time so it stays deterministic.
     final last = _lastTapAt[touch.phoneId];
-    if (last != null &&
-        _elapsed - last < FloodConfig.minTapIntervalSeconds) {
+    if (last != null && _elapsed - last < FloodConfig.minTapIntervalSeconds) {
       return;
     }
     _lastTapAt[touch.phoneId] = _elapsed;

@@ -72,7 +72,7 @@ class _Mole {
 /// bodies in it would only be a slower way to do nothing.
 class GuacamoleSim implements GameSim {
   GuacamoleSim(this.context, {math.Random? random})
-      : _random = random ?? math.Random() {
+    : _random = random ?? math.Random() {
     _holes = _buildHoles(context.slices);
     _players = context.players;
     _pool = [
@@ -127,13 +127,15 @@ class GuacamoleSim implements GameSim {
 
       for (var row = 0; row < 2; row++) {
         for (var col = 0; col < 2; col++) {
-          holes.add(Hole(
-            index: index++,
-            phoneId: slice.phoneId,
-            centerX: usable.left + cellW * (col + 0.5),
-            centerY: usable.top + cellH * (row + 0.5),
-            radius: radius,
-          ));
+          holes.add(
+            Hole(
+              index: index++,
+              phoneId: slice.phoneId,
+              centerX: usable.left + cellW * (col + 0.5),
+              centerY: usable.top + cellH * (row + 0.5),
+              radius: radius,
+            ),
+          );
         }
       }
     }
@@ -188,17 +190,14 @@ class GuacamoleSim implements GameSim {
     return (_elapsed / t).clamp(0.0, 1.0);
   }
 
-  double get _spawnGap => _lerp(
-        GuacamoleConfig.spawnGapStart,
-        GuacamoleConfig.spawnGapEnd,
-        _ramp,
-      );
+  double get _spawnGap =>
+      _lerp(GuacamoleConfig.spawnGapStart, GuacamoleConfig.spawnGapEnd, _ramp);
 
   double get _upSeconds => _lerp(
-        GuacamoleConfig.visibleSecondsStart,
-        GuacamoleConfig.visibleSecondsEnd,
-        _ramp,
-      );
+    GuacamoleConfig.visibleSecondsStart,
+    GuacamoleConfig.visibleSecondsEnd,
+    _ramp,
+  );
 
   static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
@@ -211,10 +210,8 @@ class GuacamoleSim implements GameSim {
   }
 
   /// Never fewer than one, so a two-player table is not becalmed.
-  int get _targetLive => math.max(
-        1,
-        (playerCount * GuacamoleConfig.moleTargetPerPlayer).round(),
-      );
+  int get _targetLive =>
+      math.max(1, (playerCount * GuacamoleConfig.moleTargetPerPlayer).round());
 
   void _spawn() {
     if (_holes.isEmpty || _players.isEmpty) return;
@@ -410,10 +407,9 @@ class GuacamoleSim implements GameSim {
     // a win or a loss — it is what you personally managed. Each phone gets its
     // own tally under the platform's "Well played!", and the standings card
     // below it does the comparing.
-    return _outcome ??= GameOutcome.perPhone(
-      {for (final id in context.phoneIds) id: _tallyFor(id)},
-      summary: _roundLeader(),
-    );
+    return _outcome ??= GameOutcome.perPhone({
+      for (final id in context.phoneIds) id: _tallyFor(id),
+    }, summary: _roundLeader());
   }
 
   /// One point per squish, so the round's score *is* the count.
@@ -432,7 +428,8 @@ class GuacamoleSim implements GameSim {
   String _roundLeader() {
     final view = context.scores.view;
     final ranked = [
-      for (final id in context.phoneIds) (id: id, squished: view.roundDelta(id)),
+      for (final id in context.phoneIds)
+        (id: id, squished: view.roundDelta(id)),
     ]..sort((a, b) => b.squished.compareTo(a.squished));
 
     if (ranked.isEmpty || ranked.first.squished == 0) return 'nobody scored';

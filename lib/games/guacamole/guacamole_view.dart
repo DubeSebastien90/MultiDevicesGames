@@ -122,7 +122,8 @@ class GuacamoleView extends GameView {
         out = _easeOutBack(out);
       case 'up':
         // A slow breath while it waits, so a still mole is not a dead one.
-        final wobble = math.sin(t / math.max(upSeconds, 0.001) * math.pi) * 0.03;
+        final wobble =
+            math.sin(t / math.max(upSeconds, 0.001) * math.pi) * 0.03;
         out = 1 + wobble;
       case 'sinking':
         out = 1 - (t / GuacamoleConfig.sinkSeconds).clamp(0.0, 1.0);
@@ -141,12 +142,9 @@ class GuacamoleView extends GameView {
     // across the board. Squished ones are splatted on the surface and want no
     // clip at all.
     if (squish == 0) {
-      canvas.clipRect(Rect.fromLTWH(
-        e.x - r * 1.6,
-        e.y - r * 2.4,
-        r * 3.2,
-        r * 3.02,
-      ));
+      canvas.clipRect(
+        Rect.fromLTWH(e.x - r * 1.6, e.y - r * 2.4, r * 3.2, r * 3.02),
+      );
     }
 
     // Ride up out of the hole. The rest position sits a little above the
@@ -202,20 +200,18 @@ class GuacamoleView extends GameView {
     canvas.drawPath(_avocadoPath(body), _fill);
 
     // Flesh: the same silhouette, inset. Reads as the cut face of the fruit.
-    _fill.color = const Color(GuacamoleConfig.colorFlesh)
-        .withValues(alpha: 0.92 * fade);
-    canvas.drawPath(
-      _avocadoPath(body.deflate(r * 0.19)),
-      _fill,
-    );
+    _fill.color = const Color(
+      GuacamoleConfig.colorFlesh,
+    ).withValues(alpha: 0.92 * fade);
+    canvas.drawPath(_avocadoPath(body.deflate(r * 0.19)), _fill);
 
     // Pit.
-    _fill.color =
-        const Color(GuacamoleConfig.colorPit).withValues(alpha: fade);
+    _fill.color = const Color(GuacamoleConfig.colorPit).withValues(alpha: fade);
     canvas.drawCircle(Offset(0, r * 0.26), r * 0.42, _fill);
 
-    _fill.color = const Color(GuacamoleConfig.colorPitHighlight)
-        .withValues(alpha: 0.75 * fade);
+    _fill.color = const Color(
+      GuacamoleConfig.colorPitHighlight,
+    ).withValues(alpha: 0.75 * fade);
     canvas.drawCircle(Offset(-r * 0.13, r * 0.13), r * 0.15, _fill);
 
     _drawFace(canvas, r, fade);
@@ -232,24 +228,36 @@ class GuacamoleView extends GameView {
     return Path()
       ..moveTo(cx, top)
       ..cubicTo(
-        cx + w * 0.30, top + h * 0.04,
-        cx + w * 0.40, top + h * 0.30,
-        cx + w * 0.38, top + h * 0.52,
+        cx + w * 0.30,
+        top + h * 0.04,
+        cx + w * 0.40,
+        top + h * 0.30,
+        cx + w * 0.38,
+        top + h * 0.52,
       )
       ..cubicTo(
-        cx + w * 0.36, bottom - h * 0.10,
-        cx + w * 0.22, bottom,
-        cx, bottom,
+        cx + w * 0.36,
+        bottom - h * 0.10,
+        cx + w * 0.22,
+        bottom,
+        cx,
+        bottom,
       )
       ..cubicTo(
-        cx - w * 0.22, bottom,
-        cx - w * 0.36, bottom - h * 0.10,
-        cx - w * 0.38, top + h * 0.52,
+        cx - w * 0.22,
+        bottom,
+        cx - w * 0.36,
+        bottom - h * 0.10,
+        cx - w * 0.38,
+        top + h * 0.52,
       )
       ..cubicTo(
-        cx - w * 0.40, top + h * 0.30,
-        cx - w * 0.30, top + h * 0.04,
-        cx, top,
+        cx - w * 0.40,
+        top + h * 0.30,
+        cx - w * 0.30,
+        top + h * 0.04,
+        cx,
+        top,
       )
       ..close();
   }
@@ -305,12 +313,7 @@ class GuacamoleView extends GameView {
       ..color = color.value.withValues(alpha: 0.9)
       ..strokeWidth = w;
     canvas.drawRect(
-      Rect.fromLTWH(
-        v.left + w / 2,
-        v.top + w / 2,
-        v.width - w,
-        v.height - w,
-      ),
+      Rect.fromLTWH(v.left + w / 2, v.top + w / 2, v.width - w, v.height - w),
       _stroke,
     );
   }
@@ -327,75 +330,7 @@ class GuacamoleView extends GameView {
     return 1 - p * p * p;
   }
 
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) {
-    final me = frame.scores.entryFor(frame.phoneId);
-    final secondsLeft = frame.sharedState['secondsLeft'];
-
-    final color = _myColor;
-
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xB3000000),
-              borderRadius: BorderRadius.circular(20),
-              border: color == null
-                  ? null
-                  : Border.all(color: color.value, width: 2),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (color != null) ...[
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: color.value,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                Text(
-                  '${me?.total ?? 0}',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: color?.value ?? const Color(0xFFFFFFFF),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          if (secondsLeft is int)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xB3000000),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${secondsLeft}s',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  // The last ten seconds go red, which is the only warning the
-                  // game gives that it is nearly over.
-                  color: secondsLeft <= 10
-                      ? const Color(0xFFFF6B6B)
-                      : const Color(0xFFDDE6D8),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  // No HUD. The score is worth more as a surprise on the results screen than
+  // as a number ticking in the corner while somebody is trying to hit moles,
+  // and the clock is getting a home of its own.
 }

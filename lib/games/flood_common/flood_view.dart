@@ -94,7 +94,8 @@ abstract class FloodView extends GameView {
   /// and each half is therefore scaled to its own row's depth.
   double waterlineY(Frame frame, double boundary) {
     final board = frame.board;
-    final seam = (frame.sharedState[FloodState.seamY] as num?)?.toDouble() ??
+    final seam =
+        (frame.sharedState[FloodState.seamY] as num?)?.toDouble() ??
         board.centerY;
     return boundary < 0
         ? seam - boundary * (board.bottom - seam)
