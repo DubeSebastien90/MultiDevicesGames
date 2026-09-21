@@ -4,6 +4,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../catalog.dart';
 import '../contract/game.dart';
+import '../ui/lobby_flow_style.dart';
 import 'premium_status.dart';
 
 /// Opens the paywall as a sheet over whatever locked something the tap.
@@ -19,6 +20,15 @@ Future<void> showPaywall(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
+  // The flow's paper, and its big radius: the sheet slides up over the games
+  // list, and half a screen of the app's dark [ThemeData] arriving over a white
+  // list is the seam this whole pass exists to remove.
+  backgroundColor: LobbyFlowColors.paper,
+  shape: const RoundedRectangleBorder(
+    borderRadius: BorderRadius.vertical(
+      top: Radius.circular(LobbyMetrics.bigRadius),
+    ),
+  ),
   builder: (sheet) => ConstrainedBox(
     constraints: BoxConstraints(
       maxHeight: MediaQuery.sizeOf(sheet).height * 0.9,
@@ -109,10 +119,10 @@ class _PaywallSheetState extends State<PaywallSheet> {
       _error = null;
     });
     try {
-      final result =
-          await Purchases.purchase(PurchaseParams.package(package));
-      final unlocked = result.customerInfo.entitlements.active
-          .containsKey(kPremiumEntitlementId);
+      final result = await Purchases.purchase(PurchaseParams.package(package));
+      final unlocked = result.customerInfo.entitlements.active.containsKey(
+        kPremiumEntitlementId,
+      );
       await widget.premium.refresh();
       if (!mounted) return;
       if (unlocked) {
@@ -122,7 +132,8 @@ class _PaywallSheetState extends State<PaywallSheet> {
       }
     } on PlatformException catch (e) {
       if (!mounted) return;
-      final cancelled = PurchasesErrorHelper.getErrorCode(e) ==
+      final cancelled =
+          PurchasesErrorHelper.getErrorCode(e) ==
           PurchasesErrorCode.purchaseCancelledError;
       setState(() {
         _purchasing = false;
@@ -169,8 +180,6 @@ class _PaywallSheetState extends State<PaywallSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final locked = GameCatalog.playlist
         .where((g) => g.manifest.tier == GameTier.premium)
         .toList();
@@ -184,30 +193,26 @@ class _PaywallSheetState extends State<PaywallSheet> {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.emoji_events, color: scheme.primary),
+                // The cup on yellow: the same disc the results screen hands a
+                // winner, at the size a header can carry.
+                const LobbyMark(
+                  icon: Icons.emoji_events,
+                  color: LobbyFlowColors.yellow,
+                  size: 52,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        trigger == null
-                            ? 'Bring the full party'
-                            : trigger!,
-                        style: theme.textTheme.titleMedium,
+                        trigger == null ? 'Bring the full party' : trigger!,
+                        style: LobbyText.title.copyWith(fontSize: 20),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         'Unlock every game for the whole table, forever.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: LobbyText.body,
                       ),
                     ],
                   ),
@@ -216,105 +221,85 @@ class _PaywallSheetState extends State<PaywallSheet> {
             ),
             const SizedBox(height: 20),
             Text(
-              'One purchase on the host\'s phone unlocks these for everyone '
+              "One purchase on the host's phone unlocks these for everyone "
               'who joins — nobody else has to buy anything.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: LobbyText.body,
             ),
             const SizedBox(height: 16),
-            Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 6,
-                  horizontal: 4,
-                ),
-                child: Column(
-                  children: [
-                    for (final game in locked)
-                      ListTile(
-                        dense: true,
-                        leading: Icon(
-                          Icons.lock_open,
-                          size: 18,
-                          color: scheme.primary,
-                        ),
-                        title: Text(game.manifest.title),
-                        subtitle: Text(
-                          game.manifest.tagline,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ListTile(
-                      dense: true,
-                      leading: Icon(
-                        Icons.tune,
-                        size: 18,
-                        color: scheme.primary,
-                      ),
-                      title: const Text('Choosing what\'s in the run'),
-                      subtitle: const Text(
-                        'Pick tonight\'s lineup instead of playing the free '
-                        'set',
-                      ),
+
+            // What the money buys, on the flow's grey plate instead of a
+            // Material card full of ListTiles.
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+              decoration: BoxDecoration(
+                color: LobbyFlowColors.field,
+                borderRadius: BorderRadius.circular(LobbyMetrics.bigRadius),
+              ),
+              child: Column(
+                children: [
+                  for (final game in locked)
+                    _Unlocked(
+                      icon: Icons.lock_open,
+                      title: game.manifest.title,
+                      subtitle: game.manifest.tagline,
                     ),
-                  ],
-                ),
+                  const _Unlocked(
+                    icon: Icons.tune,
+                    title: "Choosing what's in the run",
+                    subtitle:
+                        "Pick tonight's lineup instead of playing the free "
+                        'set',
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
             if (_loadingOfferings)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: LobbySpinner()),
               )
             else if (package == null)
               Text(
                 _error ?? 'Nothing to buy yet — check back shortly.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.error,
-                ),
+                style: _troubleStyle,
                 textAlign: TextAlign.center,
               )
             else ...[
-              FilledButton(
+              LobbyPillButton(
                 onPressed: _purchasing ? null : () => _buy(package),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                label: _purchasing
+                    ? 'Working…'
+                    : 'Unlock everything · '
+                          '${package.storeProduct.priceString}',
+                background: LobbyFlowColors.green,
+                foreground: LobbyFlowColors.ink,
+                fontSize: 17,
+                radius: LobbyMetrics.bigRadius,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 18,
+                  horizontal: 20,
                 ),
-                child: _purchasing
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.4),
-                      )
-                    : Text(
-                        'Unlock everything · ${package.storeProduct.priceString}',
-                      ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 'One-time purchase. No subscription, no ads, ever.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: LobbyText.body,
                 textAlign: TextAlign.center,
               ),
             ],
             if (_error != null && package != null) ...[
               const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: TextStyle(color: scheme.error),
-                textAlign: TextAlign.center,
-              ),
+              Text(_error!, style: _troubleStyle, textAlign: TextAlign.center),
             ],
-            const SizedBox(height: 8),
-            TextButton(
+            const SizedBox(height: 12),
+            LobbyPillButton(
               onPressed: _purchasing ? null : _restore,
-              child: const Text('Restore purchase'),
+              label: 'Restore purchase',
+              background: LobbyFlowColors.field,
+              foreground: LobbyFlowColors.ink,
+              fontSize: 15,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
             ),
           ],
         ),
@@ -322,5 +307,52 @@ class _PaywallSheetState extends State<PaywallSheet> {
     );
   }
 
+  /// Bad news, in the flow's coral rather than Material's error red — dark
+  /// enough to read on paper, and still plainly not the colour of the rest.
+  static final _troubleStyle = LobbyText.label.copyWith(
+    color: LobbyFlowColors.shadeOf(LobbyFlowColors.coral),
+  );
+
   String? get trigger => widget.trigger;
+}
+
+/// One line of what Premium buys: an icon, a name, and what it is.
+class _Unlocked extends StatelessWidget {
+  const _Unlocked({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: LobbyFlowColors.ink),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: LobbyText.label),
+                Text(
+                  subtitle,
+                  style: LobbyText.body,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

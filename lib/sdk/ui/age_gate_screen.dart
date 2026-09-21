@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/age_band.dart';
+import 'lobby_flow_style.dart';
 
 /// Holds the app back until [AgeGatePref] has an answer, then hands the answer
 /// down.
@@ -40,8 +41,12 @@ class _AgeGateState extends State<AgeGate> {
   Widget build(BuildContext context) {
     final band = _band;
     // A bare Scaffold, not a spinner. This is one disk read on a launch that is
-    // already loading sprites; a spinner that flashes for 40ms reads as a fault.
-    if (band == null) return const Scaffold();
+    // already loading sprites; a spinner that flashes for 40ms reads as a
+    // fault. Paper rather than the theme's dark default: this is the first
+    // frame of the app, and it should be the colour the app actually is.
+    if (band == null) {
+      return const Scaffold(backgroundColor: LobbyFlowColors.paper);
+    }
     if (band == AgeBand.unknown) {
       return _AgeQuestionScreen(
         onAnswered: (answer) => setState(() => _band = answer),
@@ -78,8 +83,18 @@ class _AgeQuestionScreen extends StatefulWidget {
 
 class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
   static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   int? _month;
@@ -124,13 +139,12 @@ class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     // No back, no swipe, no skip. There is no path through this screen that
     // does not go past the question.
     return PopScope(
       canPop: false,
       child: Scaffold(
+        backgroundColor: LobbyFlowColors.paper,
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -141,33 +155,37 @@ class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Before you play',
-                      style: theme.textTheme.headlineSmall,
-                      textAlign: TextAlign.center,
-                    ),
+                    const LobbyTitle('Before you play'),
                     const SizedBox(height: 10),
                     Text(
                       'When were you born?',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: LobbyText.label.copyWith(
+                        color: LobbyFlowColors.muted,
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
+
+                    // Still a [DropdownButtonFormField], wearing the flow's
+                    // field: a month is a closed list of twelve, and a pill you
+                    // type into would invite typing one of them wrong.
                     DropdownButtonFormField<int>(
                       initialValue: _month,
                       isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Month',
-                        border: OutlineInputBorder(),
+                      decoration: _fieldDecoration,
+                      hint: const Text('Month', style: LobbyText.hint),
+                      style: LobbyText.field,
+                      dropdownColor: LobbyFlowColors.paper,
+                      borderRadius: BorderRadius.circular(24),
+                      icon: const Icon(
+                        Icons.expand_more,
+                        color: LobbyFlowColors.ink,
                       ),
-                      hint: const Text('Month'),
                       items: [
                         for (var i = 0; i < _months.length; i++)
                           DropdownMenuItem(
                             value: i + 1,
-                            child: Text(_months[i]),
+                            child: Text(_months[i], style: LobbyText.field),
                           ),
                       ],
                       onChanged: (value) => setState(() {
@@ -176,8 +194,10 @@ class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
                       }),
                     ),
                     const SizedBox(height: 14),
-                    TextField(
+                    LobbyChipField(
                       controller: _yearController,
+                      hintText: 'YYYY',
+                      maxLength: 4,
                       keyboardType: TextInputType.number,
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
@@ -187,42 +207,39 @@ class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
                       onSubmitted: (_) {
                         if (_complete) _submit();
                       },
-                      decoration: const InputDecoration(
-                        labelText: 'Year',
-                        hintText: 'YYYY',
-                        border: OutlineInputBorder(),
-                        counterText: '',
-                      ),
                     ),
                     if (_showError) ...[
                       const SizedBox(height: 12),
                       Text(
                         // Says the date is impossible, not that the person is.
                         'That date does not look right. Have another look.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.error,
+                        style: LobbyText.body.copyWith(
+                          color: LobbyFlowColors.shadeOf(LobbyFlowColors.coral),
+                          fontWeight: FontWeight.w600,
                         ),
                         textAlign: TextAlign.center,
                       ),
                     ],
                     const SizedBox(height: 22),
-                    FilledButton(
+                    LobbyPillButton(
                       // Disabled rather than defaulted. The waiting button is
                       // what keeps the fields empty, and empty fields are what
-                      // keep the screen from suggesting an answer.
+                      // keep the screen from suggesting an answer. A dimmed
+                      // plate says so without a word: the flow draws every
+                      // unavailable control this way.
                       onPressed: _complete ? _submit : null,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Continue'),
-                      ),
+                      label: 'Continue',
+                      background: LobbyFlowColors.green,
+                      foreground: LobbyFlowColors.ink,
+                      fontSize: 17,
+                      radius: LobbyMetrics.bigRadius,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       'This stays on your phone, and the date itself is not '
                       'kept. Nobody else on the network sees it.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                      style: LobbyText.body,
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -234,4 +251,20 @@ class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
       ),
     );
   }
+
+  /// The pill the flow's text fields wear, borrowed for the month list so the
+  /// two rows read as one pair of fields rather than a dropdown and a pill.
+  static final _fieldDecoration = InputDecoration(
+    filled: true,
+    fillColor: LobbyFlowColors.field,
+    contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 20),
+    border: _fieldBorder,
+    enabledBorder: _fieldBorder,
+    focusedBorder: _fieldBorder,
+  );
+
+  static final _fieldBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
+    borderSide: BorderSide.none,
+  );
 }

@@ -263,7 +263,9 @@ void main() {
       await tester.tap(find.text('How?'));
       await tester.pumpAndSettle();
 
-      await tester.pageBack();
+      // The flow's own back pill, not Material's: `pageBack` hunts for an
+      // AppBar back button, and this screen wears a coral pill instead.
+      await tester.tap(find.byIcon(Icons.arrow_back));
       await tester.pumpAndSettle();
 
       expect(find.text('How?'), findsOneWidget);

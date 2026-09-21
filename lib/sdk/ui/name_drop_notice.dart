@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../model/name_drop_status.dart';
 import '../platform/name_drop_support.dart';
+import 'lobby_flow_style.dart';
 
 /// Shows [showNameDropNotice] over [child] the first time this is built with
 /// an unanswered question on a phone that can actually NameDrop.
@@ -128,10 +129,10 @@ class _NameDropNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final setting = _localised(_settingName, context);
 
     return Dialog.fullscreen(
+      backgroundColor: LobbyFlowColors.paper,
       child: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -142,56 +143,71 @@ class _NameDropNotice extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.contact_page_outlined,
-                    size: 52,
-                    color: theme.colorScheme.primary,
+                  const Center(
+                    child: LobbyMark(
+                      icon: Icons.contact_page_outlined,
+                      // Yellow, not coral: nothing has gone wrong yet. This is
+                      // the same "here is what is about to happen" the table
+                      // change screen wears.
+                      color: LobbyFlowColors.yellow,
+                    ),
                   ),
                   const SizedBox(height: 20),
-                  Text(
-                    'One thing before you play',
-                    style: theme.textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
-                  ),
+                  const LobbyTitle('One thing before you play'),
                   const SizedBox(height: 14),
                   Text(
                     'This game puts phones edge to edge. When the tops of two '
                     'iPhones touch, iOS pops up a card offering to share your '
                     'contact details — over the game, mid-round.',
-                    style: theme.textTheme.bodyMedium,
+                    style: LobbyText.body,
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),
                   Text(
                     'Turning off “$setting” stops it.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: LobbyText.label,
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 28),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context)
-                        .pop(NameDropStatus.turnedOff),
-                    child: const Text('Already done'),
+
+                  // Three answers, three weights. Green is the one that fixes
+                  // it, the field grey pair below are the ways of not fixing it
+                  // yet — and none of them is a flat Material button any more.
+                  LobbyPillButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(NameDropStatus.turnedOff),
+                    label: 'Already done',
+                    background: LobbyFlowColors.green,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 17,
+                    radius: LobbyMetrics.bigRadius,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   const SizedBox(height: 10),
-                  OutlinedButton(
+                  LobbyPillButton(
                     onPressed: () => _showHow(context),
-                    child: const Text('How?'),
+                    label: 'How?',
+                    background: LobbyFlowColors.purple,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 17,
+                    radius: LobbyMetrics.bigRadius,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   const SizedBox(height: 10),
-                  TextButton(
-                    onPressed: () => Navigator.of(context)
-                        .pop(NameDropStatus.declined),
-                    child: const Text('No thanks'),
+                  LobbyPillButton(
+                    onPressed: () =>
+                        Navigator.of(context).pop(NameDropStatus.declined),
+                    label: 'No thanks',
+                    background: LobbyFlowColors.field,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 17,
+                    radius: LobbyMetrics.bigRadius,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   Text(
                     'Either way, this is the last you’ll hear of it.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: LobbyText.body,
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -214,68 +230,103 @@ class _NameDropNotice extends StatelessWidget {
     // come back from, and the back arrow says so. A dialog's close button
     // reads as "cancel", which is the wrong word for reaching the end of a
     // set of instructions.
-    final done = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const _HowScreen()),
-    );
+    final done = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const _HowScreen()));
     if (done == true && context.mounted) {
       Navigator.of(context).pop(NameDropStatus.turnedOff);
     }
   }
 }
 
+/// The walkthrough: four taps, in words.
+///
+/// Words are all there is, and that is a platform fact rather than a gap
+/// waiting to be filled — `UIApplication` opens only this app's own pane, and
+/// the `App-Prefs:` scheme that would land on General → AirDrop is one Apple
+/// rejects apps for using. So the screen's whole job is to make the path
+/// unmistakable: the same words iOS shows, in the phone's own language, with
+/// the thing to look for on each screen set apart from the verb that tells you
+/// what to do with it.
 class _HowScreen extends StatelessWidget {
   const _HowScreen();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final path = _path(context);
     final setting = _localised(_settingName, context);
 
-    final steps = [
-      'Open ${path[0]}',
-      'Tap ${path[1]}',
-      'Tap ${path[2]}',
-      'Turn off “$setting”',
+    // Verb and target kept apart, because they are read differently: the verb
+    // is an instruction you already understand, and the target is a word you
+    // are about to go hunting for on a screen full of other words.
+    final steps = <(String, String)>[
+      ('Open', path[0]),
+      ('Tap', path[1]),
+      ('Tap', path[2]),
+      ('Turn off', '“$setting”'),
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Turning it off')),
+      backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
-            child: ListView(
-              padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (var i = 0; i < steps.length; i++) ...[
-                  _Step(number: i + 1, text: steps[i]),
-                  if (i < steps.length - 1)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 15),
-                      child: SizedBox(
-                        height: 18,
-                        child: VerticalDivider(
-                          width: 2,
-                          thickness: 2,
-                          color: theme.colorScheme.outlineVariant,
-                        ),
+                // The back pill pops with nothing, which is what tells the
+                // notice underneath that these instructions were not followed
+                // through — the same meaning the app bar's arrow carried.
+                LobbyHeader(
+                  title: 'Turning it off',
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                    children: [
+                      Text(
+                        'Four taps in your phone’s own settings. This app '
+                        'cannot make them for you — iOS only lets an app open '
+                        'its own page of settings, not anybody else’s.',
+                        style: LobbyText.body,
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-                ],
-                const SizedBox(height: 24),
-                Text(
-                  'This also stops your iPhone starting an AirDrop when you '
-                  'hold it near someone else’s. Everything else about AirDrop '
-                  'keeps working.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                      const SizedBox(height: 22),
+                      for (final (i, step) in steps.indexed) ...[
+                        if (i > 0) const SizedBox(height: 10),
+                        _Step(number: i + 1, verb: step.$1, target: step.$2),
+                      ],
+                      const SizedBox(height: 24),
+                      Text(
+                        'This also stops your iPhone starting an AirDrop when '
+                        'you hold it near someone else’s. Everything else '
+                        'about AirDrop keeps working.',
+                        style: LobbyText.body,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 28),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Done'),
+
+                // Outside the list on purpose: it is the answer to the whole
+                // screen, and on a short phone the four steps push anything
+                // below them off the bottom — where an answer nobody scrolls
+                // to is an answer nobody gives.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
+                  child: LobbyPillButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    icon: Icons.check,
+                    label: 'Done',
+                    background: LobbyFlowColors.green,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 17,
+                    iconSize: 20,
+                    radius: LobbyMetrics.bigRadius,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
                 ),
               ],
             ),
@@ -286,34 +337,62 @@ class _HowScreen extends StatelessWidget {
   }
 }
 
+/// One tap: its number, what to do, and the word to look for.
+///
+/// A plate each rather than one list, so the four of them read as four things
+/// to do in turn — a checklist you can look up at between taps and find your
+/// place in — instead of a paragraph with numbers down the side.
 class _Step extends StatelessWidget {
-  const _Step({required this.number, required this.text});
+  const _Step({required this.number, required this.verb, required this.target});
 
   final int number;
-  final String text;
+  final String verb;
+  final String target;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        CircleAvatar(
-          radius: 16,
-          backgroundColor: theme.colorScheme.primaryContainer,
-          child: Text(
-            '$number',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onPrimaryContainer,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: LobbyFlowColors.field,
+        borderRadius: BorderRadius.circular(LobbyMetrics.bigRadius),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: LobbyFlowColors.cyan,
+              shape: BoxShape.circle,
+            ),
+            child: Text('$number', style: LobbyText.count),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '$verb ',
+                    style: LobbyText.label.copyWith(
+                      color: LobbyFlowColors.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: target,
+                    style: LobbyText.label.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(text, style: theme.textTheme.titleMedium),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

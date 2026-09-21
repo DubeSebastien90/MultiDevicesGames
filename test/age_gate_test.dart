@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:multiscreen_slingshot/sdk/model/age_band.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_name.dart';
 import 'package:multiscreen_slingshot/sdk/ui/age_gate_screen.dart';
+import 'package:multiscreen_slingshot/sdk/ui/lobby_flow_style.dart';
 
 void main() {
   group('classify', () {
@@ -190,7 +191,9 @@ void main() {
       await tester.pumpWidget(gate());
       await tester.pumpAndSettle();
 
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final button = tester.widget<LobbyPillButton>(
+        find.byType(LobbyPillButton),
+      );
       expect(button.onPressed, isNull);
     });
 
