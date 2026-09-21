@@ -234,37 +234,27 @@ class _Screen extends StatelessWidget {
                 ),
               ),
             ),
-            // Turned back, so the writing stays readable however the phone lies,
-            // and grown to fill the room that leaves: [BoxFit.contain] scales up
-            // as willingly as down, so the same column of text is tiny on an
-            // eight-phone board and large on a two-phone one without a single
-            // font size being chosen for either. The sizes below are therefore
-            // only ratios — 'YOU' stays a little bigger than the label.
+            // Turned back, so the writing stays readable however the phone
+            // lies, and grown to fill the room that leaves: [BoxFit.contain]
+            // scales up as willingly as down, so one column of text is tiny on
+            // an eight-phone board and large on a two-phone one without a
+            // single font size being chosen for either. The sizes below are
+            // therefore only ratios — the name stays bigger than the label.
             Transform.rotate(
               angle: -turnRadians,
               child: SizedBox.fromSize(
-                size: _writingBox(constraints.biggest),
+                size: _writingBox(context, constraints.biggest),
                 child: FittedBox(
                   fit: BoxFit.contain,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        isMe ? 'YOU' : '${index + 1}',
-                        style: LobbyText.button.copyWith(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      if (label.isNotEmpty)
-                        Text(
-                          label,
-                          style: LobbyText.body.copyWith(fontSize: 8),
-                        ),
+                      Text(_name, style: _nameStyle),
+                      if (label.isNotEmpty) Text(label, style: _labelStyle),
                       if (confirmed)
                         Icon(
                           Icons.check_circle,
-                          size: 10,
+                          size: _checkSize,
                           color: LobbyFlowColors.shadeOf(LobbyFlowColors.green),
                         ),
                     ],
@@ -278,25 +268,71 @@ class _Screen extends StatelessWidget {
     );
   }
 
+  /// What this chip is called: YOU, or its place in the board's order.
+  String get _name => isMe ? 'YOU' : '${index + 1}';
+
+  static final _nameStyle = LobbyText.button.copyWith(
+    fontSize: 11,
+    fontWeight: FontWeight.w900,
+  );
+  static final _labelStyle = LobbyText.body.copyWith(fontSize: 8);
+  static const _checkSize = 10.0;
+
   /// The largest box the writing may use, measured in the chip's own
   /// coordinates — that is, before it is turned back upright.
   ///
-  /// A turned rectangle is the whole difficulty. The text box is rotated by
-  /// `turnRadians` with respect to the chip, so it fits only while
-  /// `w·|cos| + h·|sin| ≤ chipWidth` and `w·|sin| + h·|cos| ≤ chipHeight`.
-  /// Scaling the chip's own proportions by the smaller of those two ratios
-  /// gives the biggest box that satisfies both — exactly, not by guesswork, and
-  /// at zero turn it gives the chip back unchanged.
-  Size _writingBox(Size chip) {
+  /// Two things decide it. The writing has a shape of its own — a short wide
+  /// block, since the label is longer than it is tall — and forcing the chip's
+  /// tall narrow proportions onto it is what kept the type small: the box ran
+  /// out of width long before it ran out of height. So the box is cut to the
+  /// writing's own aspect instead, measured below.
+  ///
+  /// Then the turn. The box is rotated by `turnRadians` with respect to the
+  /// chip, so it fits only while `a*|cos| + b*|sin|` is within the chip's width
+  /// and `a*|sin| + b*|cos|` within its height. With `a = aspect * b` both
+  /// collapse to a bound on `b`, and the smaller bound is the answer —
+  /// exactly, not by guesswork, and at no turn it simply fills the width.
+  Size _writingBox(BuildContext context, Size chip) {
     // Room for the top-edge bar, taken off both ends so the writing stays
     // optically centred rather than pushed down.
     final h = math.max(chip.height - _barBand * 2, 1.0);
     final w = math.max(chip.width * _sideAir, 1.0);
 
+    final aspect = _writingAspect(context);
     final c = math.cos(turnRadians).abs();
     final sn = math.sin(turnRadians).abs();
-    final k = math.min(w / (w * c + h * sn), h / (w * sn + h * c));
-    return Size(w * k, h * k);
+
+    final b = math.min(w / (aspect * c + sn), h / (aspect * sn + c));
+    return Size(aspect * b, b);
+  }
+
+  /// How wide the writing is per unit of height, at whatever size it ends up
+  /// being set — a pure shape, which is all the box above needs.
+  ///
+  /// Measured rather than assumed: the label is a name somebody typed, and a
+  /// guessed aspect would either waste half the chip or let the writing spill
+  /// over its edge. [FittedBox] still has the last word, so a measurement a
+  /// pixel out costs a pixel of margin and nothing worse.
+  double _writingAspect(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+
+    Size measure(String text, TextStyle style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+      )..layout();
+      return painter.size;
+    }
+
+    final name = measure(_name, _nameStyle);
+    final labelSize = label.isEmpty ? Size.zero : measure(label, _labelStyle);
+    final check = confirmed ? _checkSize : 0.0;
+
+    final width = math.max(math.max(name.width, labelSize.width), check);
+    final height = name.height + labelSize.height + check;
+    if (width <= 0 || height <= 0) return 1;
+    return width / height;
   }
 
   /// The strip at the top and bottom the writing keeps clear of, so it never
