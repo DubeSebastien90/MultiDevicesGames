@@ -42,8 +42,12 @@ ArenaSim start(int phoneCount) {
   final board = const BoardCompiler().compile(game.planBoard(lobby), lobby);
   final sim = ArenaSim(board.contextFor(scores));
   scores.beginRound();
-  // Out of the countdown, where touches are ignored.
-  for (var t = 0.0; t < ArenaConfig.countdownSeconds + _dt; t += _dt) {
+  // Out of the briefing and the countdown, both of which ignore touches.
+  for (
+    var t = 0.0;
+    t < ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + _dt;
+    t += _dt
+  ) {
     sim.step(_dt);
   }
   return sim;
@@ -268,7 +272,10 @@ void main() {
       final sim = start(2);
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
       sim.reset();
-      run(sim, ArenaConfig.countdownSeconds + _dt);
+      run(
+        sim,
+        ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + _dt,
+      );
       expect(anchorOf(sim, 'p0'), isNull);
     });
   });

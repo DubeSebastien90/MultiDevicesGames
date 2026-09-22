@@ -45,6 +45,10 @@ class ArenaView extends GameView {
 
   static const _floorColor = Color(0xFF16213E);
 
+  /// The air kept between the message and the bottom edge of the glass, as a
+  /// fraction of the screen's half-height.
+  static const _messageMargin = 0.06;
+
   /// World units per second below which a fighter counts as standing still.
   ///
   /// Not zero: positions are interpolated, so a stationary fighter still
@@ -197,7 +201,7 @@ class ArenaView extends GameView {
     for (final e in frame.ofKind('sword')) {
       final key = 'p${e.propInt('index')}';
       if (frame.sharedState['alive_$key'] != true) continue;
-      _drawSword(canvas, e);
+      _drawSword(canvas, e, _guardCharge(frame, key), _chargeTint(frame, key));
     }
 
     // The player's own stick, drawn last so a fighter walking over their own
@@ -208,11 +212,29 @@ class ArenaView extends GameView {
     // can act on — and quietly leak which way each opponent is about to break.
     _drawJoystick(canvas, frame);
 
-    // Countdown overlay.
-    if (frame.sharedState['phase'] == 'countdown') {
+    // What to do, then when it starts. Both in the middle of this phone's own
+    // screen rather than in the corner badge the platform collects HUDs into:
+    // during the one moment there is nothing else to look at, the thing to
+    // look at should not be in a corner.
+    final phase = frame.sharedState['phase'];
+    if (phase == 'briefing') {
+      final step = (frame.sharedState['step'] as num?)?.toInt() ?? 0;
+      if (step >= 0 && step < ArenaConfig.briefingLines.length) {
+        _drawCentered(
+          canvas,
+          frame,
+          ArenaConfig.briefingLines[step],
+          frame.me.halfWidth * 2 * 0.1,
+        );
+      }
+    } else if (phase == 'countdown') {
       final cd = (frame.sharedState['countdown'] as num?)?.toDouble() ?? 0;
-      final digit = cd.ceil().toString();
-      _drawCenteredText(canvas, frame, digit, frame.board.height * 0.15);
+      _drawCentered(
+        canvas,
+        frame,
+        cd.ceil().toString(),
+        frame.me.halfWidth * 2 * 0.3,
+      );
     }
 
     // No finished overlay. The round now holds for a second after the last
@@ -378,7 +400,30 @@ class ArenaView extends GameView {
   /// host's snapshots like any other transform, so the swing a player sees is
   /// the swing that cut them, a frame or two of playback delay apart — the same
   /// delay every other moving thing on the table is drawn with.
-  void _drawSword(Canvas canvas, RenderEntity e) {
+  /// How ready this fighter's guard is, 0 to 1.
+  ///
+  /// Spent while they are actually blocking, then climbing back over
+  /// [ArenaConfig.blockCooldown]. This is the whole of the old BLK readout,
+  /// moved onto the thing it is about.
+  double _guardCharge(Frame frame, String key) {
+    if (frame.sharedState['blocking_$key'] == true) return 0;
+    final left = (frame.sharedState['blkCd_$key'] as num?)?.toDouble() ?? 0;
+    if (left <= 0) return 1;
+    final charge = 1 - left / ArenaConfig.blockCooldown;
+    return charge < 0 ? 0 : (charge > 1 ? 1 : charge);
+  }
+
+  /// The colour a charged blade takes: steel pulled most of the way towards
+  /// its owner's, so the light on it says both *ready* and *whose*.
+  Color _chargeTint(Frame frame, String key) =>
+      Color.lerp(
+        const Color(ArenaConfig.swordColor),
+        _colorOf(frame, key),
+        ArenaConfig.swordChargeTint,
+      ) ??
+      _colorOf(frame, key);
+
+  void _drawSword(Canvas canvas, RenderEntity e, double charge, Color charged) {
     final length = e.propDouble('length', ArenaConfig.swordLength);
     final width = e.propDouble('width', ArenaConfig.swordWidth);
 
@@ -396,14 +441,41 @@ class ArenaView extends GameView {
       _fill,
     );
 
-    _fill.color = const Color(ArenaConfig.swordColor);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, -width / 2, length, width),
-        Radius.circular(width / 2),
-      ),
-      _fill,
+    final blade = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, -width / 2, length, width),
+      Radius.circular(width / 2),
     );
+
+    // Grey steel, always. The guard's charge is drawn *along* it rather than
+    // tinting the whole thing: a blade filling from the hilt is a bar, and a
+    // bar is read without being explained, while a colour warming up asks the
+    // player to remember which shade meant ready.
+    _fill.color = const Color(ArenaConfig.swordColor);
+    canvas.drawRRect(blade, _fill);
+
+    if (charge > 0) {
+      final lit = RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, -width / 2, length * charge, width),
+        Radius.circular(width / 2),
+      );
+
+      // The glow rides the filled part, and only near the top of the charge:
+      // it is what says *ready*, so it must not be halfway on for half the
+      // cooldown.
+      if (charge > ArenaConfig.swordGlowFrom) {
+        final strength =
+            (charge - ArenaConfig.swordGlowFrom) /
+            (1 - ArenaConfig.swordGlowFrom);
+        _fill
+          ..color = charged.withValues(alpha: 0.55 * strength)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, width * 1.6);
+        canvas.drawRRect(lit, _fill);
+        _fill.maskFilter = null;
+      }
+
+      _fill.color = charged;
+      canvas.drawRRect(lit, _fill);
+    }
 
     canvas.restore();
   }
@@ -534,15 +606,29 @@ class ArenaView extends GameView {
     canvas.drawPath(path, paint);
   }
 
-  void _drawCenteredText(
-    Canvas canvas,
-    Frame frame,
-    String text,
-    double fontSize,
-  ) {
+  /// One line across this phone's own glass, under the fighter standing on it.
+  ///
+  /// Drawn in the phone's **own frame**, not the world's. A phone laid at an
+  /// angle sits in an angled slot in the world, so world x and y run diagonally
+  /// across its glass: text placed by world coordinates comes out crooked, and
+  /// "half a screen down" in world y can be most of the way off a screen whose
+  /// height points sideways. Turning the canvas to match the slot makes the
+  /// arithmetic below plain again — x across the glass, y down it — and has
+  /// the words arrive upright for whoever is holding it.
+  ///
+  /// *Below* the fighter, because above them is taken: the lives sit over their
+  /// head and the stun ring goes round them. The line is centred in what is
+  /// left — the band between the bottom of the body and the bottom of the
+  /// screen — and then pinned inside the glass, because that band is a
+  /// different size on every phone at the table and a message that is
+  /// comfortable on a tall one must not fall off a short one.
+  void _drawCentered(Canvas canvas, Frame frame, String text, double size) {
+    final me = frame.me;
+    final width = me.halfWidth * 2;
+
     final builder =
         ui.ParagraphBuilder(
-            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: fontSize),
+            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size),
           )
           ..pushStyle(
             ui.TextStyle(
@@ -552,114 +638,34 @@ class ArenaView extends GameView {
           )
           ..addText(text);
     final paragraph = builder.build()
-      ..layout(ui.ParagraphConstraints(width: frame.visible.width));
-    canvas.drawParagraph(
-      paragraph,
-      Offset(
-        frame.visible.left,
-        frame.visible.top + frame.visible.height / 2 - fontSize / 2,
-      ),
-    );
+      ..layout(ui.ParagraphConstraints(width: width));
+
+    final half = paragraph.height / 2;
+    final margin = me.halfHeight * _messageMargin;
+
+    // All of this is now measured from the middle of the glass, down it.
+    final bodyBottom = ArenaConfig.characterRadius * 1.8;
+    final glassBottom = me.halfHeight - margin;
+    var centre = (bodyBottom + glassBottom) / 2;
+
+    // Pinned to the glass. On a screen too short for the band to hold the
+    // line, this is what decides which of the two it gives up: staying on
+    // screen wins, and the words may lie across the fighter's feet.
+    final lowest = glassBottom - half;
+    final highest = -me.halfHeight + margin + half;
+    if (centre > lowest) centre = lowest;
+    if (centre < highest) centre = highest;
+
+    canvas.save();
+    canvas.translate(me.worldCenterX, me.worldCenterY);
+    canvas.rotate(me.turnRadians);
+    canvas.drawParagraph(paragraph, Offset(-width / 2, centre - half));
+    canvas.restore();
   }
 
-  // -- HUD --------------------------------------------------------------------
-
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) {
-    final phase = frame.sharedState['phase'] as String?;
-
-    final key = _myKey(frame.sharedState);
-    if (key == null) return null;
-
-    final alive = frame.sharedState['alive_$key'] == true;
-    final stunned = frame.sharedState['stunned_$key'] == true;
-    final atkCd = (frame.sharedState['atkCd_$key'] as num?)?.toDouble() ?? 0;
-    final blkCd = (frame.sharedState['blkCd_$key'] as num?)?.toDouble() ?? 0;
-
-    if (!alive) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xCC000000),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'ELIMINATED',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFFFF4444),
-          ),
-        ),
-      );
-    }
-
-    if (phase == 'countdown') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xCC000000),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'Drag=Move  Tap=Attack  Hold=Block',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFFCCCCCC),
-          ),
-        ),
-      );
-    }
-
-    // No lives here. They are already drawn over the fighter's own head, on
-    // the floor where the player is looking, and a second copy in the corner
-    // was the same fact twice — read from the further of the two places.
-    final parts = <Widget>[];
-
-    if (stunned) {
-      parts.add(
-        const Text(
-          ' STUNNED',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFFFFDD44),
-          ),
-        ),
-      );
-    }
-
-    if (atkCd > 0) {
-      parts.add(
-        Text(
-          ' ATK ${atkCd.toStringAsFixed(1)}',
-          style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
-        ),
-      );
-    }
-
-    if (blkCd > 0) {
-      parts.add(
-        Text(
-          ' BLK ${blkCd.toStringAsFixed(1)}',
-          style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
-        ),
-      );
-    }
-
-    // Nothing to say: no badge at all rather than an empty black pill in the
-    // corner. Most of a round is spent in this state now that the lives have
-    // gone back to the fighter.
-    if (parts.isEmpty) return null;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xCC000000),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: parts),
-    );
-  }
+  // No HUD. Everything it used to carry has gone where it belongs: the
+  // controls into the briefing that opens the round, the lives onto the
+  // fighter's own head, the block cooldown onto the blade, and the attack
+  // cooldown nowhere — at half a second it is over before anybody could look
+  // it up.
 }

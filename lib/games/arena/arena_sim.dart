@@ -25,8 +25,12 @@ class ArenaSim implements GameSim {
   late final _area = PlayArea.of(context.coverage);
 
   // -- game phase -------------------------------------------------------------
-  String _phase = 'countdown'; // 'countdown' | 'playing' | 'finished'
+  // 'briefing' | 'countdown' | 'playing' | 'finished'
+  String _phase = 'briefing';
   double _countdown = ArenaConfig.countdownSeconds;
+
+  /// How far into the briefing we are, in seconds.
+  double _briefing = 0;
   String? _winnerId;
 
   // -- fighters ---------------------------------------------------------------
@@ -57,16 +61,82 @@ class ArenaSim implements GameSim {
   @override
   void step(double dt) {
     switch (_phase) {
+      case 'briefing':
+        _stepBriefing(dt);
       case 'countdown':
         _countdown -= dt;
         if (_countdown <= 0) {
           _countdown = 0;
           _phase = 'playing';
         }
+        // The blades keep moving and the guard keeps recharging. Nothing else
+        // does — nobody can be touched and nobody can act — but the sword the
+        // briefing left across everybody's chest has to come back down, and
+        // the guard it spent has to fill back up where they can watch it. A
+        // count is three seconds with nothing else to look at, which is the
+        // best place in the round to be shown what a recharge looks like.
+        for (final f in _fighters) {
+          f.blockCooldownLeft = math.max(0, f.blockCooldownLeft - dt);
+          _moveSword(f, dt);
+        }
       case 'playing':
         _stepPlaying(dt);
       case 'finished':
         break;
+    }
+  }
+
+  /// The three lines, and a fighter doing what each one says.
+  ///
+  /// The demonstration is the point. 'Tap to attack' next to a still figure is
+  /// a caption; next to a figure that swings as you read it, it is an
+  /// instruction — and it is the only chance the game gets to show what a
+  /// swing and a guard *look like* before they start mattering.
+  ///
+  /// Nothing can be hit here. Blades move and the poses run, but [_cutWithSword]
+  /// is not called: a fighter who happens to have spawned within reach of a
+  /// neighbour must not lose a life to a demonstration.
+  void _stepBriefing(double dt) {
+    final before = _briefing;
+    _briefing += dt;
+
+    final step = (_briefing / ArenaConfig.briefingStepSeconds).floor();
+    final into = _briefing - step * ArenaConfig.briefingStepSeconds;
+    final wasInto = before - step * ArenaConfig.briefingStepSeconds;
+
+    // The moment this step's line becomes a thing being done, crossed once.
+    final showNow =
+        wasInto < ArenaConfig.briefingDemoAt &&
+        into >= ArenaConfig.briefingDemoAt;
+
+    for (final f in _fighters) {
+      // Blocking is held for the rest of the 'hold to block' step and then
+      // dropped *properly*, cooldown and all. The recharge is half of what
+      // there is to learn about blocking — that it is spent, and that the
+      // blade fills back up before it can be used again — and the count that
+      // follows is exactly the window to watch it happen in.
+      if (step != 2 && f.blocking) _endBlock(f);
+
+      if (showNow) {
+        if (step == 1) {
+          f.attackCooldownLeft = 0;
+          _tryAttack(f);
+        } else if (step == 2) {
+          f.blocking = true;
+          f.blockDuration = 0;
+        }
+      }
+
+      f.attackCooldownLeft = math.max(0, f.attackCooldownLeft - dt);
+      _moveSword(f, dt);
+    }
+
+    if (_briefing >= ArenaConfig.briefingSeconds) {
+      for (final f in _fighters) {
+        if (f.blocking) _endBlock(f);
+        f.swingStage = _Swing.none;
+      }
+      _phase = 'countdown';
     }
   }
 
@@ -617,6 +687,10 @@ class ArenaSim implements GameSim {
   Map<String, Object?> get sharedState {
     final map = <String, Object?>{
       'phase': _phase,
+      // Which line the briefing is on. The words themselves live in the view,
+      // where every other string this game shows lives.
+      if (_phase == 'briefing')
+        'step': (_briefing / ArenaConfig.briefingStepSeconds).floor(),
       'countdown': _quantize(_countdown),
       'winner': _winnerId,
     };
@@ -630,7 +704,6 @@ class ArenaSim implements GameSim {
       // stretch of a swing that can take a life, and the only part of it worth
       // anybody else knowing about.
       map['slashing_$key'] = f.swingStage == _Swing.slashing;
-      map['atkCd_$key'] = _quantize(f.attackCooldownLeft);
       map['blkCd_$key'] = _quantize(f.blockCooldownLeft);
       map['invincible_$key'] = f.invincibleLeft > 0;
       map['alive_$key'] = f.alive;
@@ -700,7 +773,8 @@ class ArenaSim implements GameSim {
 
   @override
   void reset() {
-    _phase = 'countdown';
+    _phase = 'briefing';
+    _briefing = 0;
     _countdown = ArenaConfig.countdownSeconds;
     _winnerId = null;
     _finishIn = null;

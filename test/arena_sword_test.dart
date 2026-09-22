@@ -45,9 +45,15 @@ ArenaSim start(int phoneCount) {
   final sim = ArenaSim(board.contextFor(scores));
   scores.beginRound();
 
-  // Out of the countdown and past the spawn grace, which is where a fight
-  // starts.
-  run(sim, ArenaConfig.countdownSeconds + ArenaConfig.spawnInvincibility + 0.1);
+  // Past the briefing, the countdown and the spawn grace, which is where a
+  // fight starts.
+  run(
+    sim,
+    ArenaConfig.briefingSeconds +
+        ArenaConfig.countdownSeconds +
+        ArenaConfig.spawnInvincibility +
+        0.1,
+  );
   return sim;
 }
 
@@ -437,6 +443,140 @@ void main() {
       // And then it does begin, and it does bite.
       run(sim, swingWindow);
       expect(livesOf(sim, 1), ArenaConfig.maxLives - 1);
+    });
+  });
+
+  // The three lines that open a round, and the fighters doing what they say.
+  // A caption next to a still figure is a caption; the demonstration is what
+  // makes it an instruction.
+  group('the briefing shows what the controls do', () {
+    /// A sim at the very start, before anything has been stepped.
+    ArenaSim fresh() {
+      final lobby = LobbyInfo([
+        for (var i = 0; i < 2; i++) phone('p${i + 1}', PlayerPalette.all[i]),
+      ]);
+      final scores = Scoreboard();
+      for (final p in lobby.phones) {
+        scores.register(p.phoneId, p.label);
+      }
+      final board = const BoardCompiler().compile(
+        const ArenaGame().planBoard(lobby),
+        lobby,
+      );
+      final sim = ArenaSim(board.contextFor(scores));
+      scores.beginRound();
+      return sim;
+    }
+
+    test('it opens on the briefing and walks its three lines', () {
+      final sim = fresh();
+      sim.step(_dt);
+      expect(sim.sharedState['phase'], 'briefing');
+      expect(sim.sharedState['step'], 0);
+
+      run(sim, ArenaConfig.briefingStepSeconds);
+      expect(sim.sharedState['step'], 1);
+
+      run(sim, ArenaConfig.briefingStepSeconds);
+      expect(sim.sharedState['step'], 2);
+    });
+
+    test('the fighters swing on the attack line', () {
+      final sim = fresh();
+      run(sim, ArenaConfig.briefingStepSeconds);
+
+      // Watched across the whole step rather than sampled at the moment the
+      // demo is asked for: a tap only starts the blade towards the shoulder,
+      // and the cut itself is a tenth of a second further on.
+      var slashed = false;
+      for (var t = 0.0; t < ArenaConfig.briefingStepSeconds; t += _dt) {
+        sim.step(_dt);
+        if (sim.sharedState['slashing_p0'] == true) slashed = true;
+      }
+
+      expect(slashed, isTrue, reason: 'nobody demonstrated the attack');
+    });
+
+    test('and raise a guard on the block line', () {
+      final sim = fresh();
+      run(
+        sim,
+        ArenaConfig.briefingStepSeconds * 2 + ArenaConfig.briefingDemoAt + _dt,
+      );
+      expect(sim.sharedState['blocking_p0'], isTrue);
+    });
+
+    test('a demonstration cannot cost anybody a life', () {
+      // Two fighters spawned within reach of each other is a board the
+      // compiler can hand out, and a swing thrown to explain a swing must not
+      // take a life off a neighbour who has not been told the game started.
+      final sim = fresh();
+      run(sim, ArenaConfig.briefingSeconds);
+      expect(sim.sharedState['lives_p0'], ArenaConfig.maxLives);
+      expect(sim.sharedState['lives_p1'], ArenaConfig.maxLives);
+    });
+
+    test(
+      'the guard comes down during the count, not when the round starts',
+      () {
+        // The briefing ends with everybody's blade across their chest. Nothing
+        // moves during '3, 2, 1' — nobody can act and nobody can be touched —
+        // but the swords still have to travel back, or the count is three
+        // seconds of a table that looks frozen mid-pose.
+        final sim = fresh();
+        run(sim, ArenaConfig.briefingSeconds + _dt);
+        final posed = shortestTurn(facingOf(sim, 0), swordAngle(sim, 0)).abs();
+        expect(posed, greaterThan(0.5), reason: 'the guard was never raised');
+
+        run(sim, ArenaConfig.countdownSeconds);
+        expect(sim.sharedState['phase'], 'playing');
+        expect(
+          shortestTurn(facingOf(sim, 0), swordAngle(sim, 0)).abs(),
+          lessThan(0.05),
+          reason: 'the blade was still stuck in the block pose',
+        );
+      },
+    );
+
+    test('the demo block is spent, and recharges during the count', () {
+      // The recharge is half of what there is to learn: a guard costs
+      // something and the blade fills back up before it can be raised again.
+      // The count is the window it is shown in.
+      final sim = fresh();
+      run(sim, ArenaConfig.briefingSeconds + _dt);
+
+      expect(sim.sharedState['phase'], 'countdown');
+      expect(sim.sharedState['blocking_p0'], isFalse);
+      expect(
+        (sim.sharedState['blkCd_p0'] as num).toDouble(),
+        greaterThan(0),
+        reason: 'the demonstration cost nothing, so nothing was demonstrated',
+      );
+
+      // Halfway through the count it is partway back.
+      run(sim, ArenaConfig.countdownSeconds / 2);
+      final midway = (sim.sharedState['blkCd_p0'] as num).toDouble();
+      expect(midway, greaterThan(0));
+      expect(midway, lessThan(ArenaConfig.blockCooldown));
+    });
+
+    test('and the guard is ready by the time the round starts', () {
+      // Which is only true while the count outlasts the cooldown. It does, and
+      // this is what says so — change either number and somebody finds out
+      // here rather than in a round that opens with everybody defenceless.
+      expect(
+        ArenaConfig.countdownSeconds,
+        greaterThan(ArenaConfig.blockCooldown),
+      );
+
+      final sim = fresh();
+      run(
+        sim,
+        ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + _dt,
+      );
+
+      expect(sim.sharedState['phase'], 'playing');
+      expect(sim.sharedState['blkCd_p0'], 0);
     });
   });
 

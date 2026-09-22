@@ -88,13 +88,34 @@ class ArenaConfig {
   static const double attackSwing =
       (attackWindup - attackFollow) / swingSpeed; // seconds
 
-  static const double attackCooldown = 1.0; // seconds
+  /// Halved, now that nothing counts it down on screen. A second between
+  /// swings is long enough that a player checks a number to know when they may
+  /// go again; half of one is short enough that they just go.
+  static const double attackCooldown = 0.5; // seconds
 
   /// Grace after losing a life, so one exchange cannot take two.
   static const double hitInvincibility = 0.9; // seconds
 
-  /// The blade's colour. A grey rectangle until there is artwork for it.
-  static const int swordColor = 0xFFC3C7D1;
+  /// The blade's colour with its guard spent: plain grey.
+  static const int swordColor = 0xFFA8ACB6;
+
+  /// How far the charged part of the blade is pulled towards its owner's own
+  /// colour. The rest of the way it stays steel.
+  ///
+  /// The block cooldown is read off the blade rather than off a number in the
+  /// corner. It is the one cooldown worth showing — an attack that is not
+  /// ready simply does not come out, while a guard that is not ready gets
+  /// somebody hit — and the sword is where a player is already looking.
+  ///
+  /// In the player's colour rather than one fixed blue, because on a table of
+  /// six swords the glow is also *whose* sword: a green fighter's guard coming
+  /// back lights green, and nobody has to work out which blade they were
+  /// watching. Kept short of the colour itself so it still reads as metal.
+  static const double swordChargeTint = 0.62;
+
+  /// How much of the charge is spent before the blade starts to glow. Below
+  /// this it only changes colour; the glow is the part that says *ready*.
+  static const double swordGlowFrom = 0.55;
 
   // -- block ------------------------------------------------------------------
   static const double blockCooldown = 2.0; // seconds
@@ -150,7 +171,25 @@ class ArenaConfig {
   static const int pointsPerKill = 10;
   static const int pointsForWinning = 25;
 
-  // -- countdown --------------------------------------------------------------
+  // -- getting started --------------------------------------------------------
+  /// The three lines of the briefing, and how long each one holds the screen.
+  ///
+  /// Long enough to read a line and watch the fighter do it, short enough that
+  /// nobody who already knows how to play is kept waiting — the whole thing is
+  /// over in the time the old countdown alone used to take twice.
+  static const List<String> briefingLines = [
+    'Drag to move',
+    'Tap to attack',
+    'Hold to block',
+  ];
+
+  static const double briefingStepSeconds = 1.8;
+  static const double briefingSeconds = briefingStepSeconds * 3; // one per line
+
+  /// When in a step the fighters demonstrate. Not at nought: the line wants a
+  /// moment to be read before the thing it names happens.
+  static const double briefingDemoAt = 0.45; // seconds into the step
+
   static const double countdownSeconds = 3.0;
 
   // -- gesture thresholds -----------------------------------------------------
