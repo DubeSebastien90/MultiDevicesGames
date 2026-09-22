@@ -230,6 +230,65 @@ void main() {
       expect(out.playing, hasLength(AudioEngine.maxVoices + 1));
     });
 
+    // At the ceiling the two kinds of sound are treated oppositely, and both
+    // halves are worth pinning down: a round's cue is one of many and waits
+    // its turn, while a sound answering a finger on this glass must be heard
+    // or the app looks broken.
+    test('a finger on the glass steals the oldest voice', () {
+      final out = SilentAudioOutput(keepLog: true);
+      final engine = AudioEngine(output: out);
+
+      final audio = RoundAudio();
+      for (var i = 0; i < AudioEngine.maxVoices; i++) {
+        audio.playGeneral(bang);
+      }
+      for (final msg in wire(audio, 0)) {
+        engine.receive(msg);
+      }
+      engine.pump(0);
+      expect(out.playing, hasLength(AudioEngine.maxVoices));
+
+      // The one that started first, which is the one nearest its end.
+      final oldest = out.playing.first;
+
+      engine.play(bang);
+
+      expect(
+        out.playing,
+        hasLength(AudioEngine.maxVoices),
+        reason: 'the room is the same size either way',
+      );
+      expect(
+        out.playing.contains(oldest),
+        isFalse,
+        reason: 'the local sound should have taken the oldest seat',
+      );
+      expect(
+        out.log.where((l) => l.startsWith('stop')),
+        hasLength(1),
+        reason: 'exactly one voice was given up for it',
+      );
+    });
+
+    test('but a cue from the host waits its turn', () {
+      final out = SilentAudioOutput(keepLog: true);
+      final engine = AudioEngine(output: out);
+
+      final audio = RoundAudio();
+      for (var i = 0; i < AudioEngine.maxVoices + 3; i++) {
+        audio.playGeneral(bang);
+      }
+      for (final msg in wire(audio, 0)) {
+        engine.receive(msg);
+      }
+      engine.pump(0);
+
+      // Dropped, not swapped in: cutting one of seven sounds a player is
+      // already hearing to make room for an eighth trades nothing for nothing.
+      expect(out.playing, hasLength(AudioEngine.maxVoices));
+      expect(out.log.where((l) => l.startsWith('stop')), isEmpty);
+    });
+
     // The cap counts *simultaneous* voices, which is only true if a voice is
     // given back when its sound ends. It was not: the engine held every handle
     // until the round cleared them, so the ninth one-shot of a round — and
@@ -371,8 +430,7 @@ void main() {
           board: board,
           placement: '',
         ).toJson(),
-        'coverage':
-            const CoverageMap(screens: [], board: board).toJson(),
+        'coverage': const CoverageMap(screens: [], board: board).toJson(),
         'slices': [
           PhoneSlice(
             'p1',

@@ -96,11 +96,32 @@ class AudioEngine implements LocalAudio {
 
   /// A ceiling on *simultaneous* one-shots — which is only meaningful because
   /// [_finished] takes a sound out of the count when it ends.
-  /// Eight players and one scoring event
-  /// is eight clips in the same tick; past this the newest is dropped rather
-  /// than stealing a voice from something already audible. Loops are exempt —
-  /// music is never the thing that should be culled.
-  static const maxVoices = 8;
+  ///
+  /// Twelve: one voice per seat at the biggest table, plus room for the sounds
+  /// that belong to nobody — an explosion, a bounce, a countdown tick — which
+  /// the old eight had fighting the players for space. Loops are exempt on top
+  /// of that, so music never counts and is never culled.
+  ///
+  /// Chosen against what is underneath it rather than picked round: the output
+  /// pools sixteen native players, and Android's SoundPool is built with
+  /// thirty-two streams. Twelve leaves both with room to spare, which is the
+  /// point — the moment a burst reaches the platform's own ceiling, *it*
+  /// decides what to cut, by its own rules, differently on every phone at the
+  /// table.
+  ///
+  /// What happens at the ceiling depends on who is asking, and the two answers
+  /// are opposite on purpose:
+  ///
+  /// * A **round's cue** is dropped. It is one of many the game is raising, it
+  ///   was meant to be heard among seven others, and cutting one of those
+  ///   short to make room would trade a sound somebody is hearing for one they
+  ///   are not.
+  /// * A **local sound** steals the oldest voice. It is the answer to a finger
+  ///   that has just touched this glass — the tap tick, the placement screen's
+  ///   pokes — and silence in reply to your own hand reads as a broken app,
+  ///   not as a busy mixer. The oldest one-shot is the one nearest its end, so
+  ///   it is the cheapest thing in the room to cut.
+  static const maxVoices = 12;
 
   /// Local ids, kept negative so they can never collide with the host's, which
   /// count up from one. `-1` is [SoundHandle.none].
@@ -192,12 +213,32 @@ class AudioEngine implements LocalAudio {
     required bool persist,
   }) {
     if (muted) return;
-    if (!loop && _oneShotCount >= maxVoices) return;
+
+    if (!loop && _oneShotCount >= maxVoices) {
+      // Local handles are minted negative (see [_nextLocalHandle]), which is
+      // what tells a finger's own sound from one the host sent — and which of
+      // the two rules above applies.
+      final stolen = handleId < 0 ? _oldestOneShot : null;
+      if (stolen == null) return;
+      _stop(stolen);
+    }
     _live[handleId] = _Live(persist: persist, loop: loop);
     // Not awaited: a decode that takes a moment must not stall a render frame,
     // and there is nothing to do with the answer. Failures are the output's to
     // swallow — a missing file is a silence, never a crashed round.
     _output.play(handleId, asset, loop: loop, volume: volume);
+  }
+
+  /// The live one-shot that started first, or null if there are none.
+  ///
+  /// Insertion order, straight off the map — Dart's keeps it — so this is the
+  /// sound that has been going longest and therefore the one closest to being
+  /// over anyway.
+  int? get _oldestOneShot {
+    for (final e in _live.entries) {
+      if (!e.value.loop) return e.key;
+    }
+    return null;
   }
 
   int get _oneShotCount {

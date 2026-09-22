@@ -26,11 +26,14 @@ import 'audio_output.dart';
 /// the next. They are pooled and reused, because creating one has a real cost
 /// on Android and a squish is not the moment to pay it.
 class AudioPlayersOutput implements AudioOutput {
-  AudioPlayersOutput({this.maxPlayers = 12});
+  AudioPlayersOutput({this.maxPlayers = 16});
 
-  /// A ceiling on live players. [AudioEngine] already caps voices; this is the
-  /// backstop for anything that reaches the output another way, and the number
-  /// of native players a phone is asked to hold.
+  /// How many native players the pool keeps to hand.
+  ///
+  /// Above [AudioEngine.maxVoices], deliberately: the engine's twelve one-shots
+  /// can be joined by a music bed or two, which are exempt from its cap, and a
+  /// player built on demand and thrown away afterwards costs real time on
+  /// Android — a squish is not the moment to pay it.
   final int maxPlayers;
 
   @override
@@ -41,7 +44,32 @@ class AudioPlayersOutput implements AudioOutput {
   final _live = <int, AudioPlayer>{};
   final _idle = <AudioPlayer>[];
   final _fades = <int, Timer>{};
+
+  /// One per live one-shot: the backstop that frees it if the platform never
+  /// says it finished. See [_oneShotCeiling].
+  final _expiries = <int, Timer>{};
+
   bool _disposed = false;
+
+  /// How long a one-shot may hold its seat before it is counted as over,
+  /// whatever the platform has or has not said.
+  ///
+  /// **This is not a nicety.** Android's low-latency path is SoundPool, and
+  /// SoundPool does not raise a completion event — so `onPlayerComplete` below
+  /// simply never fires there. Everything downstream believed those sounds
+  /// were still playing: the pool never got its players back, and
+  /// [AudioEngine]'s voice cap filled with clips that had finished seconds
+  /// ago and started dropping every new one in silence. Eight taps on a
+  /// phone, and the ninth made no sound for the rest of the round. On a
+  /// desktop build the same code was fine, because low-latency mode is a no-op
+  /// there and the event arrives.
+  ///
+  /// Comfortably longer than any one-shot in the game — the longest player
+  /// voice is 1.7s and the effects are a twentieth of that — and no longer
+  /// than it needs to be: while a seat is held, the cap is that much smaller,
+  /// so somebody prodding the placement screen for fun would still run into a
+  /// stretch of silence before it recovered.
+  static const _oneShotCeiling = Duration(milliseconds: 2500);
 
   /// `audioplayers` resolves an [AssetSource] under its own `assets/` prefix,
   /// so the path a cue carries — which is the real, complete one every other
@@ -71,11 +99,13 @@ class AudioPlayersOutput implements AudioOutput {
         late final StreamSubscription<void> sub;
         sub = player.onPlayerComplete.listen((_) {
           sub.cancel();
-          if (!identical(_live[handleId], player)) return;
-          _release(handleId);
-          // And tell the engine, which is counting voices and has no other way
-          // to learn that this one has stopped taking up a seat.
-          _onFinished?.call(handleId);
+          if (identical(_live[handleId], player)) _finished(handleId);
+        });
+
+        // And the backstop, for the platforms that never raise that event.
+        _expiries[handleId]?.cancel();
+        _expiries[handleId] = Timer(_oneShotCeiling, () {
+          if (identical(_live[handleId], player)) _finished(handleId);
         });
       }
     } on Object catch (e) {
@@ -123,6 +153,15 @@ class AudioPlayersOutput implements AudioOutput {
     });
   }
 
+  /// A one-shot is over: hand the player back, and tell whoever is counting.
+  ///
+  /// The engine caps simultaneous voices, and has no other way to learn that
+  /// one has stopped taking up a seat.
+  void _finished(int handleId) {
+    _release(handleId);
+    _onFinished?.call(handleId);
+  }
+
   Future<void> _stopNow(int handleId, AudioPlayer player) async {
     try {
       await player.stop();
@@ -139,6 +178,10 @@ class AudioPlayersOutput implements AudioOutput {
       timer.cancel();
     }
     _fades.clear();
+    for (final timer in _expiries.values) {
+      timer.cancel();
+    }
+    _expiries.clear();
     for (final entry in _live.entries.toList()) {
       await _stopNow(entry.key, entry.value);
     }
@@ -182,6 +225,7 @@ class AudioPlayersOutput implements AudioOutput {
     final player = _live.remove(handleId);
     if (player == null) return;
     _fades.remove(handleId)?.cancel();
+    _expiries.remove(handleId)?.cancel();
     if (_idle.length < maxPlayers) {
       _idle.add(player);
     } else {
