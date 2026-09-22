@@ -43,9 +43,13 @@ ArenaSim start(int phoneCount) {
   final sim = ArenaSim(board.contextFor(scores));
   scores.beginRound();
   // Out of the briefing and the countdown, both of which ignore touches.
+  //
+  // With slack rather than a single frame: each phase hands over on the step
+  // *after* its clock runs out, so an exact sum lands short and every test in
+  // the file starts failing for a reason none of them are about.
   for (
     var t = 0.0;
-    t < ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + _dt;
+    t < ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + 0.1;
     t += _dt
   ) {
     sim.step(_dt);
@@ -274,7 +278,7 @@ void main() {
       sim.reset();
       run(
         sim,
-        ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + _dt,
+        ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + 0.1,
       );
       expect(anchorOf(sim, 'p0'), isNull);
     });

@@ -570,9 +570,11 @@ void main() {
       );
 
       final sim = fresh();
+      // With slack rather than a single frame: each phase hands over on the
+      // step *after* its clock runs out.
       run(
         sim,
-        ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + _dt,
+        ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + 0.1,
       );
 
       expect(sim.sharedState['phase'], 'playing');

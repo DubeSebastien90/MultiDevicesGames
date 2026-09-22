@@ -121,7 +121,8 @@ class LobbyView extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (client.warning != null || host?.warning != null) ...[
+                        if (client.warning != null ||
+                            host?.warning != null) ...[
                           TableNotice(controller: controller),
                           const SizedBox(height: 16),
                         ],
@@ -131,7 +132,18 @@ class LobbyView extends StatelessWidget {
                             meId: client.phoneId,
                             colors: playerColors(controller),
                             offline: awayPhoneIds(controller),
-                            onReset: host?.resetScores,
+                            // Asked about first. The button sits a thumb's
+                            // width from the character picker on a screen
+                            // people prod while chatting, and there is no
+                            // undo behind it: the round deltas are gone the
+                            // moment the totals are.
+                            onReset: host == null
+                                ? null
+                                : () async {
+                                    if (await confirmResetScores(context)) {
+                                      host.resetScores();
+                                    }
+                                  },
                           ),
                         ),
                       ],
@@ -200,8 +212,11 @@ class LobbyView extends StatelessWidget {
                             foreground: LobbyFlowColors.ink,
                             radius: LobbyMetrics.bigRadius,
                             padding: const EdgeInsets.symmetric(vertical: 20),
-                            onPressed: () =>
-                                showGamesScreen(context, host, controller.premium),
+                            onPressed: () => showGamesScreen(
+                              context,
+                              host,
+                              controller.premium,
+                            ),
                           ),
                         ),
                       ],
@@ -225,9 +240,7 @@ class LobbyView extends StatelessWidget {
 class _Panel extends StatelessWidget {
   const _Panel({required this.title, required this.child, this.trailing});
 
-  const _Panel.bare({required this.child})
-      : title = null,
-        trailing = null;
+  const _Panel.bare({required this.child}) : title = null, trailing = null;
 
   final String? title;
   final Widget child;
@@ -290,8 +303,11 @@ class _PlanErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.dashboard_customize_outlined,
-              color: scheme.onErrorContainer, size: 20),
+          Icon(
+            Icons.dashboard_customize_outlined,
+            color: scheme.onErrorContainer,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -541,10 +557,7 @@ Future<void> _showQr(BuildContext context, String name, String payload) {
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'Scan this to join the game.',
-                style: LobbyText.body,
-              ),
+              const Text('Scan this to join the game.', style: LobbyText.body),
               const SizedBox(height: 28),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -587,6 +600,79 @@ Future<void> _showQr(BuildContext context, String name, String payload) {
 /// ceiling and nothing else — the heading under it carries a Reset button on a
 /// host and not on anybody else, so its height is not a thing this widget can
 /// be told in advance, and guessing it here is what overflowed the lobby by
+/// Ask before throwing the evening's scores away, and answer whether to.
+///
+/// A guard rather than an undo, because there is nothing to undo *to*: the
+/// totals and every round's delta go together, and the games they came from
+/// are not going to be replayed to get them back.
+///
+/// Public, and returning the answer rather than doing the deed, so the
+/// question can be put to a test without a lobby, a host and a socket behind
+/// it. Dismissing it any other way — the back gesture, a route popped from
+/// elsewhere — reads as no.
+Future<bool> confirmResetScores(BuildContext context) async {
+  final sure = await showDialog<bool>(
+    context: context,
+    builder: (_) => const _ConfirmResetDialog(),
+  );
+  return sure == true;
+}
+
+/// The question, in the flow's own dress.
+class _ConfirmResetDialog extends StatelessWidget {
+  const _ConfirmResetDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: LobbyFlowColors.paper,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const LobbyTitle('Reset scores?', fontSize: 24),
+            const SizedBox(height: 14),
+            Text(
+              'Do you really want to reset all scores on this lobby?',
+              style: LobbyText.body,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                // Backing out is the default, so it gets the back pill every
+                // other screen in the flow uses for exactly that.
+                LobbyIconButton(
+                  icon: Icons.arrow_back,
+                  background: LobbyFlowColors.coral,
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: LobbyPillButton(
+                    label: 'Reset',
+                    // Coral, not green: this is the flow's colour for a thing
+                    // that did not go your way, and it is the right one for a
+                    // button that throws an evening's scores out.
+                    background: LobbyFlowColors.coral,
+                    foreground: LobbyFlowColors.ink,
+                    fontSize: 16,
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// twelve pixels at five players.
 class _StandingsSlot extends StatelessWidget {
   const _StandingsSlot({
@@ -667,10 +753,7 @@ Map<String, _Seat> _seats(AppController controller) {
     return {
       for (final p in host.phones)
         if (p.color != null)
-          p.color!.id: _Seat(
-            label: p.label,
-            connected: p.connected,
-          ),
+          p.color!.id: _Seat(label: p.label, connected: p.connected),
     };
   }
   return {
@@ -810,8 +893,10 @@ class _Swatch extends StatelessWidget {
                 // says less than a greyed-out one.
                 child: Opacity(
                   opacity: taken ? 0.45 : 1,
-                  child: PlayerArt.of(color, PlayerArtSlot.topdown)
-                      .widget(size: 34),
+                  child: PlayerArt.of(
+                    color,
+                    PlayerArtSlot.topdown,
+                  ).widget(size: 34),
                 ),
               ),
             ],

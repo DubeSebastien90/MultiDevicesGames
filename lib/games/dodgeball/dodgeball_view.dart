@@ -38,6 +38,10 @@ class DodgeballView extends GameView {
   /// off.
   static const _walkingSpeed = 0.5;
 
+  /// The air kept between a message and the bottom edge of the glass, as a
+  /// fraction of the screen's half-height.
+  static const _messageMargin = 0.06;
+
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
 
@@ -58,20 +62,24 @@ class DodgeballView extends GameView {
       _fill,
     );
 
-    // Draw balls.
+    // Draw balls. During the briefing the only ball on the board is the one
+    // being thrown to explain the dash, and it fades at both ends — it has to
+    // arrive from nowhere and leave without anybody waiting for it to bounce
+    // off something.
+    final demo = _demoFade(frame);
     for (final e in frame.ofKind('ball')) {
       final radius = e.propDouble('radius', DodgeballConfig.ballRadius);
 
       // Glow.
-      _fill.color = _ballGlowColor;
+      _fill.color = _ballGlowColor.withValues(alpha: _ballGlowColor.a * demo);
       canvas.drawCircle(Offset(e.x, e.y), radius * 2.0, _fill);
 
       // Ball body.
-      _fill.color = _ballColor;
+      _fill.color = _ballColor.withValues(alpha: _ballColor.a * demo);
       canvas.drawCircle(Offset(e.x, e.y), radius, _fill);
 
       // Highlight.
-      _fill.color = const Color(0x66FFFFFF);
+      _fill.color = Color.fromARGB((0x66 * demo).round(), 255, 255, 255);
       canvas.drawCircle(
         Offset(e.x - radius * 0.25, e.y - radius * 0.25),
         radius * 0.3,
@@ -96,6 +104,30 @@ class DodgeballView extends GameView {
 
       final isDashing = frame.sharedState['dashing_$key'] == true;
       final isInvincible = frame.sharedState['invincible_$key'] == true;
+
+      // The dash, as a ring closing round the player.
+      //
+      // This is the whole of the old DASH readout, moved onto the thing it is
+      // about. A number in the corner had to be found and read; a ring that
+      // fills where the player is already looking is seen without either. Full
+      // circle means ready — which is why it is drawn *only* while it is
+      // filling, so a ready player has nothing extra round their feet.
+      final dashCd =
+          (frame.sharedState['dashCd_$key'] as num?)?.toDouble() ?? 0;
+      if (dashCd > 0) {
+        final charge =
+            1 - (dashCd / DodgeballConfig.dashCooldown).clamp(0.0, 1.0);
+        _stroke
+          ..color = color.withValues(alpha: 0.85)
+          ..strokeWidth = radius * 0.16;
+        canvas.drawArc(
+          Rect.fromCircle(center: Offset(e.x, e.y), radius: radius * 1.45),
+          -math.pi / 2,
+          2 * math.pi * charge,
+          false,
+          _stroke,
+        );
+      }
 
       // Invincibility / dash shimmer.
       if (isInvincible) {
@@ -163,15 +195,36 @@ class DodgeballView extends GameView {
     _drawJoystick(canvas, frame);
 
     // Countdown overlay.
+    final phase = frame.sharedState['phase'];
+    if (phase == 'briefing') {
+      final step = (frame.sharedState['step'] as num?)?.toInt() ?? 0;
+      if (step >= 0 && step < DodgeballConfig.briefingLines.length) {
+        _drawCentered(
+          canvas,
+          frame,
+          DodgeballConfig.briefingLines[step],
+          frame.me.halfWidth * 2 * 0.1,
+        );
+      }
+    }
+
     if (frame.sharedState['phase'] == 'countdown') {
       final cd = (frame.sharedState['countdown'] as num?)?.toDouble() ?? 0;
-      final digit = cd.ceil().toString();
-      _drawCenteredText(canvas, frame, digit, frame.board.height * 0.15);
+      final go = cd <= DodgeballConfig.goSeconds;
+      _drawCentered(
+        canvas,
+        frame,
+        // GO for the last stretch, and the digits before it — never a nought,
+        // which is what the clock actually says for the few frames between
+        // running out and the round starting.
+        go ? 'GO' : (cd - DodgeballConfig.goSeconds).ceil().toString(),
+        frame.me.halfWidth * 2 * (go ? 0.22 : 0.3),
+      );
     }
 
     // Finished overlay.
     if (frame.sharedState['phase'] == 'finished') {
-      _drawCenteredText(canvas, frame, 'OUT!', frame.board.height * 0.12);
+      _drawCentered(canvas, frame, 'OUT!', frame.me.halfWidth * 2 * 0.22);
     }
   }
 
@@ -255,15 +308,48 @@ class DodgeballView extends GameView {
     return null;
   }
 
-  void _drawCenteredText(
-    Canvas canvas,
-    Frame frame,
-    String text,
-    double fontSize,
-  ) {
+  /// How solid the demonstration ball is right now, 0 to 1.
+  ///
+  /// One outside the briefing, where every ball on the board is a real one.
+  /// Inside it, a fade in as it arrives and a fade out as it leaves: the ball
+  /// exists to be dodged once, and one that simply vanished — or that hung
+  /// about afterwards — would read as a ball still in play.
+  double _demoFade(Frame frame) {
+    if (frame.sharedState['phase'] != 'briefing') return 1;
+
+    final left = (frame.sharedState['stepLeft'] as num?)?.toDouble();
+    if (left == null) return 1;
+
+    final age =
+        DodgeballConfig.briefingStepSeconds -
+        left -
+        DodgeballConfig.briefingDemoAt;
+    if (age <= 0) return 0;
+
+    final fadingIn = (age / DodgeballConfig.demoFadeIn).clamp(0.0, 1.0);
+    final fadingOut = (left / DodgeballConfig.demoFadeOut).clamp(0.0, 1.0);
+    return fadingIn < fadingOut ? fadingIn : fadingOut;
+  }
+
+  /// One line across this phone's own glass, under the player standing on it.
+  ///
+  /// [Frame.me] rather than [Frame.visible]: a phone laid at an angle has a
+  /// bounding box wider than its screen, so world x and y run diagonally
+  /// across its glass — text placed by them comes out crooked, and "half a
+  /// screen down" in world y can be most of the way off a screen whose height
+  /// points sideways. Turning the canvas to match the slot makes the
+  /// arithmetic plain and has the words arrive upright for whoever is holding
+  /// the phone.
+  ///
+  /// *Below* the player, because a player stands in the middle of their own
+  /// screen and the briefing is about watching them move.
+  void _drawCentered(Canvas canvas, Frame frame, String text, double size) {
+    final me = frame.me;
+    final width = me.halfWidth * 2;
+
     final builder =
         ui.ParagraphBuilder(
-            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: fontSize),
+            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size),
           )
           ..pushStyle(
             ui.TextStyle(
@@ -273,107 +359,32 @@ class DodgeballView extends GameView {
           )
           ..addText(text);
     final paragraph = builder.build()
-      ..layout(ui.ParagraphConstraints(width: frame.visible.width));
-    canvas.drawParagraph(
-      paragraph,
-      Offset(
-        frame.visible.left,
-        frame.visible.top + frame.visible.height / 2 - fontSize / 2,
-      ),
-    );
+      ..layout(ui.ParagraphConstraints(width: width));
+
+    final half = paragraph.height / 2;
+    final margin = me.halfHeight * _messageMargin;
+
+    final bodyBottom = DodgeballConfig.characterRadius * 1.8;
+    final glassBottom = me.halfHeight - margin;
+    var centre = (bodyBottom + glassBottom) / 2;
+
+    // Pinned to the glass. On a screen too short for the band to hold the
+    // line, this is what decides which of the two it gives up: staying on
+    // screen wins, and the words may lie across the player's feet.
+    final lowest = glassBottom - half;
+    final highest = -me.halfHeight + margin + half;
+    if (centre > lowest) centre = lowest;
+    if (centre < highest) centre = highest;
+
+    canvas.save();
+    canvas.translate(me.worldCenterX, me.worldCenterY);
+    canvas.rotate(me.turnRadians);
+    canvas.drawParagraph(paragraph, Offset(-width / 2, centre - half));
+    canvas.restore();
   }
 
-  // -- HUD --------------------------------------------------------------------
-
-  @override
-  Widget? buildHud(BuildContext context, HudFrame frame) {
-    final phase = frame.sharedState['phase'] as String?;
-
-    final key = _myKey(frame.sharedState);
-    if (key == null) return null;
-
-    final alive = frame.sharedState['alive_$key'] == true;
-    final dashCd = (frame.sharedState['dashCd_$key'] as num?)?.toDouble() ?? 0;
-    final ballCount = (frame.sharedState['ballCount'] as num?)?.toInt() ?? 0;
-
-    if (!alive) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xCC000000),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'ELIMINATED',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFFFF4444),
-          ),
-        ),
-      );
-    }
-
-    if (phase == 'countdown') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xCC000000),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'Drag=Move  Tap=Dash',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFFCCCCCC),
-          ),
-        ),
-      );
-    }
-
-    final parts = <Widget>[];
-
-    // Ball count.
-    parts.add(
-      Text(
-        'Balls: $ballCount',
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFFFF6666),
-        ),
-      ),
-    );
-
-    // Dash status.
-    if (dashCd > 0) {
-      parts.add(
-        Text(
-          '  DASH ${dashCd.toStringAsFixed(1)}',
-          style: const TextStyle(fontSize: 11, color: Color(0xFF999999)),
-        ),
-      );
-    } else {
-      parts.add(
-        const Text(
-          '  DASH READY',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF44FF44),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xCC000000),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: parts),
-    );
-  }
+  // No HUD. Everything it used to carry has gone where it belongs: the
+  // controls into the briefing that opens the round, the dash cooldown into a
+  // ring round the player, the ball count nowhere — the balls are on the table
+  // and counting them in a corner was the same fact written twice.
 }

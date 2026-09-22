@@ -190,7 +190,16 @@ class ArenaConfig {
   /// moment to be read before the thing it names happens.
   static const double briefingDemoAt = 0.45; // seconds into the step
 
-  static const double countdownSeconds = 3.0;
+  /// The whole count: three digits of a second each, then GO.
+  ///
+  /// The round starts when GO *leaves*, which is what the extra [goSeconds] on
+  /// the end buys. Counting straight to zero meant the last thing on screen
+  /// was a nought — held for the handful of frames between the clock running
+  /// out and the phase changing, which reads as a stutter rather than a start.
+  static const double countdownSeconds = 3.6;
+
+  /// How long GO holds the screen at the end of the count.
+  static const double goSeconds = 0.6;
 
   // -- gesture thresholds -----------------------------------------------------
   static const double minMoveDistance = 0.8; // cm

@@ -229,11 +229,15 @@ class ArenaView extends GameView {
       }
     } else if (phase == 'countdown') {
       final cd = (frame.sharedState['countdown'] as num?)?.toDouble() ?? 0;
+      final go = cd <= ArenaConfig.goSeconds;
       _drawCentered(
         canvas,
         frame,
-        cd.ceil().toString(),
-        frame.me.halfWidth * 2 * 0.3,
+        // GO for the last stretch, and the digits before it — never a nought,
+        // which is what the clock actually says for the few frames between
+        // running out and the round starting.
+        go ? 'GO' : (cd - ArenaConfig.goSeconds).ceil().toString(),
+        frame.me.halfWidth * 2 * (go ? 0.22 : 0.3),
       );
     }
 

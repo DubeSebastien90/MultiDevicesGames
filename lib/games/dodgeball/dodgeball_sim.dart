@@ -26,8 +26,12 @@ class DodgeballSim implements GameSim {
   late final _area = PlayArea.of(context.coverage);
 
   // -- game phase -------------------------------------------------------------
-  String _phase = 'countdown'; // 'countdown' | 'playing' | 'finished'
+  // 'briefing' | 'countdown' | 'playing' | 'finished'
+  String _phase = 'briefing';
   double _countdown = DodgeballConfig.countdownSeconds;
+
+  /// How far into the briefing we are, in seconds.
+  double _briefing = 0;
   String? _winnerId;
 
   // -- players ----------------------------------------------------------------
@@ -66,17 +70,174 @@ class DodgeballSim implements GameSim {
   @override
   void step(double dt) {
     switch (_phase) {
+      case 'briefing':
+        _stepBriefing(dt);
       case 'countdown':
         _countdown -= dt;
         if (_countdown <= 0) {
           _countdown = 0;
           _phase = 'playing';
         }
+        _stepWalkingHome(dt);
       case 'playing':
         _stepPlaying(dt);
       case 'finished':
         break;
     }
+  }
+
+  /// Two lines, and a player doing what the second one says.
+  ///
+  /// The demonstration is the point. 'Tap to dash' beside a still figure is a
+  /// caption; beside a figure that steps out of the way of a ball as you read
+  /// it, it is an instruction — and it shows the one thing the words cannot,
+  /// which is *when* to dash. The ball is nearly on them when they go.
+  ///
+  /// Nothing here can eliminate anybody: the collision check belongs to
+  /// [_stepPlaying] and is not called. The demonstration ball passes through
+  /// whoever it reaches.
+  void _stepBriefing(double dt) {
+    final before = _briefing;
+    _briefing += dt;
+
+    final step = (_briefing / DodgeballConfig.briefingStepSeconds).floor();
+    final into = _briefing - step * DodgeballConfig.briefingStepSeconds;
+    final was = before - step * DodgeballConfig.briefingStepSeconds;
+
+    bool crossed(double at) => was < at && into >= at;
+
+    // The demonstration ball belongs to its own line and goes with it. Left
+    // lying about, it would still be crossing the board under the line after
+    // — which says "here comes another one" to somebody who has just been
+    // told not to get hit.
+    if (step != 1) _balls.clear();
+
+    // The last line has nothing to show, so the walk back from the dash plays
+    // under it and carries on into the count.
+    if (step >= 2) _stepWalkingHome(dt);
+
+    if (step == 1) {
+      if (crossed(DodgeballConfig.briefingDemoAt)) _throwDemoBalls();
+      if (crossed(
+        DodgeballConfig.briefingDemoAt + DodgeballConfig.demoDashAt,
+      )) {
+        for (final p in _players) {
+          // Sideways out of the ball's line, in this player's own frame, so it
+          // reads as a step aside on every phone however its slot is turned.
+          p.dashAngle = _local(p).up;
+          p.dashTimeLeft = DodgeballConfig.dashDuration;
+          p.invincibleLeft = DodgeballConfig.dashInvincibility;
+        }
+      }
+    }
+
+    for (final p in _players) {
+      p.dashTimeLeft = math.max(0, p.dashTimeLeft - dt);
+      p.invincibleLeft = math.max(0, p.invincibleLeft - dt);
+      if (p.dashTimeLeft > 0) {
+        p.x += math.cos(p.dashAngle) * DodgeballConfig.dashSpeed * dt;
+        p.y += math.sin(p.dashAngle) * DodgeballConfig.dashSpeed * dt;
+        p.facingAngle = p.dashAngle;
+        final held = _area.clamp(p.x, p.y, DodgeballConfig.characterRadius);
+        p.x = held.x;
+        p.y = held.y;
+      }
+    }
+
+    for (final ball in _balls) {
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+    }
+
+    if (_briefing >= DodgeballConfig.briefingSeconds) {
+      _balls.clear();
+      for (final p in _players) {
+        p.dashTimeLeft = 0;
+        p.dashCooldownLeft = 0;
+        p.invincibleLeft = 0;
+      }
+      _phase = 'countdown';
+    }
+  }
+
+  /// The count, spent walking back to where the round starts.
+  ///
+  /// The demonstration leaves everybody a dash's length off their mark and
+  /// facing sideways. Snapping them back when the round begins would be a
+  /// teleport on every screen at once; walking them back over the three
+  /// seconds nobody can act in costs nothing and shows the walk animation,
+  /// which is the last thing on the list the briefing does not have a line
+  /// for.
+  void _stepWalkingHome(double dt) {
+    for (final (i, p) in _players.indexed) {
+      final home = context.slices[i].screen;
+      final dx = home.centerX - p.x;
+      final dy = home.centerY - p.y;
+      final away = math.sqrt(dx * dx + dy * dy);
+
+      final stride = DodgeballConfig.moveSpeed * dt;
+      if (away > stride) {
+        p.x += dx / away * stride;
+        p.y += dy / away * stride;
+        // Facing where they are walking, which is what the view reads to
+        // decide somebody is walking at all.
+        p.facingAngle = math.atan2(dy, dx);
+        continue;
+      }
+
+      p.x = home.centerX;
+      p.y = home.centerY;
+
+      // Home, and now turning back to the way they started. Turned rather
+      // than set, for the same reason they walked rather than jumped.
+      p.facingAngle = _turnTowards(
+        p.facingAngle,
+        0,
+        DodgeballConfig.homeTurnSpeed * dt,
+      );
+    }
+  }
+
+  /// One ball per player, aimed at them from the side.
+  ///
+  /// Per player rather than one for the table: every phone has to see the
+  /// demonstration on its own glass, and a single ball crossing the board
+  /// would be a lesson for whoever it happened to pass.
+  void _throwDemoBalls() {
+    for (final p in _players) {
+      final axis = _local(p);
+      final reach =
+          DodgeballConfig.characterRadius * DodgeballConfig.demoBallDistance;
+      final speed = reach / DodgeballConfig.demoBallTravel;
+
+      _balls.add(
+        _Ball(
+          id: _nextBallId++,
+          x: p.x - math.cos(axis.right) * reach,
+          y: p.y - math.sin(axis.right) * reach,
+          vx: math.cos(axis.right) * speed,
+          vy: math.sin(axis.right) * speed,
+          speed: speed,
+        ),
+      );
+    }
+  }
+
+  /// This player's screen's own axes, as world angles: across the glass, and
+  /// up it. A phone in a turned slot has its own idea of sideways, and a
+  /// demonstration that ignores it comes at the player diagonally.
+  ({double right, double up}) _local(_Player p) {
+    final turn = context.slices[p.index].screen.turnRadians;
+    return (right: turn, up: turn - math.pi / 2);
+  }
+
+  /// [from], moved at most [maxStep] towards [to] the short way round.
+  static double _turnTowards(double from, double to, double maxStep) {
+    var d = (to - from) % (2 * math.pi);
+    if (d > math.pi) d -= 2 * math.pi;
+    if (d < -math.pi) d += 2 * math.pi;
+    if (d.abs() <= maxStep) return to;
+    return from + (d.isNegative ? -maxStep : maxStep);
   }
 
   void _stepPlaying(double dt) {
@@ -361,6 +522,16 @@ class DodgeballSim implements GameSim {
   Map<String, Object?> get sharedState {
     final map = <String, Object?>{
       'phase': _phase,
+      // Which line the briefing is on, and how much of it is left — the view
+      // fades the demonstration ball in and out off this. The words themselves
+      // live in the view, where every other string this game shows lives.
+      if (_phase == 'briefing') ...{
+        'step': (_briefing / DodgeballConfig.briefingStepSeconds).floor(),
+        'stepLeft': _quantize(
+          DodgeballConfig.briefingStepSeconds -
+              _briefing % DodgeballConfig.briefingStepSeconds,
+        ),
+      },
       'countdown': _quantize(_countdown),
       'winner': _winnerId,
       'ballCount': _balls.length,
@@ -406,7 +577,8 @@ class DodgeballSim implements GameSim {
 
   @override
   void reset() {
-    _phase = 'countdown';
+    _phase = 'briefing';
+    _briefing = 0;
     _countdown = DodgeballConfig.countdownSeconds;
     _winnerId = null;
     _outcome = null;

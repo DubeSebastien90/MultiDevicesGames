@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_config.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
@@ -43,8 +45,15 @@ DodgeballSim start(int phoneCount) {
   final board = const BoardCompiler().compile(game.planBoard(lobby), lobby);
   final sim = DodgeballSim(board.contextFor(scores));
   scores.beginRound();
-  // Out of the countdown, where touches are ignored.
-  run(sim, DodgeballConfig.countdownSeconds + _dt);
+  // Out of the briefing and the countdown, both of which ignore touches.
+  //
+  // With slack rather than a single frame: each phase hands over on the step
+  // *after* its clock runs out, so an exact sum lands a frame or two short and
+  // every test in the file starts failing for a reason none of them are about.
+  run(
+    sim,
+    DodgeballConfig.briefingSeconds + DodgeballConfig.countdownSeconds + 0.1,
+  );
   return sim;
 }
 
@@ -55,12 +64,7 @@ void run(DodgeballSim sim, double seconds) {
 }
 
 void touch(DodgeballSim sim, String phoneId, String phase, double x, double y) {
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: x,
-    worldY: y,
-    phase: phase,
-  ));
+  sim.onTouch(TouchEvent(phoneId: phoneId, worldX: x, worldY: y, phase: phase));
 }
 
 /// Where player [index] is standing, straight off the entity it publishes.
@@ -91,7 +95,142 @@ void tap(DodgeballSim sim, String phoneId) {
   return (x: x.toDouble(), y: y.toDouble());
 }
 
+/// A sim at the very start, before anything has been stepped.
+DodgeballSim fresh(int phoneCount) {
+  final lobby = LobbyInfo([
+    for (var i = 0; i < phoneCount; i++)
+      phone('p${i + 1}', PlayerPalette.all[i]),
+  ]);
+  final scores = Scoreboard();
+  for (final p in lobby.phones) {
+    scores.register(p.phoneId, p.label);
+  }
+  final board = const BoardCompiler().compile(
+    const DodgeballGame().planBoard(lobby),
+    lobby,
+  );
+  final sim = DodgeballSim(board.contextFor(scores));
+  scores.beginRound();
+  return sim;
+}
+
+int ballsOn(DodgeballSim sim) =>
+    sim.entities.where((e) => e.descriptor.kind == 'ball').length;
+
 void main() {
+  // The two lines that open a round, and the player doing what the second one
+  // says. A caption beside a still figure is a caption; the demonstration is
+  // what makes it an instruction — and it shows the one thing the words
+  // cannot, which is *when* to dash.
+  group('the briefing shows what the controls do', () {
+    test('it opens on the briefing and walks its three lines', () {
+      final sim = fresh(2);
+      sim.step(_dt);
+      expect(sim.sharedState['phase'], 'briefing');
+      expect(sim.sharedState['step'], 0);
+
+      run(sim, DodgeballConfig.briefingStepSeconds);
+      expect(sim.sharedState['step'], 1);
+
+      run(sim, DodgeballConfig.briefingStepSeconds);
+      expect(sim.sharedState['step'], 2);
+    });
+
+    test('a ball is thrown at each player, and dodged', () {
+      final sim = fresh(2);
+      run(
+        sim,
+        DodgeballConfig.briefingStepSeconds + DodgeballConfig.briefingDemoAt,
+      );
+      run(sim, 2 * _dt);
+
+      // One each: every phone has to see the demonstration on its own glass,
+      // and a single ball crossing the board would be a lesson for whoever it
+      // happened to pass.
+      expect(ballsOn(sim), 2);
+
+      final before = positionOf(sim, 0);
+      run(sim, DodgeballConfig.demoDashAt + DodgeballConfig.dashDuration);
+      final after = positionOf(sim, 0);
+      final moved = math.sqrt(
+        math.pow(after.x - before.x, 2) + math.pow(after.y - before.y, 2),
+      );
+      expect(
+        moved,
+        greaterThan(
+          DodgeballConfig.moveSpeed * DodgeballConfig.dashDuration * 1.5,
+        ),
+        reason: 'nobody dodged anything',
+      );
+    });
+
+    test('a demonstration cannot eliminate anybody', () {
+      // The ball is aimed straight at them and only misses because they move.
+      // If the collision check ran here, a player whose dash was a frame late
+      // would be out before the round started.
+      final sim = fresh(2);
+      run(sim, DodgeballConfig.briefingSeconds);
+      expect(sim.sharedState['alive_p0'], isTrue);
+      expect(sim.sharedState['alive_p1'], isTrue);
+    });
+
+    test('the demonstration ball goes with the line that threw it', () {
+      // Left lying about, it would still be crossing the board under the last
+      // line — which says "here comes another one" to somebody who has just
+      // been told not to get hit.
+      final sim = fresh(2);
+      run(sim, DodgeballConfig.briefingStepSeconds * 2 + _dt);
+      expect(sim.sharedState['step'], 2);
+      expect(ballsOn(sim), 0);
+    });
+
+    test(
+      'the walk home starts under the last line and finishes in the count',
+      () {
+        // The demonstration leaves them a dash off their mark and facing
+        // sideways. Snapping them back when the round begins would be a
+        // teleport on every screen at once — so they walk, starting under the
+        // line that has nothing of its own to show.
+        final sim = fresh(2);
+        // Where the round will start them: their own screen's middle.
+        final mark = positionOf(sim, 0);
+
+        run(sim, DodgeballConfig.briefingStepSeconds * 2 + _dt);
+        expect(sim.sharedState['step'], 2);
+        expect(
+          positionOf(sim, 0).x,
+          isNot(closeTo(mark.x, 0.01)),
+          reason: 'the dash never moved them off their mark',
+        );
+
+        final atLastLine = positionOf(sim, 0);
+        run(sim, 0.3);
+        expect(
+          positionOf(sim, 0).x,
+          isNot(closeTo(atLastLine.x, 0.01)),
+          reason: 'nobody set off while the last line was up',
+        );
+
+        // Through the rest of the briefing and the whole count.
+        run(
+          sim,
+          DodgeballConfig.briefingStepSeconds +
+              DodgeballConfig.countdownSeconds +
+              0.1,
+        );
+        expect(sim.sharedState['phase'], 'playing');
+
+        // Back on the mark, facing the way they started.
+        final home = sim.entities.firstWhere(
+          (e) => e.descriptor.id == 'player_0',
+        );
+        expect(home.x, closeTo(mark.x, 0.05));
+        expect(home.y, closeTo(mark.y, 0.05));
+        expect(home.angle, closeTo(0, 0.01), reason: 'they never turned back');
+      },
+    );
+  });
+
   group('a dash is a burst, not a direction the player is left in', () {
     test('the player stops when the dash runs out', () {
       final sim = start(2);
@@ -105,8 +244,11 @@ void main() {
       tap(sim, 'p1');
       run(sim, DodgeballConfig.dashDuration + _dt);
       final afterDash = positionOf(sim, 0);
-      expect(afterDash.x, isNot(closeTo(from.x, 0.01)),
-          reason: 'the dash should have moved them');
+      expect(
+        afterDash.x,
+        isNot(closeTo(from.x, 0.01)),
+        reason: 'the dash should have moved them',
+      );
 
       run(sim, 1.5);
       expect(positionOf(sim, 0).x, closeTo(afterDash.x, 0.001));
@@ -124,7 +266,8 @@ void main() {
       expect(
         covered,
         greaterThan(
-            DodgeballConfig.moveSpeed * DodgeballConfig.dashDuration * 1.5),
+          DodgeballConfig.moveSpeed * DodgeballConfig.dashDuration * 1.5,
+        ),
       );
     });
 
@@ -166,35 +309,44 @@ void main() {
     test('a drag shorter than the dead zone draws nothing either', () {
       final sim = start(2);
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      touch(sim, 'p1', TouchPhase.move,
-          4.0 + DodgeballConfig.minMoveDistance / 2, 5.0);
+      touch(
+        sim,
+        'p1',
+        TouchPhase.move,
+        4.0 + DodgeballConfig.minMoveDistance / 2,
+        5.0,
+      );
       expect(anchorOf(sim, 'p0'), isNull);
     });
 
-    test('the anchor is where the finger landed, and stays put as it drags',
-        () {
-      final sim = start(2);
-      touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
-      // The anchor does not chase the finger — that is the whole point of it.
-      expect(anchorOf(sim, 'p0'), (x: 4.0, y: 5.0));
-      expect(knobOf(sim, 'p0'), (x: 6.5, y: 5.0));
-    });
+    test(
+      'the anchor is where the finger landed, and stays put as it drags',
+      () {
+        final sim = start(2);
+        touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
+        touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
+        // The anchor does not chase the finger — that is the whole point of it.
+        expect(anchorOf(sim, 'p0'), (x: 4.0, y: 5.0));
+        expect(knobOf(sim, 'p0'), (x: 6.5, y: 5.0));
+      },
+    );
 
-    test('coming back to the middle puts the stick away and stops the player',
-        () {
-      final sim = start(2);
-      touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
-      touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
-      run(sim, 0.2);
+    test(
+      'coming back to the middle puts the stick away and stops the player',
+      () {
+        final sim = start(2);
+        touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
+        touch(sim, 'p1', TouchPhase.move, 6.5, 5.0);
+        run(sim, 0.2);
 
-      touch(sim, 'p1', TouchPhase.move, 4.1, 5.0);
-      expect(anchorOf(sim, 'p0'), isNull);
+        touch(sim, 'p1', TouchPhase.move, 4.1, 5.0);
+        expect(anchorOf(sim, 'p0'), isNull);
 
-      final at = positionOf(sim, 0);
-      run(sim, 0.5);
-      expect(positionOf(sim, 0).x, closeTo(at.x, 0.001));
-    });
+        final at = positionOf(sim, 0);
+        run(sim, 0.5);
+        expect(positionOf(sim, 0).x, closeTo(at.x, 0.001));
+      },
+    );
 
     test('it goes when the finger comes off', () {
       final sim = start(2);
@@ -210,7 +362,12 @@ void main() {
       touch(sim, 'p1', TouchPhase.down, 4.0, 5.0);
       touch(sim, 'p1', TouchPhase.move, 8.0, 5.0);
       sim.reset();
-      run(sim, DodgeballConfig.countdownSeconds + _dt);
+      run(
+        sim,
+        DodgeballConfig.briefingSeconds +
+            DodgeballConfig.countdownSeconds +
+            0.1,
+      );
       expect(anchorOf(sim, 'p0'), isNull);
     });
   });
@@ -222,11 +379,14 @@ void main() {
       expect(DodgeballConfig.moveScaleFor(DodgeballConfig.joystickRadius), 1);
       // Past full tilt is still full tilt, never faster.
       expect(
-          DodgeballConfig.moveScaleFor(DodgeballConfig.joystickRadius * 10), 1);
+        DodgeballConfig.moveScaleFor(DodgeballConfig.joystickRadius * 10),
+        1,
+      );
       expect(
-        DodgeballConfig.moveScaleFor((DodgeballConfig.minMoveDistance +
-                DodgeballConfig.joystickRadius) /
-            2),
+        DodgeballConfig.moveScaleFor(
+          (DodgeballConfig.minMoveDistance + DodgeballConfig.joystickRadius) /
+              2,
+        ),
         closeTo(0.5, 1e-9),
       );
     });
@@ -245,8 +405,8 @@ void main() {
 
       final full = coveredPushing(DodgeballConfig.joystickRadius);
       final half = coveredPushing(
-          (DodgeballConfig.minMoveDistance + DodgeballConfig.joystickRadius) /
-              2);
+        (DodgeballConfig.minMoveDistance + DodgeballConfig.joystickRadius) / 2,
+      );
 
       // Full tilt is the old speed, unchanged: this made the stick finer, not
       // the game slower.

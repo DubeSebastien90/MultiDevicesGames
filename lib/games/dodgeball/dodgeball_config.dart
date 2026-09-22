@@ -26,8 +26,56 @@ class DodgeballConfig {
   static const int pointsPerSurvival = 5; // per ball dodge wave
   static const int pointsForWinning = 25;
 
-  // -- countdown --------------------------------------------------------------
-  static const double countdownSeconds = 3.0;
+  // -- getting started --------------------------------------------------------
+  /// The three lines of the briefing, and how long each one holds the screen.
+  ///
+  /// The last one has nothing to demonstrate — it is the object of the game,
+  /// not a control — so it plays over the player walking back from the dash
+  /// the line before it. A line with a still screen under it reads as the
+  /// game having stopped.
+  static const List<String> briefingLines = [
+    'Drag to move',
+    'Tap to dash',
+    'Do NOT get hit',
+  ];
+
+  static const double briefingStepSeconds = 2.2;
+  static const double briefingSeconds = briefingStepSeconds * 3;
+
+  /// When in a step the demonstration begins — the ball appears, and a moment
+  /// later the player gets out of its way. Not at nought: the line wants
+  /// reading before the thing it names happens.
+  static const double briefingDemoAt = 0.5; // seconds into the step
+
+  /// How long the demonstration ball takes to reach the player, and how long
+  /// the player leaves it before dashing. The gap between them is the whole
+  /// lesson: the dash comes *late*, when the ball is nearly there.
+  static const double demoBallTravel = 1.0; // seconds
+  static const double demoDashAt = 0.62; // seconds after the ball appears
+
+  /// How far out the demonstration ball starts, as a multiple of the player's
+  /// own radius. Far enough to be seen arriving, near enough to stay on one
+  /// screen.
+  static const double demoBallDistance = 9.0;
+
+  /// The fades at either end of the demonstration ball's life.
+  static const double demoFadeIn = 0.22; // seconds
+  static const double demoFadeOut = 0.3; // seconds
+
+  /// How fast a player turns back to the way they started, once they have
+  /// walked home during the count.
+  static const double homeTurnSpeed = 6.0; // rad/s
+
+  /// The whole count: three digits of a second each, then GO.
+  ///
+  /// The round starts when GO *leaves*, which is what the extra [goSeconds] on
+  /// the end buys. Counting straight to zero meant the last thing on screen
+  /// was a nought — held for the handful of frames between the clock running
+  /// out and the phase changing, which reads as a stutter rather than a start.
+  static const double countdownSeconds = 3.6;
+
+  /// How long GO holds the screen at the end of the count.
+  static const double goSeconds = 0.6;
 
   // -- gesture thresholds -----------------------------------------------------
   static const double minMoveDistance = 0.8; // cm
