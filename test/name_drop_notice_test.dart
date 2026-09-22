@@ -246,8 +246,9 @@ void main() {
       await tester.tap(find.text('How?'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Settings'), findsWidgets);
-      expect(find.textContaining('AirDrop'), findsWidgets);
+      // The path is shown rather than spelled out now, so what has to be
+      // there is four circled screenshots — one per tap.
+      expect(find.byType(Image), findsNWidgets(4));
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();

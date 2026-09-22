@@ -382,8 +382,9 @@ class TrackGenerator {
     final dx = exit.x - entry.x;
     final dy = exit.y - entry.y;
     final len = math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6)
+    if (len < 1e-6) {
       return [Waypoint((entry.x + exit.x) / 2, (entry.y + exit.y) / 2)];
+    }
     final nx = -dy / len;
     final ny = dx / len;
 
