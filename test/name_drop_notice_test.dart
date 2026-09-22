@@ -246,9 +246,13 @@ void main() {
       await tester.tap(find.text('How?'));
       await tester.pumpAndSettle();
 
-      // The path is shown rather than spelled out now, so what has to be
-      // there is four circled screenshots — one per tap.
+      // Both halves of it: a picture of where to tap, and the word to look
+      // for on the screen in that picture. The two answer different questions
+      // — where, and what — and a walkthrough with only one of them sends
+      // somebody who has drifted a screen away back to the start.
       expect(find.byType(Image), findsNWidgets(4));
+      expect(find.textContaining('Settings'), findsWidgets);
+      expect(find.textContaining('AirDrop'), findsWidgets);
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();

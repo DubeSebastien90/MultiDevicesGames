@@ -107,9 +107,27 @@ const _settingName = {
   'de': 'Geräte zusammenführen',
 };
 
+/// The three rows to tap, as the Settings app spells them, per language.
+///
+/// Back after a spell of pictures alone. A screenshot shows *where* to tap and
+/// says nothing you can search for: somebody who has drifted a screen away, or
+/// whose iOS lays things out a little differently, needs the word to look for.
+/// The pictures and the words answer different halves of the same question.
+const _pathNames = {
+  'en': ['Settings', 'General', 'AirDrop'],
+  'fr': ['Réglages', 'Général', 'AirDrop'],
+  'es': ['Ajustes', 'General', 'AirDrop'],
+  'de': ['Einstellungen', 'Allgemein', 'AirDrop'],
+};
+
 String _localised(Map<String, dynamic> table, BuildContext context) {
   final code = Localizations.localeOf(context).languageCode;
   return (table[code] ?? table['en']!) as String;
+}
+
+List<String> _path(BuildContext context) {
+  final code = Localizations.localeOf(context).languageCode;
+  return (_pathNames[code] ?? _pathNames['en']!).cast<String>();
 }
 
 class _NameDropNotice extends StatelessWidget {
@@ -256,6 +274,19 @@ class _HowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final path = _path(context);
+    final setting = _localised(_settingName, context);
+
+    // Verb and target kept apart, because they are read differently: the verb
+    // is an instruction you already understand, and the target is the word you
+    // are about to go hunting for on the screen in the picture below it.
+    final steps = <(String, String)>[
+      ('Open', path[0]),
+      ('Tap', path[1]),
+      ('Tap', path[2]),
+      ('Turn off', '“$setting”'),
+    ];
+
     return Scaffold(
       backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
@@ -272,10 +303,10 @@ class _HowScreen extends StatelessWidget {
                   title: 'Turning it off',
                   onBack: () => Navigator.of(context).pop(),
                 ),
-                // Centred rather than a plain list: with the words gone the
-                // four shots no longer fill the screen, and hanging them from
-                // the header leaves the gap above the answer instead of
-                // around them. Still scrolls if a small phone needs it to.
+                // Centred rather than hung from the header: the four cards do
+                // not fill a tall phone, and leaving the slack under them puts
+                // it between the walkthrough and its answer. Still scrolls
+                // where a short phone needs it to.
                 Expanded(
                   child: Center(
                     child: SingleChildScrollView(
@@ -283,26 +314,28 @@ class _HowScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Two by two, so all four fit above the answer
-                          // without scrolling: a walkthrough you have to
-                          // scroll is one you lose your place in halfway
-                          // through.
+                          // Two by two, so all four are in view at once: a
+                          // walkthrough you have to scroll is one you lose your
+                          // place in halfway through.
                           GridView.count(
                             crossAxisCount: 2,
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            mainAxisSpacing: 14,
-                            crossAxisSpacing: 14,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.72,
                             children: [
                               for (final (i, shot) in _shots.indexed)
                                 _Step(
                                   number: i + 1,
+                                  verb: steps[i].$1,
+                                  target: steps[i].$2,
                                   shot: shot,
                                   cropAlignment: _cropAlignment[i],
                                 ),
                             ],
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 18),
                           Text(
                             'Everything else about AirDrop keeps working.',
                             style: LobbyText.body,
@@ -314,7 +347,7 @@ class _HowScreen extends StatelessWidget {
                   ),
                 ),
 
-                // Outside the list on purpose: it is the answer to the whole
+                // Outside the scroll on purpose: it is the answer to the whole
                 // screen, and on a short phone the four steps push anything
                 // below them off the bottom — where an answer nobody scrolls
                 // to is an answer nobody gives.
@@ -341,55 +374,102 @@ class _HowScreen extends StatelessWidget {
   }
 }
 
-/// One tap: a picture of the row to touch, numbered.
+/// One tap, as a card: its number, what to do, and a picture of where.
 ///
-/// A tile each rather than one list, so the four of them read as four things
-/// to do in turn — a checklist you can look up at between taps and find your
-/// place in — instead of a paragraph with numbers down the side.
+/// The number and the words sit *above* the shot rather than on it. A badge
+/// dropped into a corner of a screenshot has to dodge whatever that screenshot
+/// is of — which is why it used to be pinned top-right, away from step one's
+/// circle — and a caption laid over one is unreadable on a light iOS screen as
+/// often as not. Given their own strip they are always in the same place, and
+/// the picture below is left to be a picture.
 class _Step extends StatelessWidget {
   const _Step({
     required this.number,
+    required this.verb,
+    required this.target,
     required this.shot,
     required this.cropAlignment,
   });
 
   final int number;
+  final String verb;
+  final String target;
   final String shot;
   final double cropAlignment;
 
+  /// Squarer than the flow's usual plates. [LobbyMetrics.bigRadius] is drawn
+  /// for a button the width of a screen; on a card half that wide it eats into
+  /// the picture's corners, and a screenshot is a rectangle — rounding it hard
+  /// starts cutting off the thing it is a picture of.
+  static const _cardRadius = 16.0;
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(LobbyMetrics.bigRadius),
-      child: Stack(
-        fit: StackFit.expand,
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: LobbyFlowColors.field,
+        borderRadius: BorderRadius.circular(_cardRadius),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Image.asset(
-            'assets/sdk/screenshots/$shot.png',
-            fit: BoxFit.cover,
-            alignment: Alignment(0, cropAlignment),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: LobbyFlowColors.cyan,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$number',
+                    // `height: 1` so the glyph box is the glyph. Without it
+                    // the font's own line spacing is inside the circle too,
+                    // and a digit centred in *that* sits visibly high.
+                    style: LobbyText.count.copyWith(fontSize: 13, height: 1),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '$verb ',
+                          style: LobbyText.body.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(
+                          text: target,
+                          style: LobbyText.label.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          // Top *right*: step one's red circle is in the opposite corner, and
-          // a badge there would land on the one thing the shot is of.
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              width: 30,
-              height: 30,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: LobbyFlowColors.cyan,
-                shape: BoxShape.circle,
-                // A ring, because the badge sits on screenshots that are
-                // light in three corners out of four and near-black in the
-                // fourth.
-                border: Border.all(color: LobbyFlowColors.paper, width: 2),
-              ),
-              child: Text(
-                '$number',
-                style: LobbyText.count.copyWith(fontSize: 15),
-              ),
+          // Whatever the caption leaves. Four captions of different lengths
+          // means four pictures of slightly different heights, which is the
+          // price of every card being as tall as the tallest — and cheaper
+          // than a caption cut off mid-word.
+          Expanded(
+            child: Image.asset(
+              'assets/sdk/screenshots/$shot.png',
+              fit: BoxFit.cover,
+              alignment: Alignment(0, cropAlignment),
             ),
           ),
         ],
