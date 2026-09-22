@@ -107,21 +107,9 @@ const _settingName = {
   'de': 'Geräte zusammenführen',
 };
 
-const _pathNames = {
-  'en': ['Settings', 'General', 'AirDrop'],
-  'fr': ['Réglages', 'Général', 'AirDrop'],
-  'es': ['Ajustes', 'General', 'AirDrop'],
-  'de': ['Einstellungen', 'Allgemein', 'AirDrop'],
-};
-
 String _localised(Map<String, dynamic> table, BuildContext context) {
   final code = Localizations.localeOf(context).languageCode;
   return (table[code] ?? table['en']!) as String;
-}
-
-List<String> _path(BuildContext context) {
-  final code = Localizations.localeOf(context).languageCode;
-  return (_pathNames[code] ?? _pathNames['en']!).cast<String>();
 }
 
 class _NameDropNotice extends StatelessWidget {
@@ -239,33 +227,35 @@ class _NameDropNotice extends StatelessWidget {
   }
 }
 
-/// The walkthrough: four taps, in words.
+/// Where each screenshot's red circle sits, as a vertical alignment for the
+/// square crop.
 ///
-/// Words are all there is, and that is a platform fact rather than a gap
+/// The four shots are different shapes and mostly dead space, so they are
+/// cropped to a common square rather than shown whole. This is the knob that
+/// says which square: -1 keeps the top, 1 the bottom. Re-tune it if the shots
+/// are ever retaken.
+const _cropAlignment = [-1.0, 0.75, 1.0, 0.45];
+
+/// The walkthrough: four taps, shown.
+///
+/// Words were all there was, and that is a platform fact rather than a gap
 /// waiting to be filled — `UIApplication` opens only this app's own pane, and
 /// the `App-Prefs:` scheme that would land on General → AirDrop is one Apple
 /// rejects apps for using. So the screen's whole job is to make the path
-/// unmistakable: the same words iOS shows, in the phone's own language, with
-/// the thing to look for on each screen set apart from the verb that tells you
-/// what to do with it.
+/// unmistakable, and a picture of the row to tap, circled, does that better
+/// than any sentence naming it. The numbers are the only text left.
 class _HowScreen extends StatelessWidget {
   const _HowScreen();
 
+  static const _shots = [
+    'step_1_settings',
+    'step_2_general',
+    'step_3_airdrop',
+    'step_4_toggle',
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final path = _path(context);
-    final setting = _localised(_settingName, context);
-
-    // Verb and target kept apart, because they are read differently: the verb
-    // is an instruction you already understand, and the target is a word you
-    // are about to go hunting for on a screen full of other words.
-    final steps = <(String, String)>[
-      ('Open', path[0]),
-      ('Tap', path[1]),
-      ('Tap', path[2]),
-      ('Turn off', '“$setting”'),
-    ];
-
     return Scaffold(
       backgroundColor: LobbyFlowColors.paper,
       body: SafeArea(
@@ -282,31 +272,45 @@ class _HowScreen extends StatelessWidget {
                   title: 'Turning it off',
                   onBack: () => Navigator.of(context).pop(),
                 ),
+                // Centred rather than a plain list: with the words gone the
+                // four shots no longer fill the screen, and hanging them from
+                // the header leaves the gap above the answer instead of
+                // around them. Still scrolls if a small phone needs it to.
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    children: [
-                      Text(
-                        'Four taps in your phone’s own settings. This app '
-                        'cannot make them for you — iOS only lets an app open '
-                        'its own page of settings, not anybody else’s.',
-                        style: LobbyText.body,
-                        textAlign: TextAlign.center,
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Two by two, so all four fit above the answer
+                          // without scrolling: a walkthrough you have to
+                          // scroll is one you lose your place in halfway
+                          // through.
+                          GridView.count(
+                            crossAxisCount: 2,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 14,
+                            crossAxisSpacing: 14,
+                            children: [
+                              for (final (i, shot) in _shots.indexed)
+                                _Step(
+                                  number: i + 1,
+                                  shot: shot,
+                                  cropAlignment: _cropAlignment[i],
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Everything else about AirDrop keeps working.',
+                            style: LobbyText.body,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 22),
-                      for (final (i, step) in steps.indexed) ...[
-                        if (i > 0) const SizedBox(height: 10),
-                        _Step(number: i + 1, verb: step.$1, target: step.$2),
-                      ],
-                      const SizedBox(height: 24),
-                      Text(
-                        'This also stops your iPhone starting an AirDrop when '
-                        'you hold it near someone else’s. Everything else '
-                        'about AirDrop keeps working.',
-                        style: LobbyText.body,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
 
@@ -337,57 +341,54 @@ class _HowScreen extends StatelessWidget {
   }
 }
 
-/// One tap: its number, what to do, and the word to look for.
+/// One tap: a picture of the row to touch, numbered.
 ///
-/// A plate each rather than one list, so the four of them read as four things
+/// A tile each rather than one list, so the four of them read as four things
 /// to do in turn — a checklist you can look up at between taps and find your
 /// place in — instead of a paragraph with numbers down the side.
 class _Step extends StatelessWidget {
-  const _Step({required this.number, required this.verb, required this.target});
+  const _Step({
+    required this.number,
+    required this.shot,
+    required this.cropAlignment,
+  });
 
   final int number;
-  final String verb;
-  final String target;
+  final String shot;
+  final double cropAlignment;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: LobbyFlowColors.field,
-        borderRadius: BorderRadius.circular(LobbyMetrics.bigRadius),
-      ),
-      child: Row(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(LobbyMetrics.bigRadius),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: LobbyFlowColors.cyan,
-              shape: BoxShape.circle,
-            ),
-            child: Text('$number', style: LobbyText.count),
+          Image.asset(
+            'assets/sdk/screenshots/$shot.png',
+            fit: BoxFit.cover,
+            alignment: Alignment(0, cropAlignment),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$verb ',
-                    style: LobbyText.label.copyWith(
-                      color: LobbyFlowColors.muted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  TextSpan(
-                    text: target,
-                    style: LobbyText.label.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+          // Top *right*: step one's red circle is in the opposite corner, and
+          // a badge there would land on the one thing the shot is of.
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: LobbyFlowColors.cyan,
+                shape: BoxShape.circle,
+                // A ring, because the badge sits on screenshots that are
+                // light in three corners out of four and near-black in the
+                // fourth.
+                border: Border.all(color: LobbyFlowColors.paper, width: 2),
+              ),
+              child: Text(
+                '$number',
+                style: LobbyText.count.copyWith(fontSize: 15),
               ),
             ),
           ),
