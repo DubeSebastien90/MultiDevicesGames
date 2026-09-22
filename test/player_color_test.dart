@@ -54,6 +54,15 @@ void main() {
       expect(PlayerPalette.byId(null), isNull);
     });
 
+    test('the away grey is never a seat', () {
+      expect(PlayerPalette.all, isNot(contains(PlayerPalette.away)));
+      expect(PlayerPalette.byId(PlayerPalette.away.id), isNull);
+      expect(
+        PlayerPalette.firstFree([for (final c in PlayerPalette.all) c.id]),
+        isNull,
+      );
+    });
+
     test('firstFree skips what is taken and runs out honestly', () {
       expect(PlayerPalette.firstFree([]), PlayerPalette.all.first);
       expect(
@@ -185,6 +194,144 @@ void main() {
             host.phones.firstWhere((p) => p.phoneId == slice.phoneId);
         expect(slice.color?.id, record.color?.id);
       }
+    });
+  });
+
+  group('a colour belongs to somebody who is here', () {
+    late HostSession host;
+    late Uri address;
+    final phones = <ClientSession>[];
+
+    setUp(() async {
+      host = HostSession(name: 'colour board', advertise: false);
+      address = (await host.start()).replace(host: '127.0.0.1');
+    });
+
+    tearDown(() async {
+      for (final p in phones) {
+        p.dispose();
+      }
+      phones.clear();
+      host.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+
+    Future<ClientSession> join(
+      String label, {
+      String? deviceId,
+      PlayerColor? preferred,
+      void Function(PlayerColor)? onColorChosen,
+    }) async {
+      final phone = ClientSession(
+        transport: WebSocketTransport(address),
+        metrics: portraitPhone(label),
+        deviceId: deviceId ?? '$label-device',
+        preferredColor: preferred,
+        onColorChosen: onColorChosen,
+      );
+      phones.add(phone);
+      await phone.connect();
+      await waitFor(
+        '$label answered',
+        () =>
+            phone.phase == ClientPhase.rejected ||
+            host.phones.any((p) => p.label == label && p.color != null),
+      );
+      return phone;
+    }
+
+    Future<void> leave(ClientSession phone) async {
+      final id = phone.phoneId;
+      phone.dispose();
+      phones.remove(phone);
+      await waitFor(
+        'left',
+        () => host.phones.any((p) => p.phoneId == id && !p.connected),
+      );
+    }
+
+    test('dropping out in the lobby hands the colour back, not the seat',
+        () async {
+      final ada = await join('Ada');
+      final seat = ada.phoneId!;
+      final hers = host.phones.single.color!;
+      host.scores.award(seat, 4);
+
+      await leave(ada);
+
+      final away = host.phones.single;
+      expect(away.phoneId, seat, reason: 'the seat went with the colour');
+      expect(away.color, isNull, reason: 'the colour is still held');
+      expect(host.scores[seat], 4);
+
+      await join('Bob');
+      expect(host.phones.last.color, hers,
+          reason: 'the freed colour was not offered to the next phone');
+    });
+
+    test('seven away and one here still lets a new phone in', () async {
+      final everyone = [
+        for (var i = 0; i < PlayerPalette.size; i++) await join('P$i'),
+      ];
+      for (final p in everyone.skip(1)) {
+        await leave(p);
+      }
+
+      final newcomer = await join('New');
+      expect(newcomer.phase, isNot(ClientPhase.rejected));
+      expect(host.phones.last.color, isNotNull);
+    });
+
+    test('a ninth phone is turned away rather than seated with no colour',
+        () async {
+      for (var i = 0; i < PlayerPalette.size; i++) {
+        await join('P$i');
+      }
+
+      final ninth = await join('Ninth');
+      expect(ninth.phase, ClientPhase.rejected);
+      expect(ninth.message, contains('full'));
+      expect(host.phones, hasLength(PlayerPalette.size));
+    });
+
+    test('a phone sits in the colour it prefers when nobody has it', () async {
+      await join('Ada', preferred: PlayerPalette.red);
+      expect(host.phones.single.color, PlayerPalette.red);
+    });
+
+    test('a preferred colour already taken falls back to the first free one',
+        () async {
+      await join('Ada', preferred: PlayerPalette.red);
+      await join('Bob', preferred: PlayerPalette.red);
+
+      expect(host.phones.last.color, PlayerPalette.all.first);
+    });
+
+    test('coming back after the colour went sits them in their preference',
+        () async {
+      final ada = await join('Ada', deviceId: 'ada', preferred: PlayerPalette.red);
+      final seat = ada.phoneId;
+      await leave(ada);
+
+      final again = await join('Ada', deviceId: 'ada', preferred: PlayerPalette.red);
+      expect(again.phoneId, seat);
+      expect(host.phones.single.color, PlayerPalette.red);
+    });
+
+    test('a pick the host confirms is remembered; a lost race is not',
+        () async {
+      final chosen = <PlayerColor>[];
+      final ada = await join('Ada');
+      final bob = await join('Bob', onColorChosen: chosen.add);
+
+      bob.pickColor(PlayerPalette.red);
+      await waitFor('confirmed', () => chosen.isNotEmpty);
+      expect(chosen, [PlayerPalette.red]);
+
+      bob.pickColor(ada.myColor!);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(chosen, [PlayerPalette.red],
+          reason: 'a colour somebody else holds was remembered');
     });
   });
 }

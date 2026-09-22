@@ -150,9 +150,13 @@ class _ShapeArt implements PlayerArt {
   bool get isLoaded => _image != null;
 
   /// Where this picture lives, or null for a character nobody has drawn yet.
+  ///
+  /// Looked up rather than defaulted: a colour with no character of its own —
+  /// [PlayerPalette.away] — is the geometry in its own shade, not Green's
+  /// picture.
   String? get _asset => switch (slot) {
-    PlayerArtSlot.topdown => Cast.of(color).topdownAsset,
-    PlayerArtSlot.face => Cast.of(color).faceAsset,
+    PlayerArtSlot.topdown => Cast.byColorId(color.id)?.topdownAsset,
+    PlayerArtSlot.face => Cast.byColorId(color.id)?.faceAsset,
   };
 
   @override

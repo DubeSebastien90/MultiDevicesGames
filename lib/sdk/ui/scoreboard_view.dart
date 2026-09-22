@@ -211,7 +211,11 @@ class _Row extends StatelessWidget {
   Widget build(BuildContext context) {
     final badge = medals ? _medal[place] : null;
     final ink = away ? LobbyFlowColors.muted : LobbyFlowColors.ink;
-    final art = color;
+    // Somebody who is not here is the grey character, whatever colour they
+    // last wore: between rounds that colour has gone back to the palette and
+    // may be on somebody else by now, and mid-round it is only being kept for
+    // the game's sake.
+    final art = away ? PlayerPalette.away : color;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -235,10 +239,7 @@ class _Row extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           if (art != null) ...[
-            Opacity(
-              opacity: away ? 0.45 : 1,
-              child: PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
-            ),
+            PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
             const SizedBox(width: 8),
           ],
           Expanded(

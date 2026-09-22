@@ -199,11 +199,14 @@ class ClientSession extends ChangeNotifier {
     required DeviceMetrics metrics,
     String? joinCode,
     String? deviceId,
+    PlayerColor? preferredColor,
+    this.onColorChosen,
     AudioOutput? audioOutput,
   }) : _transport = transport,
        _metrics = metrics,
        _joinCode = joinCode,
        _deviceId = deviceId,
+       _preferredColor = preferredColor,
        audio = AudioEngine(output: audioOutput);
 
   final Transport _transport;
@@ -218,6 +221,18 @@ class ClientSession extends ChangeNotifier {
   /// Offered rather than claimed: the host hands a seat back only if it is
   /// empty, so this can never take one from a phone still sitting in it.
   final String? _deviceId;
+
+  /// The colour this phone would like to sit down in, from the last time it
+  /// chose one. A wish: the host seats it there only if nobody has it.
+  final PlayerColor? _preferredColor;
+
+  /// Told when a colour this phone asked for is confirmed by the host — not
+  /// when a pick loses a race, and not for the colour it was seated in without
+  /// asking. What gets remembered is a choice somebody made.
+  final void Function(PlayerColor color)? onColorChosen;
+
+  /// The pick waiting on the host's answer.
+  String? _requestedColorId;
 
   final buffer = SnapshotBuffer();
   final _clock = Stopwatch()..start();
@@ -434,6 +449,7 @@ class ClientSession extends ChangeNotifier {
         'type': ClientMsg.join,
         if (_joinCode != null) 'code': _joinCode,
         if (_deviceId != null) 'deviceId': _deviceId,
+        if (_preferredColor != null) 'preferredColor': _preferredColor.id,
         'catalog': GameCatalog.fingerprint,
       });
       _sendCalibration();
@@ -488,6 +504,7 @@ class ClientSession extends ChangeNotifier {
 
   /// Ask to be [color]. The host decides; watch [myColor] for the answer.
   void pickColor(PlayerColor color) {
+    _requestedColorId = color.id;
     _transport.send({
       'type': ClientMsg.pickColor,
       'phoneId': _phoneId,
@@ -654,6 +671,11 @@ class ClientSession extends ChangeNotifier {
         ];
         _hostPhase = msg['phase'] as String?;
         _hostPhoneId = (msg['host'] as String?) ?? _hostPhoneId;
+        final chosen = myColor;
+        if (_requestedColorId != null && chosen?.id == _requestedColorId) {
+          _requestedColorId = null;
+          onColorChosen?.call(chosen!);
+        }
         _adoptGame(msg['game'] as String?);
         // The host went back to setting up: follow it out of whatever screen
         // this phone is on rather than stranding it on a stale one.

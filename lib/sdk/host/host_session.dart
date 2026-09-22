@@ -543,11 +543,22 @@ class HostSession extends ChangeNotifier {
   /// headless host in a test has no speaker, and general sounds go nowhere.
   String? get hostPhoneId => _localRecord?.phoneId;
 
-  void addLocalPeer(PeerLink peer) {
-    _localRecord = _attachPeer(peer, trusted: true);
+  /// [preferredColor] is the host's own phone's usual colour — the same
+  /// preference a joiner carries in its `join` message, which the trusted
+  /// loopback never has to send.
+  void addLocalPeer(PeerLink peer, {PlayerColor? preferredColor}) {
+    _localRecord = _attachPeer(
+      peer,
+      trusted: true,
+      preferredColor: preferredColor,
+    );
   }
 
-  PhoneRecord _attachPeer(PeerLink link, {bool trusted = false}) {
+  PhoneRecord _attachPeer(
+    PeerLink link, {
+    bool trusted = false,
+    PlayerColor? preferredColor,
+  }) {
     // A round in progress is no longer a closed door here.
     //
     // It used to be turned away the moment a socket opened, which was too
@@ -571,7 +582,7 @@ class HostSession extends ChangeNotifier {
     );
 
     if (trusted) {
-      _admit(record);
+      _admit(record, preferredColor: preferredColor);
       return record;
     }
 
@@ -628,7 +639,23 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    _admit(record, deviceId: deviceId);
+    // Eight characters, eight people. A ninth phone would be let in with no
+    // colour — invisible in the picker, unable to take one, and handed to a
+    // game as a slice with nobody on it — so the door is shut instead. A seat
+    // that still holds its colour (somebody coming back mid-round) is theirs
+    // whatever the palette says.
+    final seat = _seatFor(deviceId);
+    if (seat?.color == null &&
+        PlayerPalette.firstFree(_takenColorIds()) == null) {
+      _reject(record.link, 'The table is full.');
+      return;
+    }
+
+    _admit(
+      record,
+      deviceId: deviceId,
+      preferredColor: PlayerPalette.byId(msg['preferredColor'] as String?),
+    );
 
     // final offered = (msg['code'] as String?)?.trim() ?? '';
     // if (_codeMatches(offered)) {
@@ -681,7 +708,11 @@ class HostSession extends ChangeNotifier {
     return null;
   }
 
-  void _admit(PhoneRecord record, {String? deviceId}) {
+  void _admit(
+    PhoneRecord record, {
+    String? deviceId,
+    PlayerColor? preferredColor,
+  }) {
     record.authenticated = true;
     record.deviceId = deviceId;
 
@@ -692,14 +723,17 @@ class HostSession extends ChangeNotifier {
       // which is keyed by that number, carries straight on rather than opening
       // a second row under the same name.
       record.phoneId = returning.phoneId;
-      record.color = returning.color;
+      // Still theirs if they left mid-round, when the game was built around
+      // it. Left in the lobby it was handed back to the palette, so they are
+      // seated again like anybody arriving.
+      record.color = returning.color ?? _seatColour(preferredColor);
       record.metrics ??= returning.metrics;
       _phones[_phones.indexOf(returning)] = record;
     } else {
       record.phoneId = 'p${_nextPhoneNumber++}';
       // Seat them immediately. A player who never opens the picker still has an
       // identity, so choosing is a change rather than a gate on starting.
-      record.color = PlayerPalette.firstFree(_takenColorIds());
+      record.color = _seatColour(preferredColor);
       _phones.add(record);
     }
 
@@ -794,6 +828,31 @@ class HostSession extends ChangeNotifier {
     Future<void>.delayed(const Duration(milliseconds: 300), link.close);
   }
 
+  /// The colour a phone sits down in: the one it asked for if nobody has it,
+  /// otherwise the first one free.
+  ///
+  /// The preference belongs to the phone, not to this session — it is what
+  /// that person picked last time, anywhere — so the host remembers nothing
+  /// and simply honours it when it can.
+  PlayerColor? _seatColour(PlayerColor? preferred) {
+    final taken = _takenColorIds().toSet();
+    if (preferred != null && !taken.contains(preferred.id)) return preferred;
+    return PlayerPalette.firstFree(taken);
+  }
+
+  /// Give the colours of everybody who is not here back to the palette.
+  ///
+  /// Only ever between rounds. Mid-round a colour *is* the player to the game —
+  /// the roster, the board, whose goal is whose — so an absent player keeps it
+  /// until the table is back somewhere nothing is built on it. They keep their
+  /// seat and their score either way; what they lose is the right to stop
+  /// somebody else being red. The standings draw them in grey meanwhile.
+  void _releaseAwayColours() {
+    for (final p in _phones) {
+      if (!p.connected) p.color = null;
+    }
+  }
+
   Iterable<String> _takenColorIds() sync* {
     for (final p in _phones) {
       final c = p.color;
@@ -855,6 +914,7 @@ class HostSession extends ChangeNotifier {
     }
     if (!record.authenticated || !record.connected) return;
     record.connected = false;
+    if (_openToStrangers) _releaseAwayColours();
 
     // Kept either way, marked not connected.
     //
@@ -957,6 +1017,7 @@ class HostSession extends ChangeNotifier {
       _layout = null;
       _runGames = null;
       _phase = HostPhase.lobby;
+      _releaseAwayColours();
       _broadcastLobby();
       notifyListeners();
       return;
@@ -1305,6 +1366,7 @@ class HostSession extends ChangeNotifier {
       _layout = null;
       _runGames = null;
       _phase = HostPhase.lobby;
+      _releaseAwayColours();
       _broadcastLobby();
       notifyListeners();
       return;
@@ -1375,6 +1437,7 @@ class HostSession extends ChangeNotifier {
     } catch (e) {
       _planError = '${game.manifest.title}: $e';
       _phase = HostPhase.lobby;
+      _releaseAwayColours();
       _game = null;
       _layout = null;
       _runGames = null;
@@ -1687,6 +1750,7 @@ class HostSession extends ChangeNotifier {
       p.confirmed = false;
     }
     _phase = HostPhase.scoreboard;
+    _releaseAwayColours();
     // Forced, because this screen *is* the scores: a phone whose last snapshot
     // was diffed away has nothing else to draw.
     _broadcastScores(force: true);
@@ -1745,6 +1809,7 @@ class HostSession extends ChangeNotifier {
       p.confirmed = false;
     }
     _phase = HostPhase.lobby;
+    _releaseAwayColours();
     _mode = RoundMode.playlist;
     // Back to the top of the list. The playlist is played through once, so
     // without this a second Play would start from wherever the last one

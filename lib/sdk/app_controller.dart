@@ -4,6 +4,8 @@ import 'client/client_session.dart';
 import 'host/host_session.dart';
 import 'model/device_identity.dart';
 import 'model/device_metrics.dart';
+import 'model/player_color.dart';
+import 'model/preferred_color.dart';
 import 'audio/audioplayers_output.dart';
 import 'monetization/premium_status.dart';
 import 'net/loopback_transport.dart';
@@ -46,6 +48,15 @@ class AppController extends ChangeNotifier {
   /// Load it now, so joining does not have to wait on storage.
   Future<void> warmUp() async {
     _deviceId ??= await DeviceIdentity.load();
+    _preferredColor ??= await PreferredColor.load();
+  }
+
+  /// The colour this phone last picked, offered to every table it sits at.
+  PlayerColor? _preferredColor;
+
+  void _rememberColor(PlayerColor color) {
+    _preferredColor = color;
+    PreferredColor.save(color);
   }
   HostSession? _host;
   ClientSession? _client;
@@ -66,18 +77,20 @@ class AppController extends ChangeNotifier {
     try {
       final host = HostSession(name: name, premium: premium);
       await host.start();
+      await warmUp();
 
       final loopback = LoopbackPair();
       final client = ClientSession(
         transport: loopback.transport,
         metrics: metrics,
+        onColorChosen: _rememberColor,
         audioOutput: AudioPlayersOutput(),
       );
 
       // Connect (and therefore subscribe) before handing the peer to the host,
       // so the `welcome` it sends immediately has somewhere to land.
       await client.connect();
-      host.addLocalPeer(loopback.peer);
+      host.addLocalPeer(loopback.peer, preferredColor: _preferredColor);
 
       _host = host..addListener(notifyListeners);
       _client = client..addListener(notifyListeners);
@@ -106,6 +119,8 @@ class AppController extends ChangeNotifier {
         // Who this device is, so a session it drops out of and comes back to
         // gives it its own row in the standings rather than a second one.
         deviceId: _deviceId,
+        preferredColor: _preferredColor,
+        onColorChosen: _rememberColor,
         audioOutput: AudioPlayersOutput(),
       );
       await client.connect();

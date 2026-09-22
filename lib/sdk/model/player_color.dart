@@ -150,6 +150,22 @@ class PlayerPalette {
     skinDark: Color(0xFF932323),
   );
 
+  /// Not a seat: how somebody who is not at the table is drawn.
+  ///
+  /// Deliberately left out of [all], so it is never handed out, never counted
+  /// in [size] and never found by [byId] — it does not cross the wire. A
+  /// player who drops out keeps their row in the standings, and this is the
+  /// character on it until they come back and sit down in a real colour. The
+  /// same `.riv` as everyone else, fed these shades.
+  static const away = PlayerColor(
+    id: 'away',
+    name: 'Away',
+    value: Color(0xFF9E9E9E),
+    onColor: Color(0xFF2B2B2B),
+    skinLight: Color(0xFFC6C6C6),
+    skinDark: Color(0xFF6F6F6F),
+  );
+
   /// Every colour, in hand-out order.
   static const all = <PlayerColor>[
     green,
