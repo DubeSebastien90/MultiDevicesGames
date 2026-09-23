@@ -18,6 +18,13 @@ class HotPotatoConfig {
   /// The bang, as a multiple of the resting radius.
   static const double blastScale = 4.0;
 
+  /// How long the bang stays on screen before the round is called, so the
+  /// table gets to watch it go off rather than cutting straight to results.
+  static const double blastHoldSeconds = 2;
+
+  /// Bits of potato thrown out by the bang.
+  static const int blastChunks = 36;
+
   /// How fast it travels between seats, in world units per second. Fast enough
   /// to feel thrown, slow enough that you watch it cross the table.
   static const double passSpeed = 55;

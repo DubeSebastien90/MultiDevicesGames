@@ -305,10 +305,39 @@ void main() {
       expect(sim.sharedState['exploded'], isFalse);
       expect(started.scores.isUsed, isFalse);
 
-      for (var i = 0; i < PlatformConfig.simHz * 2; i++) {
+      for (var i = 0; i < PlatformConfig.simHz * 4; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
       expect(sim.sharedState['exploded'], isTrue);
+      expect(sim.outcome, isNotNull);
+    });
+
+    test('lets the bang play before calling the round', () {
+      final started = start(3);
+      final sim = started.sim;
+      final victim = sim.holder;
+
+      // Just past the fuse: it has gone off, and it has already cost points…
+      final fuseTicks =
+          (HotPotatoConfig.fuseSeconds * PlatformConfig.simHz).ceil() + 1;
+      for (var i = 0; i < fuseTicks; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.sharedState['exploded'], isTrue);
+      expect(started.scores[victim], -HotPotatoConfig.explosionPenalty);
+      // …but the results wait.
+      expect(sim.outcome, isNull);
+
+      final holdTicks =
+          (HotPotatoConfig.blastHoldSeconds * PlatformConfig.simHz).ceil() - 2;
+      for (var i = 0; i < holdTicks; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.outcome, isNull, reason: 'called before the hold was up');
+
+      for (var i = 0; i < 4; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
       expect(sim.outcome, isNotNull);
     });
 

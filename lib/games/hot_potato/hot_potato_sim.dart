@@ -100,6 +100,9 @@ class HotPotatoSim implements GameSim {
   bool _exploded = false;
   bool _awarded = false;
 
+  /// Sim time since the bang — the round is only called once it has played.
+  double _sinceBlast = 0;
+
   /// Swipes in progress, by phone. A pass is a down and an up far enough apart.
   final _swipeStart = <String, _Point>{};
 
@@ -193,7 +196,10 @@ class HotPotatoSim implements GameSim {
   @override
   void step(double dt) {
     _elapsed += dt;
-    if (_exploded) return;
+    if (_exploded) {
+      _sinceBlast += dt;
+      return;
+    }
 
     _fuseLeft -= dt;
     if (_fuseLeft <= 0) {
@@ -289,6 +295,7 @@ class HotPotatoSim implements GameSim {
     _elapsed = 0;
     _exploded = false;
     _awarded = false;
+    _sinceBlast = 0;
     _swipeStart.clear();
     _pendingStep = 0;
     _flying = false;
@@ -398,6 +405,9 @@ class HotPotatoSim implements GameSim {
   @override
   GameOutcome? get outcome {
     if (!_exploded) return null;
+    // Let the bang play first. The points were already charged at the bang;
+    // this only holds back the results screen.
+    if (_sinceBlast < HotPotatoConfig.blastHoldSeconds) return null;
 
     // Everyone who passed it on in time; the holder is the one person at the
     // table who did not. Built once — `outcome` is polled several times a tick.

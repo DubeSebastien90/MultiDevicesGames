@@ -36,6 +36,9 @@ class HotPotatoView extends ShapeView {
   final _random = math.Random();
   double _smokeOwed = 0;
 
+  /// Bits of potato from the bang. Local, like the smoke.
+  final _chunks = <_Chunk>[];
+
   /// How long the blast has been on screen here, for its bloom.
   double _blastAge = -1;
 
@@ -46,8 +49,13 @@ class HotPotatoView extends ShapeView {
     final heat = _heatOf(frame);
     final dt = frame.dt.clamp(0.0, 0.1);
 
-    if (frame.sharedState['holder'] == phoneId) {
-      _drawVignette(canvas, frame, heat);
+    // Once it has gone off the pressure is over: the red lets go quickly
+    // rather than blinking off, so it reads as relief and not as a glitch.
+    final calmDown = frame.sharedState['exploded'] == true
+        ? 1 - (math.max(_blastAge, 0.0) / 0.4).clamp(0.0, 1.0)
+        : 1.0;
+    if (frame.sharedState['holder'] == phoneId && calmDown > 0) {
+      _drawVignette(canvas, frame, heat * calmDown);
     }
 
     for (final arm in frame.ofKind('arm')) {
@@ -72,11 +80,22 @@ class HotPotatoView extends ShapeView {
     if (blast != null) _blast(frame, blast, dt);
     if (blast == null) _blastAge = -1;
     _stepSmoke(dt);
+    _stepChunks(dt);
 
     if (shadow != null) _drawShadow(canvas, shadow, heat, height);
     _drawSmoke(canvas);
     if (potato != null) _drawPotato(canvas, frame, potato, heat, height);
     if (blast != null) _drawBlast(canvas, blast);
+    _drawChunks(canvas);
+  }
+
+  /// Fill with a gradient. The colour goes back to opaque first: a paint's
+  /// colour still scales a shader's opacity, so whatever alpha the last puff
+  /// of smoke left behind would otherwise fade the whole gradient with it.
+  void _shade(ui.Shader shader) {
+    _fill
+      ..color = const Color(0xFFFFFFFF)
+      ..shader = shader;
   }
 
   /// 0 when the fuse is lit, 1 when it goes off.
@@ -97,24 +116,25 @@ class HotPotatoView extends ShapeView {
     if (heat <= 0) return;
     final view = frame.visible;
     final centre = Offset(frame.me.worldCenterX, frame.me.worldCenterY);
-    final radius = math.sqrt(
-          view.width * view.width + view.height * view.height,
-        ) /
-        2;
+    final radius =
+        math.sqrt(view.width * view.width + view.height * view.height) / 2;
 
     final beat = 1.5 + heat * 6; // Beats per second.
-    final pulse = 0.8 + 0.2 * math.sin(frame.timeMs / 1000 * beat * 2 * math.pi);
+    final pulse =
+        0.8 + 0.2 * math.sin(frame.timeMs / 1000 * beat * 2 * math.pi);
     final strength = math.pow(heat, 1.4) * 0.7 * pulse;
 
-    _fill.shader = ui.Gradient.radial(
-      centre,
-      radius,
-      [
-        const Color(0x00FF2A12),
-        Color(HotPotatoConfig.colorHot).withValues(alpha: strength * 0.35),
-        Color(HotPotatoConfig.colorHot).withValues(alpha: strength),
-      ],
-      [0.25 - 0.2 * heat, 0.65, 1],
+    _shade(
+      ui.Gradient.radial(
+        centre,
+        radius,
+        [
+          const Color(0x00FF2A12),
+          Color(HotPotatoConfig.colorHot).withValues(alpha: strength * 0.35),
+          Color(HotPotatoConfig.colorHot).withValues(alpha: strength),
+        ],
+        [0.25 - 0.2 * heat, 0.65, 1],
+      ),
     );
     canvas.drawRect(
       Rect.fromLTWH(view.left, view.top, view.width, view.height),
@@ -127,7 +147,9 @@ class HotPotatoView extends ShapeView {
   void _drawArm(Canvas canvas, RenderEntity arm) {
     final w = arm.propDouble(ShapeProps.width);
     final h = arm.propDouble(ShapeProps.height);
-    _fill.color = Color(arm.propInt(ShapeProps.color, HotPotatoConfig.colorArm));
+    _fill.color = Color(
+      arm.propInt(ShapeProps.color, HotPotatoConfig.colorArm),
+    );
     canvas
       ..save()
       ..translate(arm.x, arm.y)
@@ -186,13 +208,11 @@ class HotPotatoView extends ShapeView {
 
     // The glow: nothing when it is fresh, a red halo by the end.
     if (heat > 0.05) {
-      _fill.shader = ui.Gradient.radial(
-        centre,
-        r * (1.4 + 1.6 * heat),
-        [
+      _shade(
+        ui.Gradient.radial(centre, r * (1.4 + 1.6 * heat), [
           Color(HotPotatoConfig.colorHot).withValues(alpha: 0.75 * heat),
           const Color(0x00FF2A12),
-        ],
+        ]),
       );
       canvas.drawCircle(centre, r * (1.4 + 1.6 * heat), _fill);
       _fill.shader = null;
@@ -209,15 +229,17 @@ class HotPotatoView extends ShapeView {
       width: r * 2.4,
       height: r * 1.8,
     );
-    _fill.shader = ui.Gradient.radial(
-      Offset(-r * 0.35, -r * 0.3),
-      r * 1.4,
-      [
-        Color.lerp(body, const Color(0xFFFFF0C8), 0.35)!,
-        body,
-        Color.lerp(body, const Color(0xFF000000), 0.35)!,
-      ],
-      [0, 0.55, 1],
+    _shade(
+      ui.Gradient.radial(
+        Offset(-r * 0.35, -r * 0.3),
+        r * 1.4,
+        [
+          Color.lerp(body, const Color(0xFFFFF0C8), 0.35)!,
+          body,
+          Color.lerp(body, const Color(0xFF000000), 0.35)!,
+        ],
+        [0, 0.55, 1],
+      ),
     );
     canvas.drawOval(shape, _fill);
     _fill.shader = null;
@@ -263,8 +285,7 @@ class HotPotatoView extends ShapeView {
             .clamp(0.0, 1.0);
     if (power <= 0) return;
 
-    _smokeOwed +=
-        dt * HotPotatoConfig.smokeMaxPerSecond * math.pow(power, 1.5);
+    _smokeOwed += dt * HotPotatoConfig.smokeMaxPerSecond * math.pow(power, 1.5);
     final r = _radius(heat);
     final up = _towardMiddle(frame, potato.x, potato.y);
     while (_smokeOwed >= 1) {
@@ -294,6 +315,7 @@ class HotPotatoView extends ShapeView {
       return;
     }
     _blastAge = 0;
+    _burst(blast);
     final r = blast.propDouble(ShapeProps.radius);
     for (var i = 0; i < 40; i++) {
       final a = _random.nextDouble() * 2 * math.pi;
@@ -310,6 +332,90 @@ class HotPotatoView extends ShapeView {
           power: 1,
         ),
       );
+    }
+  }
+
+  /// The potato in pieces: mostly skin, the colour it was when it went —
+  /// red-hot by then — and some pale flesh from the inside.
+  void _burst(RenderEntity blast) {
+    final r = HotPotatoConfig.potatoRadius;
+    for (var i = 0; i < HotPotatoConfig.blastChunks; i++) {
+      final a = _random.nextDouble() * 2 * math.pi;
+      final speed = 10 + _random.nextDouble() * 22;
+      final flesh = _random.nextDouble() < 0.3;
+      _chunks.add(
+        _Chunk(
+          x: blast.x,
+          y: blast.y,
+          vx: math.cos(a) * speed,
+          vy: math.sin(a) * speed,
+          angle: _random.nextDouble() * 2 * math.pi,
+          spin: (_random.nextDouble() - 0.5) * 20,
+          size: r * (0.18 + _random.nextDouble() * 0.3),
+          life: 1.2 + _random.nextDouble() * 0.7,
+          colour: flesh
+              ? Color.lerp(
+                  const Color(0xFFF7E3A1),
+                  const Color(0xFFE8B45A),
+                  _random.nextDouble(),
+                )!
+              : Color.lerp(
+                  Color(HotPotatoConfig.colorPotato),
+                  Color(HotPotatoConfig.colorHot),
+                  0.5 + _random.nextDouble() * 0.5,
+                )!,
+        ),
+      );
+    }
+  }
+
+  void _stepChunks(double dt) {
+    final drag = math.exp(-3.2 * dt);
+    for (final c in _chunks) {
+      c.age += dt;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.vx *= drag;
+      c.vy *= drag;
+      c.angle += c.spin * dt;
+      c.spin *= drag;
+    }
+    _chunks.removeWhere((c) => c.age >= c.life);
+  }
+
+  void _drawChunks(Canvas canvas) {
+    for (final c in _chunks) {
+      // Solid while they fly, fading only at the very end.
+      final t = c.age / c.life;
+      final alpha = t < 0.7 ? 1.0 : 1 - (t - 0.7) / 0.3;
+      canvas
+        ..save()
+        ..translate(c.x, c.y)
+        ..rotate(c.angle);
+      _fill.color = Color.lerp(
+        c.colour,
+        const Color(0xFF000000),
+        0.35,
+      )!.withValues(alpha: alpha);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: c.size * 2.3,
+          height: c.size * 1.6,
+        ),
+        _fill,
+      );
+      _fill.color = c.colour.withValues(alpha: alpha);
+      canvas
+        ..drawOval(
+          Rect.fromCenter(
+            center: Offset(-c.size * 0.1, -c.size * 0.1),
+            width: c.size * 1.9,
+            height: c.size * 1.25,
+          ),
+          _fill,
+        )
+        ..restore();
     }
   }
 
@@ -356,19 +462,23 @@ class HotPotatoView extends ShapeView {
     final t = math.max(_blastAge, 0.0);
     final bloom = 1 - math.pow(1 - math.min(t / 0.35, 1), 3);
     final r = full * (0.3 + 0.7 * bloom);
-    // Bright, then settling into an ember that stays for the results.
-    final fade = 1 - 0.5 * math.min(math.max(t - 0.4, 0) / 0.8, 1);
+    // Bright, then gone by the time the first bits of potato land — a glow
+    // hanging on after the debris has cleared reads as a stuck frame.
+    final fade = 1 - ((t - 0.3) / 0.8).clamp(0.0, 1.0);
+    if (fade <= 0) return;
 
-    _fill.shader = ui.Gradient.radial(
-      Offset(blast.x, blast.y),
-      r,
-      [
-        const Color(0xFFFFFBE6).withValues(alpha: fade),
-        const Color(0xFFFFB02E).withValues(alpha: fade),
-        Color(HotPotatoConfig.colorBlast).withValues(alpha: 0.85 * fade),
-        const Color(0x00FF2A12),
-      ],
-      [0, 0.3, 0.7, 1],
+    _shade(
+      ui.Gradient.radial(
+        Offset(blast.x, blast.y),
+        r,
+        [
+          const Color(0xFFFFFBE6).withValues(alpha: fade),
+          const Color(0xFFFFB02E).withValues(alpha: fade),
+          Color(HotPotatoConfig.colorBlast).withValues(alpha: 0.85 * fade),
+          const Color(0x00FF2A12),
+        ],
+        [0, 0.3, 0.7, 1],
+      ),
     );
     canvas.drawCircle(Offset(blast.x, blast.y), r, _fill);
     _fill.shader = null;
@@ -387,7 +497,33 @@ class HotPotatoView extends ShapeView {
   @override
   void dispose() {
     _smoke.clear();
+    _chunks.clear();
   }
+}
+
+class _Chunk {
+  _Chunk({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.angle,
+    required this.spin,
+    required this.size,
+    required this.life,
+    required this.colour,
+  });
+
+  double x;
+  double y;
+  double vx;
+  double vy;
+  double angle;
+  double spin;
+  double age = 0;
+  final double size;
+  final double life;
+  final Color colour;
 }
 
 class _Puff {
