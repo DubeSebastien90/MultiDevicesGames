@@ -37,12 +37,13 @@ class HotPotatoGame implements MultiscreenGame {
     sort: PhoneSort.joinOrder,
     instruction:
         'Sit in a circle with your phone flat in front of you, screen facing '
-        'you. Swipe left or right to shove the potato at a neighbour.',
+        'you. Swipe up or down to throw the potato to a neighbour.',
   );
 
   @override
   GameSim createSim(BoardContext context) => HotPotatoSim(context);
 
   @override
-  GameView createView(ViewContext context) => HotPotatoView();
+  GameView createView(ViewContext context) =>
+      HotPotatoView(phoneId: context.phoneId);
 }
