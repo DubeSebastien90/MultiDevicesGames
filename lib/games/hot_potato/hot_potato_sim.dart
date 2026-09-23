@@ -100,6 +100,10 @@ class HotPotatoSim implements GameSim {
   bool _exploded = false;
   bool _awarded = false;
 
+  /// The holder's neighbours round the ring when it went off, if the ring is
+  /// big enough for them to be anybody but everyone else.
+  Set<String> _caught = const {};
+
   /// Sim time since the bang — the round is only called once it has played.
   double _sinceBlast = 0;
 
@@ -212,13 +216,14 @@ class HotPotatoSim implements GameSim {
     if (_exploded) {
       if (!_awarded) {
         _awarded = true;
-        context.scores.award(holder, -HotPotatoConfig.explosionPenalty);
+        _payOut();
       }
       return;
     }
 
     final u = _urgency;
-    _spin += dt *
+    _spin +=
+        dt *
         _lerp(HotPotatoConfig.spinCalm, HotPotatoConfig.spinFrantic, u * u);
 
     if (_flying) {
@@ -250,7 +255,8 @@ class HotPotatoSim implements GameSim {
     final from = seat.hands[_hand];
     final to = seat.hands[1 - _hand];
     _ground = from.lerp(to, _easeInOut(_hopT));
-    _height = math.sin(math.pi * _hopT) *
+    _height =
+        math.sin(math.pi * _hopT) *
         _lerp(HotPotatoConfig.hopArcCalm, HotPotatoConfig.hopArcFrantic, u);
   }
 
@@ -290,11 +296,31 @@ class HotPotatoSim implements GameSim {
     _height = math.sin(math.pi * progress) * HotPotatoConfig.throwArc;
   }
 
+  /// The bang, in points: nothing for the holder, half for whoever sits either
+  /// side of them, and the full prize for everybody clear of it.
+  void _payOut() {
+    final order = _order;
+    final n = order.length;
+    _caught = n > 3
+        ? {order[(_holderIndex + 1) % n], order[(_holderIndex - 1 + n) % n]}
+        : const {};
+    for (final id in order) {
+      if (id == holder) continue;
+      context.scores.award(
+        id,
+        _caught.contains(id)
+            ? HotPotatoConfig.caughtInBlastPoints
+            : HotPotatoConfig.clearOfBlastPoints,
+      );
+    }
+  }
+
   void _startRound() {
     _fuseLeft = HotPotatoConfig.fuseSeconds;
     _elapsed = 0;
     _exploded = false;
     _awarded = false;
+    _caught = const {};
     _sinceBlast = 0;
     _swipeStart.clear();
     _pendingStep = 0;
@@ -409,15 +435,24 @@ class HotPotatoSim implements GameSim {
     // this only holds back the results screen.
     if (_sinceBlast < HotPotatoConfig.blastHoldSeconds) return null;
 
-    // Everyone who passed it on in time; the holder is the one person at the
-    // table who did not. Built once — `outcome` is polled several times a tick.
+    // Everyone clear of the blast; the holder and whoever sat beside them
+    // were not. Built once — `outcome` is polled several times a tick.
     return _outcome ??= GameOutcome.contest(
       winners: {
         for (final id in _order)
-          if (id != holder) id,
+          if (id != holder && !_caught.contains(id)) id,
       },
       summary: 'the potato went off',
-      lines: {holder: 'You were holding it'},
+      lines: {
+        for (final id in _order)
+          id: id == holder
+              ? 'You were holding it — +0 pts'
+              : _caught.contains(id)
+              ? 'Caught in the blast — '
+                    '+${HotPotatoConfig.caughtInBlastPoints} pts'
+              : 'Clear of the blast — '
+                    '+${HotPotatoConfig.clearOfBlastPoints} pts',
+      },
     );
   }
 

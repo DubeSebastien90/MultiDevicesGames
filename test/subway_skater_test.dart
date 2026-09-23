@@ -100,12 +100,7 @@ Entity skaterAtSlot(SubwaySkaterSim sim, int slot) =>
 /// Does not step the sim, so a whole table can be aimed in one instant — the
 /// lane is committed the moment the swipe lands, and the slide that follows is
 /// only the circle catching up. Settle with [run] once everybody is pointed.
-void steerSlotTo(
-  SubwaySkaterSim sim,
-  BoardLayout board,
-  int slot,
-  int lane,
-) {
+void steerSlotTo(SubwaySkaterSim sim, BoardLayout board, int slot, int lane) {
   final now = SubwaySkaterConfig.laneAt(board.board, skaterAtSlot(sim, slot).y);
   if (now == lane) return;
   swipe(
@@ -118,16 +113,23 @@ void steerSlotTo(
 
 /// One swipe on [phoneId], as long as a real flick — several times the
 /// threshold, because a finger does not stop at it.
-void swipe(SubwaySkaterSim sim, String phoneId, int direction, {int times = 1}) {
+void swipe(
+  SubwaySkaterSim sim,
+  String phoneId,
+  int direction, {
+  int times = 1,
+}) {
   for (var i = 0; i < times; i++) {
     const reach = SubwaySkaterConfig.swipeThreshold * 4;
     for (final phase in [TouchPhase.down, TouchPhase.move, TouchPhase.up]) {
-      sim.onTouch(TouchEvent(
-        phoneId: phoneId,
-        worldX: 0,
-        worldY: phase == TouchPhase.down ? 0 : reach * direction,
-        phase: phase,
-      ));
+      sim.onTouch(
+        TouchEvent(
+          phoneId: phoneId,
+          worldX: 0,
+          worldY: phase == TouchPhase.down ? 0 : reach * direction,
+          phase: phase,
+        ),
+      );
     }
   }
 }
@@ -160,8 +162,10 @@ void main() {
   group('the corridor', () {
     test('is one long runway down the line of phones', () {
       final started = start(4);
-      expect(started.board.board.width,
-          greaterThan(started.board.board.height * 6));
+      expect(
+        started.board.board.width,
+        greaterThan(started.board.board.height * 6),
+      );
       expect(started.board.instruction, contains('one long line'));
     });
 
@@ -177,13 +181,17 @@ void main() {
       expect(orderOf(sim), ['p1', 'p2', 'p3']);
       for (var i = 0; i < 3; i++) {
         final slice = started.board.slices[i];
-        expect(skaterOf(sim, slice.phoneId).x, closeTo(anchorOf(started.board,
-            i), 1e-9));
+        expect(
+          skaterOf(sim, slice.phoneId).x,
+          closeTo(anchorOf(started.board, i), 1e-9),
+        );
 
         // Standing past the middle, with runway in front and room behind.
         final screen = slice.viewport;
-        expect(skaterOf(sim, slice.phoneId).x,
-            greaterThan(screen.left + screen.width / 2));
+        expect(
+          skaterOf(sim, slice.phoneId).x,
+          greaterThan(screen.left + screen.width / 2),
+        );
         expect(skaterOf(sim, slice.phoneId).x, lessThan(screen.right));
       }
     });
@@ -204,9 +212,15 @@ void main() {
       final started = start(4);
       for (var i = 0; i < PlatformConfig.simHz * 60; i++) {
         started.sim.step(_tick);
-        for (final blocked in wavesOf(started.sim, started.board.board).values) {
-          expect(blocked.length, lessThan(SubwaySkaterConfig.lanes),
-              reason: 'a wave with no way through is a tax, not a wave');
+        for (final blocked in wavesOf(
+          started.sim,
+          started.board.board,
+        ).values) {
+          expect(
+            blocked.length,
+            lessThan(SubwaySkaterConfig.lanes),
+            reason: 'a wave with no way through is a tax, not a wave',
+          );
         }
       }
     });
@@ -226,8 +240,10 @@ void main() {
 
       swipe(sim, 'p1', 1);
       run(sim, 0.5);
-      expect(SubwaySkaterConfig.laneAt(board, skaterOf(sim, 'p1').y),
-          middle + 1);
+      expect(
+        SubwaySkaterConfig.laneAt(board, skaterOf(sim, 'p1').y),
+        middle + 1,
+      );
     });
 
     test('crossing two lanes takes two swipes', () {
@@ -254,18 +270,17 @@ void main() {
       final sim = started.sim;
       final before = skaterOf(sim, 'p1').y;
 
-      sim.onTouch(TouchEvent(
-        phoneId: 'p1',
-        worldX: 0,
-        worldY: 0,
-        phase: TouchPhase.down,
-      ));
-      sim.onTouch(TouchEvent(
-        phoneId: 'p1',
-        worldX: 0,
-        worldY: SubwaySkaterConfig.swipeThreshold * 0.4,
-        phase: TouchPhase.up,
-      ));
+      sim.onTouch(
+        TouchEvent(phoneId: 'p1', worldX: 0, worldY: 0, phase: TouchPhase.down),
+      );
+      sim.onTouch(
+        TouchEvent(
+          phoneId: 'p1',
+          worldX: 0,
+          worldY: SubwaySkaterConfig.swipeThreshold * 0.4,
+          phase: TouchPhase.up,
+        ),
+      );
       run(sim, 0.3);
 
       expect(skaterOf(sim, 'p1').y, closeTo(before, 1e-9));
@@ -280,8 +295,11 @@ void main() {
       run(sim, 0.5);
 
       expect(SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, 2).y), 0);
-      expect(SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, 0).y), 1,
-          reason: 'a swipe on the back phone moved the front of the line');
+      expect(
+        SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, 0).y),
+        1,
+        reason: 'a swipe on the back phone moved the front of the line',
+      );
     });
 
     test('a phone with nobody standing on it steers nothing', () {
@@ -311,7 +329,8 @@ void main() {
     test('reaches full speed with twenty seconds left, and holds it', () {
       const peak = SubwaySkaterConfig.endSpeed;
       final peakAt =
-          SubwaySkaterConfig.roundSeconds - SubwaySkaterConfig.peakWithSecondsLeft;
+          SubwaySkaterConfig.roundSeconds -
+          SubwaySkaterConfig.peakWithSecondsLeft;
 
       expect(SubwaySkaterConfig.speedAt(0), SubwaySkaterConfig.obstacleSpeed);
       expect(SubwaySkaterConfig.speedAt(peakAt), closeTo(peak, 1e-9));
@@ -340,9 +359,7 @@ void main() {
       final sim = started.sim;
 
       double crossingSpeed() {
-        final before = sim.entities
-            .firstWhere((e) => e.kind == 'obstacle')
-            .x;
+        final before = sim.entities.firstWhere((e) => e.kind == 'obstacle').x;
         run(sim, 1);
         final after = sim.entities
             .where((e) => e.kind == 'obstacle')
@@ -356,8 +373,11 @@ void main() {
       run(sim, SubwaySkaterConfig.roundSeconds - 6);
       final late = crossingSpeed();
 
-      expect(late, greaterThan(early * 1.25),
-          reason: 'the corridor never wound up');
+      expect(
+        late,
+        greaterThan(early * 1.25),
+        reason: 'the corridor never wound up',
+      );
     });
 
     test('the scrolling floor keeps step with what is on it', () {
@@ -373,8 +393,10 @@ void main() {
         second++;
         expect(
           walked,
-          closeTo(SubwaySkaterConfig.travelAt(second.toDouble()),
-              SubwaySkaterConfig.endSpeed * _tick * 2),
+          closeTo(
+            SubwaySkaterConfig.travelAt(second.toDouble()),
+            SubwaySkaterConfig.endSpeed * _tick * 2,
+          ),
           reason: 'the floor had slid under the traffic by ${second}s',
         );
       }
@@ -418,10 +440,16 @@ void main() {
       expect(charging, isNot(contains('p1')));
 
       run(sim, SubwaySkaterConfig.chargeSeconds * 0.8);
-      expect(sim.smashesOf('p2'), greaterThan(0),
-          reason: 'the charge did not flatten the block it ran into');
-      expect(sim.hitsOf('p2'), 0,
-          reason: 'the block stopped a player it should have gone under');
+      expect(
+        sim.smashesOf('p2'),
+        greaterThan(0),
+        reason: 'the charge did not flatten the block it ran into',
+      );
+      expect(
+        sim.hitsOf('p2'),
+        0,
+        reason: 'the block stopped a player it should have gone under',
+      );
     });
 
     test('a flattened block leaves a shatter that clears itself up', () {
@@ -448,7 +476,11 @@ void main() {
         sim.step(_tick);
         steps++;
       }
-      expect(sim.smashesOf('p2'), greaterThan(0), reason: 'nothing was smashed');
+      expect(
+        sim.smashesOf('p2'),
+        greaterThan(0),
+        reason: 'nothing was smashed',
+      );
 
       // The shatter is an entity like anything else, so it reaches every phone
       // on the shared timeline — and it carries the moment it began, which is
@@ -460,8 +492,11 @@ void main() {
 
       // And it puts itself away rather than piling up over a round.
       run(sim, SubwaySkaterConfig.burstSeconds + 0.05);
-      expect(sim.entities.where((e) => e.id == burst.id), isEmpty,
-          reason: 'the debris outlived its animation');
+      expect(
+        sim.entities.where((e) => e.id == burst.id),
+        isEmpty,
+        reason: 'the debris outlived its animation',
+      );
     });
 
     test('the second runs out, and then blocks stop you again', () {
@@ -477,8 +512,11 @@ void main() {
       expect(sim.sharedState['charging'], contains('p2'));
 
       run(sim, SubwaySkaterConfig.chargeSeconds + 0.05);
-      expect(sim.sharedState['charging'], isNot(contains('p2')),
-          reason: 'a promotion is a second, not the rest of the round');
+      expect(
+        sim.sharedState['charging'],
+        isNot(contains('p2')),
+        reason: 'a promotion is a second, not the rest of the round',
+      );
     });
 
     test('a place opening up because somebody left counts too', () {
@@ -488,10 +526,16 @@ void main() {
 
       sim.onPlayerLeft('p2');
       final charging = (sim.sharedState['charging']! as String).split(',');
-      expect(charging, containsAll(<String>['p3', 'p4']),
-          reason: 'they moved up the corridor the same way');
-      expect(charging, isNot(contains('p1')),
-          reason: 'the front did not move anywhere');
+      expect(
+        charging,
+        containsAll(<String>['p3', 'p4']),
+        reason: 'they moved up the corridor the same way',
+      );
+      expect(
+        charging,
+        isNot(contains('p1')),
+        reason: 'the front did not move anywhere',
+      );
     });
   });
 
@@ -534,7 +578,8 @@ void main() {
       expect(
         SubwaySkaterConfig.laneAt(board.board, skaterOf(sim, 'p2').y),
         isNot(was),
-        reason: 'the front phone did not steer the player who had climbed to '
+        reason:
+            'the front phone did not steer the player who had climbed to '
             'the front',
       );
     });
@@ -553,8 +598,11 @@ void main() {
       }
 
       expect(sim.hitsOf('p1'), 1, reason: 'the front was never clipped');
-      expect(orderOf(sim), ['p2', 'p3', 'p1'],
-          reason: 'the line did not close up over the player who was hit');
+      expect(
+        orderOf(sim),
+        ['p2', 'p3', 'p1'],
+        reason: 'the line did not close up over the player who was hit',
+      );
       expect(sim.sharedState['tumbling'], contains('p1'));
     });
 
@@ -574,10 +622,16 @@ void main() {
       // the circle rides the corridor rather than teleporting to the end of it.
       run(sim, 0.3);
       final travelling = skaterOf(sim, 'p1').x;
-      expect(travelling, greaterThan(anchorOf(started.board, 0) + 2),
-          reason: 'the circle was not carried anywhere');
-      expect(travelling, lessThan(anchorOf(started.board, 2)),
-          reason: 'it arrived at the back without making the journey');
+      expect(
+        travelling,
+        greaterThan(anchorOf(started.board, 0) + 2),
+        reason: 'the circle was not carried anywhere',
+      );
+      expect(
+        travelling,
+        lessThan(anchorOf(started.board, 2)),
+        reason: 'it arrived at the back without making the journey',
+      );
 
       // Long enough for the block carrying them to clear the far end.
       run(sim, started.board.board.width / SubwaySkaterConfig.obstacleSpeed);
@@ -595,36 +649,39 @@ void main() {
   });
 
   group('scoring', () {
-    test('the pot is cut in proportion to position-time', () {
-      // Checked where the split is unambiguous: before anything can reach the
+    test('places follow position-time', () {
+      // Checked where the order is unambiguous: before anything can reach the
       // line, nobody has moved, so a line of three has been earning 2, 1 and 0
-      // a tick out of the 3 going — two thirds of the pot, one third, and none
-      // of it.
+      // a tick — first, second and third place.
       final started = start(3);
       final sim = started.sim;
       run(sim, SubwaySkaterConfig.leadInSeconds * 0.5);
 
-      const pot = SubwaySkaterConfig.pointsPerPlayer * 3;
-      expect(sim.pointsOf('p1'), pot * 2 ~/ 3);
-      expect(sim.pointsOf('p2'), pot ~/ 3);
+      expect(
+        sim.positionTimeOf('p1'),
+        closeTo(2 * sim.positionTimeOf('p2'), 1e-9),
+      );
+      expect(sim.positionTimeOf('p3'), 0);
+      expect(sim.pointsOf('p1'), 100);
+      expect(sim.pointsOf('p2'), 50);
       expect(sim.pointsOf('p3'), 0);
-      expect(sim.pointsOf('p1') + sim.pointsOf('p2') + sim.pointsOf('p3'), pot,
-          reason: 'the pot has to be handed out, all of it');
     });
 
-    test('holding the front is worth forty at any table size', () {
-      // The one number worth knowing when tuning this. The front of a line of n
-      // earns (n-1) of the n(n-1)/2 going every tick — two nths of the pile —
-      // and the pot is 20n, so the arithmetic cancels the table size out.
+    test('holding the front is first place at any table size', () {
       for (final n in [2, 3, 4, 6, 8]) {
         final started = start(n);
         run(started.sim, SubwaySkaterConfig.leadInSeconds * 0.5);
 
-        expect(started.sim.pointsOf('p1'),
-            SubwaySkaterConfig.pointsPerPlayer * 2,
-            reason: 'the front of a line of $n was not worth 40');
-        expect(started.sim.pointsOf('p$n'), 0,
-            reason: 'the back of a line of $n was worth something');
+        expect(
+          started.sim.pointsOf('p1'),
+          Scoreboard.pointsPerGame,
+          reason: 'the front of a line of $n was not first',
+        );
+        expect(
+          started.sim.pointsOf('p$n'),
+          0,
+          reason: 'the back of a line of $n was worth something',
+        );
       }
     });
 
@@ -632,7 +689,7 @@ void main() {
       final started = start(3);
       final sim = started.sim;
       run(sim, 1.0);
-      final backBefore = sim.pointsOf('p3');
+      final backBefore = sim.positionTimeOf('p3');
       expect(backBefore, 0);
 
       // Promote the back player to the front by hand, through the only door
@@ -644,9 +701,9 @@ void main() {
       }
       expect(orderOf(sim).first, 'p3', reason: 'the line never churned');
 
-      final atPromotion = sim.pointsOf('p3');
+      final atPromotion = sim.positionTimeOf('p3');
       run(sim, 3);
-      expect(sim.pointsOf('p3'), greaterThan(atPromotion));
+      expect(sim.positionTimeOf('p3'), greaterThan(atPromotion));
     });
 
     test('the round ends after a minute, everybody with their own line', () {
@@ -658,8 +715,11 @@ void main() {
 
       final outcome = sim.outcome;
       expect(outcome, isNotNull);
-      expect(outcome!.kind, OutcomeKind.personal,
-          reason: 'a corridor has no winner, only a minute each');
+      expect(
+        outcome!.kind,
+        OutcomeKind.personal,
+        reason: 'a corridor has no winner, only a minute each',
+      );
       expect(outcome.winners, isNull);
       expect(outcome.lines!.keys, containsAll(<String>['p1', 'p2', 'p3']));
       expect(outcome.lines!['p1'], contains('You scored'));
@@ -668,23 +728,26 @@ void main() {
       expect(sim.outcome, same(outcome));
     });
 
-    test('the whole pot is paid out, once', () {
+    test('the ladder is paid out, once', () {
       final started = start(3);
       run(started.sim, SubwaySkaterConfig.roundSeconds + 0.1);
 
-      expect(started.scores.isUsed, isTrue,
-          reason: 'a whole round went by and nobody was paid for it');
+      expect(
+        started.scores.isUsed,
+        isTrue,
+        reason: 'a whole round went by and nobody was paid for it',
+      );
 
-      const pot = SubwaySkaterConfig.pointsPerPlayer * 3;
+      // The ladder is worth 50 a head however the places fell.
+      const total = 50 * 3;
       final ranked = started.scores.view.ranked;
       for (final entry in ranked) {
-        expect(entry.total, inInclusiveRange(0, pot));
+        expect(entry.total, inInclusiveRange(0, Scoreboard.pointsPerGame));
       }
-      // All of it, to within the rounding of one whole point each.
       expect(
         ranked.fold<int>(0, (sum, e) => sum + e.total),
-        closeTo(pot, ranked.length),
-        reason: 'the table played for $pot and did not take it home',
+        closeTo(total, ranked.length),
+        reason: 'the table played for $total and did not take it home',
       );
 
       // Paid once. `step` keeps being called after the round is over on a host
@@ -696,20 +759,22 @@ void main() {
   });
 
   group('the table changing under it', () {
-    test('somebody leaving closes the line up rather than ending the round',
-        () {
-      final started = start(4);
-      final sim = started.sim;
-      run(sim, 2);
+    test(
+      'somebody leaving closes the line up rather than ending the round',
+      () {
+        final started = start(4);
+        final sim = started.sim;
+        run(sim, 2);
 
-      sim.onPlayerLeft('p2');
-      expect(orderOf(sim), isNot(contains('p2')));
-      expect(orderOf(sim), hasLength(3));
-      expect(sim.entities.where((e) => e.id == 'skater-p2'), isEmpty);
+        sim.onPlayerLeft('p2');
+        expect(orderOf(sim), isNot(contains('p2')));
+        expect(orderOf(sim), hasLength(3));
+        expect(sim.entities.where((e) => e.id == 'skater-p2'), isEmpty);
 
-      run(sim, 1);
-      expect(sim.outcome, isNull, reason: 'the round should carry on');
-    });
+        run(sim, 1);
+        expect(sim.outcome, isNull, reason: 'the round should carry on');
+      },
+    );
 
     test('somebody coming back joins at the end of the queue', () {
       final started = start(4);
@@ -751,7 +816,9 @@ void main() {
     expect(sim.pointsOf('p1'), 0);
     expect(sim.hitsOf('p1'), 0);
     expect(sim.outcome, isNull);
-    expect(sim.sharedState['secondsLeft'],
-        SubwaySkaterConfig.roundSeconds.round());
+    expect(
+      sim.sharedState['secondsLeft'],
+      SubwaySkaterConfig.roundSeconds.round(),
+    );
   });
 }

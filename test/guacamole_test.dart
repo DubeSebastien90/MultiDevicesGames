@@ -41,10 +41,7 @@ PhoneSpec phone(String id, PlayerColor? color) => PhoneSpec(
 
   const game = GuacamoleGame();
   final board = const BoardCompiler().compile(game.planBoard(lobby), lobby);
-  final sim = GuacamoleSim(
-    board.contextFor(scores),
-    random: math.Random(seed),
-  );
+  final sim = GuacamoleSim(board.contextFor(scores), random: math.Random(seed));
   scores.beginRound();
   return (sim: sim, board: board, scores: scores);
 }
@@ -90,8 +87,11 @@ void main() {
       expect(started.board.instruction, contains('Two rows'));
 
       // And concretely: two phone-widths across, two phone-heights down.
-      expect(board.width, lessThan(board.height),
-          reason: 'portrait phones make a portrait block');
+      expect(
+        board.width,
+        lessThan(board.height),
+        reason: 'portrait phones make a portrait block',
+      );
     });
 
     test('an odd table is refused rather than fudged', () {
@@ -122,8 +122,11 @@ void main() {
           byRow[p.yMm] = (byRow[p.yMm] ?? 0) + 1;
         }
         expect(byRow, hasLength(2), reason: '$n phones should make two rows');
-        expect(byRow.values.every((c) => c == n ~/ 2), isTrue,
-            reason: '$n phones should split $byRow evenly');
+        expect(
+          byRow.values.every((c) => c == n ~/ 2),
+          isTrue,
+          reason: '$n phones should split $byRow evenly',
+        );
       }
     });
 
@@ -148,8 +151,9 @@ void main() {
     test('holes sit inside the screen they belong to', () {
       final started = start(4);
       for (final hole in started.sim.holes) {
-        final slice = started.board.slices
-            .firstWhere((s) => s.phoneId == hole.phoneId);
+        final slice = started.board.slices.firstWhere(
+          (s) => s.phoneId == hole.phoneId,
+        );
         expect(
           slice.viewport.contains(hole.centerX, hole.centerY),
           isTrue,
@@ -174,20 +178,28 @@ void main() {
           .firstWhere((s) => s.phoneId != ownerPhone)
           .phoneId;
 
-      final before = started.scores[ownerPhone];
-      final otherBefore = started.scores[otherPhone];
+      final before = started.sim.squishedBy(ownerPhone);
+      final otherBefore = started.sim.squishedBy(otherPhone);
 
-      started.sim.onTouch(TouchEvent(
-        phoneId: otherPhone,
-        worldX: mole.hole.centerX,
-        worldY: mole.hole.centerY,
-        phase: TouchPhase.down,
-      ));
+      started.sim.onTouch(
+        TouchEvent(
+          phoneId: otherPhone,
+          worldX: mole.hole.centerX,
+          worldY: mole.hole.centerY,
+          phase: TouchPhase.down,
+        ),
+      );
 
-      expect(started.scores[ownerPhone], before + 1,
-          reason: 'the point belongs to the colour, whoever reached');
-      expect(started.scores[otherPhone], otherBefore,
-          reason: 'the tapping phone must gain nothing');
+      expect(
+        started.sim.squishedBy(ownerPhone),
+        before + 1,
+        reason: 'the point belongs to the colour, whoever reached',
+      );
+      expect(
+        started.sim.squishedBy(otherPhone),
+        otherBefore,
+        reason: 'the tapping phone must gain nothing',
+      );
     });
 
     test('nothing is ever deducted', () {
@@ -198,17 +210,22 @@ void main() {
         started.sim.step(1 / 60);
         // Tap every hole every step: the most aggressive masher possible.
         for (final hole in started.sim.holes) {
-          started.sim.onTouch(TouchEvent(
-            phoneId: 'p1',
-            worldX: hole.centerX,
-            worldY: hole.centerY,
-            phase: TouchPhase.down,
-          ));
+          started.sim.onTouch(
+            TouchEvent(
+              phoneId: 'p1',
+              worldX: hole.centerX,
+              worldY: hole.centerY,
+              phase: TouchPhase.down,
+            ),
+          );
         }
         for (final id in started.sim.context.phoneIds) {
           final now = started.scores[id];
-          expect(now, greaterThanOrEqualTo(totals[id] ?? 0),
-              reason: 'score went down for $id');
+          expect(
+            now,
+            greaterThanOrEqualTo(totals[id] ?? 0),
+            reason: 'score went down for $id',
+          );
           totals[id] = now;
         }
       }
@@ -219,19 +236,22 @@ void main() {
       run(started.sim, 2);
 
       final before = {
-        for (final id in started.sim.context.phoneIds) id: started.scores[id],
+        for (final id in started.sim.context.phoneIds)
+          id: started.sim.squishedBy(id),
       };
 
       // Far outside the board.
-      started.sim.onTouch(TouchEvent(
-        phoneId: 'p1',
-        worldX: started.board.board.left - 50,
-        worldY: started.board.board.top - 50,
-        phase: TouchPhase.down,
-      ));
+      started.sim.onTouch(
+        TouchEvent(
+          phoneId: 'p1',
+          worldX: started.board.board.left - 50,
+          worldY: started.board.board.top - 50,
+          phase: TouchPhase.down,
+        ),
+      );
 
       for (final id in started.sim.context.phoneIds) {
-        expect(started.scores[id], before[id]);
+        expect(started.sim.squishedBy(id), before[id]);
       }
     });
 
@@ -241,19 +261,49 @@ void main() {
 
       final mole = firstLiveMole(started.sim)!;
       final ownerPhone = started.sim.context.phoneOfColor(mole.owner)!;
-      final before = started.scores[ownerPhone];
+      final before = started.sim.squishedBy(ownerPhone);
 
       for (var i = 0; i < 5; i++) {
-        started.sim.onTouch(TouchEvent(
-          phoneId: 'p1',
-          worldX: mole.hole.centerX,
-          worldY: mole.hole.centerY,
-          phase: TouchPhase.down,
-        ));
+        started.sim.onTouch(
+          TouchEvent(
+            phoneId: 'p1',
+            worldX: mole.hole.centerX,
+            worldY: mole.hole.centerY,
+            phase: TouchPhase.down,
+          ),
+        );
       }
 
-      expect(started.scores[ownerPhone], before + 1);
+      expect(started.sim.squishedBy(ownerPhone), before + 1);
     });
+
+    test(
+      'the round pays out on the placement ladder when the minute is up',
+      () {
+        final started = start(4);
+        run(started.sim, 2);
+        final mole = firstLiveMole(started.sim)!;
+        final scorer = started.sim.context.phoneOfColor(mole.owner)!;
+        started.sim.onTouch(
+          TouchEvent(
+            phoneId: scorer,
+            worldX: mole.hole.centerX,
+            worldY: mole.hole.centerY,
+            phase: TouchPhase.down,
+          ),
+        );
+        expect(started.scores[scorer], 0, reason: 'nothing is paid mid-round');
+
+        run(started.sim, GuacamoleConfig.roundSeconds);
+        expect(started.scores[scorer], Scoreboard.pointsPerGame);
+        // The other three tie for second to fourth: (67 + 33 + 0) / 3.
+        for (final id in started.sim.context.phoneIds.where(
+          (i) => i != scorer,
+        )) {
+          expect(started.scores[id], 33);
+        }
+      },
+    );
   });
 
   group('fairness', () {
@@ -281,8 +331,11 @@ void main() {
       // The bag guarantees this: across a whole round no player can be more
       // than one deal behind another, whatever the dice do.
       final counts = seen.values.toList()..sort();
-      expect(counts.last - counts.first, lessThanOrEqualTo(2),
-          reason: 'spawns should be near-identical per player: $seen');
+      expect(
+        counts.last - counts.first,
+        lessThanOrEqualTo(2),
+        reason: 'spawns should be near-identical per player: $seen',
+      );
     });
 
     test('spawn position is spread across every phone', () {
@@ -299,7 +352,8 @@ void main() {
           final e = started.sim.entities.firstWhere((e) => e.id == id);
           final hole = started.sim.holes.firstWhere(
             (h) =>
-                (h.centerX - e.x).abs() < 1e-9 && (h.centerY - e.y).abs() < 1e-9,
+                (h.centerX - e.x).abs() < 1e-9 &&
+                (h.centerY - e.y).abs() < 1e-9,
           );
           byPhone[hole.phoneId] = (byPhone[hole.phoneId] ?? 0) + 1;
         }
@@ -310,8 +364,11 @@ void main() {
       // anyone's own phone, which is the entire reason people have to reach.
       expect(byPhone, hasLength(4));
       for (final entry in byPhone.entries) {
-        expect(entry.value, greaterThan(3),
-            reason: '${entry.key} barely saw a mole: $byPhone');
+        expect(
+          entry.value,
+          greaterThan(3),
+          reason: '${entry.key} barely saw a mole: $byPhone',
+        );
       }
     });
 
@@ -324,8 +381,11 @@ void main() {
           for (final e in started.sim.entities)
             if (e.kind == 'mole') '${e.x},${e.y}',
         ];
-        expect(live.toSet(), hasLength(live.length),
-            reason: 'two moles occupied one hole at t=$t');
+        expect(
+          live.toSet(),
+          hasLength(live.length),
+          reason: 'two moles occupied one hole at t=$t',
+        );
       }
     });
   });
@@ -348,12 +408,14 @@ void main() {
       run(started.sim, 2);
       final mole = firstLiveMole(started.sim)!;
       final scorer = started.sim.context.phoneOfColor(mole.owner)!;
-      started.sim.onTouch(TouchEvent(
-        phoneId: scorer,
-        worldX: mole.hole.centerX,
-        worldY: mole.hole.centerY,
-        phase: TouchPhase.down,
-      ));
+      started.sim.onTouch(
+        TouchEvent(
+          phoneId: scorer,
+          worldX: mole.hole.centerX,
+          worldY: mole.hole.centerY,
+          phase: TouchPhase.down,
+        ),
+      );
 
       run(started.sim, GuacamoleConfig.roundSeconds);
       final outcome = started.sim.outcome!;
@@ -364,9 +426,10 @@ void main() {
       expect(outcome.winners, isNull);
       expect(outcome.lines, hasLength(4));
       expect(outcome.lines![scorer], contains('1 avocado'));
+      expect(outcome.lines![scorer], contains('+100 pts'));
 
       for (final s in started.board.slices.where((s) => s.phoneId != scorer)) {
-        expect(outcome.lines![s.phoneId], 'Not a single avocado');
+        expect(outcome.lines![s.phoneId], startsWith('Not a single avocado'));
       }
 
       // Polled repeatedly, as the platform does: one verdict, built once.
@@ -385,12 +448,14 @@ void main() {
       started.scores.award('p4', 99);
       started.scores.beginRound();
 
-      started.sim.onTouch(TouchEvent(
-        phoneId: scorer,
-        worldX: mole.hole.centerX,
-        worldY: mole.hole.centerY,
-        phase: TouchPhase.down,
-      ));
+      started.sim.onTouch(
+        TouchEvent(
+          phoneId: scorer,
+          worldX: mole.hole.centerX,
+          worldY: mole.hole.centerY,
+          phase: TouchPhase.down,
+        ),
+      );
       run(started.sim, GuacamoleConfig.roundSeconds);
 
       expect(started.sim.outcome!.summary, contains('phone $scorer'));
@@ -405,8 +470,11 @@ void main() {
       run(late.sim, GuacamoleConfig.roundSeconds * 0.9);
       final lateUp = _anyUpSeconds(late.sim);
 
-      expect(lateUp, lessThan(earlyUp),
-          reason: 'the ramp should shorten a mole\'s stay');
+      expect(
+        lateUp,
+        lessThan(earlyUp),
+        reason: 'the ramp should shorten a mole\'s stay',
+      );
       expect(lateUp, closeTo(GuacamoleConfig.visibleSecondsEnd, 0.05));
     });
 
@@ -449,8 +517,11 @@ void main() {
       expect(manifest.fits(3), isFalse, reason: 'three is not a table');
       expect(manifest.fits(4), isTrue);
       expect(manifest.fits(PlayerPalette.size), isTrue);
-      expect(manifest.fits(PlayerPalette.size + 1), isFalse,
-          reason: 'there would be no colour left for them');
+      expect(
+        manifest.fits(PlayerPalette.size + 1),
+        isFalse,
+        reason: 'there would be no colour left for them',
+      );
     });
   });
 }

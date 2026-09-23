@@ -143,13 +143,4 @@ class PitchCarsConfig {
   /// On a tile past the road's end, the round cap it must stay inside, as
   /// `[x, y, r]` in world coordinates: the tile is drawn clipped to that disc.
   static const String finishClip = 'clip';
-
-  /// Points the race winner nets in a full 8-player race, matching
-  /// `ReactionConfig.bestScore`.
-  static const int bestScore = 30;
-
-  /// Must match `PitchCarsGame.manifest.players.max` — the scoring ladder's
-  /// fixed size, so a small race occupies its top slots instead of
-  /// stretching to fill it.
-  static const int maxPlayers = 8;
 }

@@ -64,18 +64,22 @@ void swipeAlongScreen(
   final wy = sy * math.cos(turn);
 
   final reach = HotPotatoConfig.minSwipeWorld * 3;
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: me.worldCenterX,
-    worldY: me.worldCenterY,
-    phase: TouchPhase.down,
-  ));
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: me.worldCenterX + wx * reach,
-    worldY: me.worldCenterY + wy * reach,
-    phase: TouchPhase.up,
-  ));
+  sim.onTouch(
+    TouchEvent(
+      phoneId: phoneId,
+      worldX: me.worldCenterX,
+      worldY: me.worldCenterY,
+      phase: TouchPhase.down,
+    ),
+  );
+  sim.onTouch(
+    TouchEvent(
+      phoneId: phoneId,
+      worldX: me.worldCenterX + wx * reach,
+      worldY: me.worldCenterY + wy * reach,
+      phase: TouchPhase.up,
+    ),
+  );
 }
 
 /// A swipe, then long enough for the potato to land in a hand and go.
@@ -106,9 +110,11 @@ List<String> ringOrder(BoardLayout board) {
   final cx = board.board.centerX;
   final cy = board.board.centerY;
   final seats = List.of(board.slices)
-    ..sort((a, b) => math
-        .atan2(a.screen.centerY - cy, a.screen.centerX - cx)
-        .compareTo(math.atan2(b.screen.centerY - cy, b.screen.centerX - cx)));
+    ..sort(
+      (a, b) => math
+          .atan2(a.screen.centerY - cy, a.screen.centerX - cx)
+          .compareTo(math.atan2(b.screen.centerY - cy, b.screen.centerX - cx)),
+    );
   return [for (final s in seats) s.phoneId];
 }
 
@@ -121,7 +127,9 @@ int upStep(BoardLayout board, String phoneId) {
   final upX = math.sin(turn), upY = -math.cos(turn);
 
   double towardSeat(int step) {
-    final other = board.forPhone(ring[(here + step + ring.length) % ring.length])!;
+    final other = board.forPhone(
+      ring[(here + step + ring.length) % ring.length],
+    )!;
     final dx = other.worldCenterX - me.worldCenterX;
     final dy = other.worldCenterY - me.worldCenterY;
     final len = math.sqrt(dx * dx + dy * dy);
@@ -202,9 +210,7 @@ void main() {
     );
 
     test('radial facing is still available, and points long edges inward', () {
-      final lobby = LobbyInfo([
-        for (var i = 0; i < 5; i++) phone('p$i'),
-      ]);
+      final lobby = LobbyInfo([for (var i = 0; i < 5; i++) phone('p$i')]);
       final board = const BoardCompiler().compile(
         Layouts.circle(lobby.phones, facing: RingFacing.radial),
         lobby,
@@ -230,9 +236,7 @@ void main() {
     });
 
     test('a tangential ring fits more phones in the same rim', () {
-      final lobby = LobbyInfo([
-        for (var i = 0; i < 6; i++) phone('p$i'),
-      ]);
+      final lobby = LobbyInfo([for (var i = 0; i < 6; i++) phone('p$i')]);
       double radiusOf(RingFacing facing) {
         final board = const BoardCompiler().compile(
           Layouts.circle(lobby.phones, facing: facing),
@@ -317,14 +321,15 @@ void main() {
       final sim = started.sim;
       final victim = sim.holder;
 
-      // Just past the fuse: it has gone off, and it has already cost points…
+      // Just past the fuse: it has gone off, and it has already been paid…
       final fuseTicks =
           (HotPotatoConfig.fuseSeconds * PlatformConfig.simHz).ceil() + 1;
       for (var i = 0; i < fuseTicks; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
       expect(sim.sharedState['exploded'], isTrue);
-      expect(started.scores[victim], -HotPotatoConfig.explosionPenalty);
+      expect(started.scores.isUsed, isTrue);
+      expect(started.scores[victim], 0);
       // …but the results wait.
       expect(sim.outcome, isNull);
 
@@ -357,8 +362,11 @@ void main() {
       expect(outcome.kind, OutcomeKind.contest);
       expect(outcome.winners, isNot(contains(victim)));
       expect(outcome.winners, hasLength(2));
-      expect(outcome.lines![victim], isNotNull,
-          reason: 'the loser is told why');
+      expect(
+        outcome.lines![victim],
+        isNotNull,
+        reason: 'the loser is told why',
+      );
 
       // Polled repeatedly, as the platform does — always the same verdict.
       expect(identical(sim.outcome, outcome), isTrue);
@@ -379,27 +387,67 @@ void main() {
       expect(sim.outcome, isNull);
     });
 
-    test('costs the holder ten points, once', () {
+    test('at three phones only the holder goes without, once', () {
       final started = start(3);
       final sim = started.sim;
-      final victim = sim.holder;
 
       for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
+      final victim = sim.holder;
 
-      expect(started.scores[victim], -HotPotatoConfig.explosionPenalty);
-      // Kept stepping well past the bang; it must not keep charging.
+      Map<String, int> totals() => {
+        for (final e in started.scores.view.ranked) e.phoneId: e.total,
+      };
+      final paid = totals();
+      expect(paid[victim], 0);
+      for (final e in paid.entries.where((e) => e.key != victim)) {
+        expect(
+          e.value,
+          HotPotatoConfig.clearOfBlastPoints,
+          reason: 'both neighbours are everyone else at three phones',
+        );
+      }
+
+      // Kept stepping well past the bang; it must not pay twice.
       for (var i = 0; i < PlatformConfig.simHz * 5; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
-      expect(started.scores[victim], -HotPotatoConfig.explosionPenalty);
+      expect(totals(), paid);
+    });
 
-      // Nobody else paid for it.
-      final others = started.scores.view.ranked
-          .where((e) => e.phoneId != victim)
-          .map((e) => e.total);
-      expect(others.every((t) => t == 0), isTrue);
+    test('from four phones the blast catches both neighbours', () {
+      for (final n in [4, 6, 8]) {
+        final started = start(n);
+        final sim = started.sim;
+
+        for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
+          sim.step(1 / PlatformConfig.simHz);
+        }
+        final victim = sim.holder;
+        final outcome = sim.outcome!;
+
+        final caught = [
+          for (final e in started.scores.view.ranked)
+            if (e.total == HotPotatoConfig.caughtInBlastPoints) e.phoneId,
+        ];
+        expect(caught, hasLength(2), reason: 'at $n phones');
+        expect(started.scores[victim], 0);
+        final clear = started.scores.view.ranked.where(
+          (e) => e.total == HotPotatoConfig.clearOfBlastPoints,
+        );
+        expect(clear, hasLength(n - 3));
+
+        expect(
+          outcome.winners,
+          hasLength(n - 3),
+          reason: 'only those clear of the blast won',
+        );
+        for (final id in caught) {
+          expect(outcome.winners, isNot(contains(id)));
+          expect(outcome.lines![id], contains('Caught in the blast'));
+        }
+      }
     });
 
     test('counts down identically for everyone, off one clock', () {
@@ -462,9 +510,13 @@ void main() {
           final was = ring.indexOf(from);
           final now = ring.indexOf(sim.holder);
           final seats = (now - was + count) % count;
-          expect(seats == 1 || seats == count - 1, isTrue,
-              reason: '$count players: the potato went from $from to '
-                  '${sim.holder}, which is $seats seats away round the ring');
+          expect(
+            seats == 1 || seats == count - 1,
+            isTrue,
+            reason:
+                '$count players: the potato went from $from to '
+                '${sim.holder}, which is $seats seats away round the ring',
+          );
         }
       }
     });
@@ -486,14 +538,15 @@ void main() {
           final step = upStep(board, from);
           pass(sim, board, from, up: true);
 
-          final expected =
-              ring[(ring.indexOf(from) + step + count) % count];
-          expect(sim.holder, expected,
-              reason: '$count players, from $from');
+          final expected = ring[(ring.indexOf(from) + step + count) % count];
+          expect(sim.holder, expected, reason: '$count players, from $from');
           visited.add(sim.holder);
         }
-        expect(visited, hasLength(count),
-            reason: '$count players: swiping up never reached everybody');
+        expect(
+          visited,
+          hasLength(count),
+          reason: '$count players: swiping up never reached everybody',
+        );
       }
     });
 
@@ -563,8 +616,8 @@ void main() {
       expect(sim.passPending, isTrue);
 
       // It goes at the catch — within one hop, never later.
-      final hopTicks =
-          (HotPotatoConfig.hopSecondsCalm * PlatformConfig.simHz).ceil();
+      final hopTicks = (HotPotatoConfig.hopSecondsCalm * PlatformConfig.simHz)
+          .ceil();
       for (var i = 0; i < hopTicks && sim.holder == from; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
@@ -601,7 +654,8 @@ void main() {
       final ring = ringOrder(board);
       final from = sim.holder;
       final step = upStep(board, from);
-      final next = ring[(ring.indexOf(from) + step + ring.length) % ring.length];
+      final next =
+          ring[(ring.indexOf(from) + step + ring.length) % ring.length];
       final target = started.board.contextFor(Scoreboard());
 
       pass(sim, board, from, up: true);

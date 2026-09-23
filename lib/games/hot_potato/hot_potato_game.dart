@@ -22,7 +22,7 @@ class HotPotatoGame implements MultiscreenGame {
     id: 'hotpotato',
     title: 'Hot Potato',
     tagline: 'Swipe it to a neighbour before the fuse runs out.',
-    goal: 'Holding it when it goes off costs you 10 points.',
+    goal: "Don't be holding it — or next to it — when it blows.",
     // Two phones would just be passing it back and forth across a table.
     players: PlayerCount.range(min: 3, max: 8),
     tier: GameTier.premium,

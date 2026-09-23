@@ -1,3 +1,5 @@
+import '../../sdk/score/scoreboard.dart';
+
 /// Tunables for Hot Potato.
 class HotPotatoConfig {
   const HotPotatoConfig._();
@@ -6,8 +8,15 @@ class HotPotatoConfig {
   /// down together regardless of frame rate.
   static const double fuseSeconds = 15;
 
-  /// What holding it when it goes off costs you.
-  static const int explosionPenalty = 10;
+  /// What getting through the round clear of the blast is worth: first place
+  /// on the shared ladder. Holding it when it goes off is worth nothing.
+  static const int clearOfBlastPoints = Scoreboard.pointsPerGame;
+
+  /// What sitting next to the holder when it goes off is worth — half, the
+  /// other half lost to the blast. Only at four phones and up: at three, both
+  /// the others are next to the holder, and the blast takes out the holder
+  /// alone.
+  static const int caughtInBlastPoints = Scoreboard.pointsPerGame ~/ 2;
 
   /// World units across, before it starts swelling.
   static const double potatoRadius = 1.2;

@@ -205,18 +205,14 @@ class PitchCarsSim extends Forge2DGameSim {
   }
 
   void _awardPoints() {
-    final maxLast = PitchCarsConfig.maxPlayers - 1;
-    final last = _order.length - 1;
-    final lines = <String, String>{};
-    for (var i = 0; i < _finishOrder.length; i++) {
-      final id = _finishOrder[i];
-      final points = math.max(
-        1,
-        (PitchCarsConfig.bestScore * (last - i) / maxLast).round(),
-      );
-      context.scores.award(id, points);
-      lines[id] = '${_placeLabel(i + 1)} — +$points pts';
-    }
+    final paid = context.scores.awardPlacements([
+      for (final id in _finishOrder) {id},
+    ]);
+    final lines = <String, String>{
+      for (var i = 0; i < _finishOrder.length; i++)
+        _finishOrder[i]:
+            '${_placeLabel(i + 1)} — +${paid[_finishOrder[i]]} pts',
+    };
     _outcome = GameOutcome.contest(
       winners: {_finishOrder.first},
       summary: '$_winnerLabel wins the race',

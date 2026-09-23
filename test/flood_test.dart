@@ -60,17 +60,11 @@ void advance(FloodSim sim, double seconds) {
 }
 
 /// Past the briefing and the countdown both, so taps count.
-void goLive(FloodSim sim) =>
-    advance(sim, FloodConfig.preRoundSeconds + 1 / 60);
+void goLive(FloodSim sim) => advance(sim, FloodConfig.preRoundSeconds + 1 / 60);
 
 void tap(FloodSim sim, String phoneId) => sim.onTouch(
-      TouchEvent(
-        phoneId: phoneId,
-        worldX: 0,
-        worldY: 0,
-        phase: TouchPhase.down,
-      ),
-    );
+  TouchEvent(phoneId: phoneId, worldX: 0, worldY: 0, phase: TouchPhase.down),
+);
 
 /// Taps spaced past the rate limit, since the limiter works on round time.
 void mash(FloodSim sim, String phoneId, int times) {
@@ -80,26 +74,23 @@ void mash(FloodSim sim, String phoneId, int times) {
   }
 }
 
-List<String> phonesOn(FloodSim sim, String team) =>
-    [for (final e in sim.teams.entries) if (e.value == team) e.key]..sort();
+List<String> phonesOn(FloodSim sim, String team) => [
+  for (final e in sim.teams.entries)
+    if (e.value == team) e.key,
+]..sort();
 
 /// A frame as the given phone would be handed one, for asking a view where it
 /// would actually paint the waterline.
-Frame frameFor(
-  BoardLayout board,
-  FloodSim sim,
-  String phoneId,
-) =>
-    Frame(
-      entities: const {},
-      sharedState: sim.sharedState,
-      scores: ScoreView.empty,
-      timeMs: 0,
-      dt: 1 / 60,
-      me: board.forPhone(phoneId)!,
-      board: board.coverage.board,
-      coverage: board.coverage,
-    );
+Frame frameFor(BoardLayout board, FloodSim sim, String phoneId) => Frame(
+  entities: const {},
+  sharedState: sim.sharedState,
+  scores: ScoreView.empty,
+  timeMs: 0,
+  dt: 1 / 60,
+  me: board.forPhone(phoneId)!,
+  board: board.coverage.board,
+  coverage: board.coverage,
+);
 
 void main() {
   group('the board', () {
@@ -142,7 +133,6 @@ void main() {
       }
     });
 
-
     test('phones stand upright, so the push axis gets the long edge', () {
       final lobby = LobbyInfo([phone('p1'), phone('p2')]);
       for (final p in const FloodGame().planBoard(lobby).placements) {
@@ -150,7 +140,10 @@ void main() {
       }
       // Two portrait phones stacked: the board is taller than it is wide.
       final started = start(const FloodGame(), 2);
-      expect(started.board.board.height, greaterThan(started.board.board.width));
+      expect(
+        started.board.board.height,
+        greaterThan(started.board.board.width),
+      );
     });
 
     test('rows of different depths still split into two teams', () {
@@ -162,13 +155,15 @@ void main() {
         phone('p1', widthMm: 300, heightMm: 500),
         phone('p2', widthMm: 300, heightMm: 300),
       ]);
-      final board =
-          const BoardCompiler().compile(const FloodGame().planBoard(lobby), lobby);
+      final board = const BoardCompiler().compile(
+        const FloodGame().planBoard(lobby),
+        lobby,
+      );
       final scores = Scoreboard()
         ..register('p1', 'p1')
         ..register('p2', 'p2');
-      final sim = const FloodGame().createSim(board.contextFor(scores))
-          as FloodSim;
+      final sim =
+          const FloodGame().createSim(board.contextFor(scores)) as FloodSim;
 
       expect(sim.teams['p1'], FloodConfig.blue, reason: 'p1 is the top row');
       expect(sim.teams['p2'], FloodConfig.red, reason: 'p2 is the bottom row');
@@ -188,8 +183,10 @@ void main() {
         phone('p4', widthMm: 71.0, heightMm: 146.0),
       ]);
       // The compiler rejects overlaps outright, so compiling is the assertion.
-      final board =
-          const BoardCompiler().compile(const FloodGame().planBoard(lobby), lobby);
+      final board = const BoardCompiler().compile(
+        const FloodGame().planBoard(lobby),
+        lobby,
+      );
       expect(board.phones, hasLength(4));
     });
   });
@@ -375,7 +372,7 @@ void main() {
       expect(sim.outcome, isNotNull);
       expect(sim.outcome!.summary, contains('red'));
       for (final p in red) {
-        expect(started.scores[p], 1, reason: 'every winner scores');
+        expect(started.scores[p], 100, reason: 'every winner scores');
       }
       for (final p in phonesOn(sim, FloodConfig.blue)) {
         expect(started.scores[p], 0);
@@ -392,11 +389,11 @@ void main() {
     });
   });
 
-
   group('the backstop', () {
     test('a dead-level round is resolved as a draw, not left running', () {
       for (final game in [const FloodGame()]) {
-        final sim = start(game, 2).sim;
+        final started = start(game, 2);
+        final sim = started.sim;
         goLive(sim);
         advance(sim, FloodConfig.maxRoundLength + 1);
 
@@ -405,6 +402,9 @@ void main() {
         // phone "a draw", so the word being in the summary proved nothing.
         expect(sim.outcome!.kind, OutcomeKind.draw);
         expect(sim.outcome!.winners, isNull);
+        for (final p in sim.teams.keys) {
+          expect(started.scores[p], 50, reason: 'a draw splits the prize');
+        }
       }
     });
 
@@ -432,7 +432,7 @@ void main() {
           lessThanOrEqualTo(FloodConfig.maxRoundLength + 0.5),
           reason: '${game.manifest.id} respects the 90-second play rule',
         );
-        expect(started.scores[red], 1, reason: 'the marginal lead takes it');
+        expect(started.scores[red], 100, reason: 'the marginal lead takes it');
       }
     });
 
@@ -552,10 +552,7 @@ void main() {
       final sim = start(const FloodGame(), 4).sim;
       final teams = sim.sharedState[FloodState.teams] as Map;
       expect(teams, hasLength(4));
-      expect(
-        teams.values.toSet(),
-        {FloodConfig.blue, FloodConfig.red},
-      );
+      expect(teams.values.toSet(), {FloodConfig.blue, FloodConfig.red});
     });
   });
 }

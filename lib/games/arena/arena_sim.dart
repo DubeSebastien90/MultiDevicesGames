@@ -33,6 +33,11 @@ class ArenaSim implements GameSim {
   double _briefing = 0;
   String? _winnerId;
 
+  /// Who fell, one set per tick, first to fall first. Two fighters cut down on
+  /// the same tick fell together and share a place.
+  final List<Set<String>> _fallen = [];
+  final Set<String> _fellThisTick = {};
+
   // -- fighters ---------------------------------------------------------------
   late final List<_Fighter> _fighters;
 
@@ -208,6 +213,10 @@ class ArenaSim implements GameSim {
       if (f.alive && f.swingStage == _Swing.slashing) _cutWithSword(f);
     }
 
+    if (_fellThisTick.isNotEmpty) {
+      _fallen.add({..._fellThisTick});
+      _fellThisTick.clear();
+    }
     _checkWinCondition();
 
     final ending = _finishIn;
@@ -296,6 +305,7 @@ class ArenaSim implements GameSim {
       if (target.lives <= 0) {
         target.lives = 0;
         target.alive = false;
+        _fellThisTick.add(target.phoneId);
         // Where they fell. The entity goes with them, so without this the
         // phones have nothing left to hang a burst on.
         target.deadX = target.x;
@@ -519,10 +529,14 @@ class ArenaSim implements GameSim {
     final alive = _fighters.where((f) => f.alive).toList();
     if (alive.length <= 1 && _fighters.length > 1) {
       _finishIn = ArenaConfig.deathShowSeconds;
-      if (alive.length == 1) {
-        _winnerId = alive.first.phoneId;
-        context.scores.award(_winnerId!, ArenaConfig.pointsForWinning);
-      }
+      if (alive.length == 1) _winnerId = alive.first.phoneId;
+      // Placed by the order people fell in, the last one standing first. The
+      // ladder is shorter than other games' because kills have already paid
+      // out part of the prize.
+      context.scores.awardPlacements([
+        {for (final f in alive) f.phoneId},
+        ..._fallen.reversed,
+      ], max: ArenaConfig.placementMax(_fighters.length));
     }
   }
 
@@ -777,6 +791,8 @@ class ArenaSim implements GameSim {
     _briefing = 0;
     _countdown = ArenaConfig.countdownSeconds;
     _winnerId = null;
+    _fallen.clear();
+    _fellThisTick.clear();
     _finishIn = null;
     // Who is at the table is the session's business, not the round's, so this
     // is deliberately *not* cleared: a player who is away stays away across a

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
+import '../../sdk/score/scoreboard.dart';
 import 'subway_skater_config.dart';
 
 /// A corridor down a line of phones, and a queue of people running it.
@@ -431,31 +432,27 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     return total;
   }
 
-  /// The pot: what the table as a whole is playing for.
-  ///
-  /// Counted from the phones the round was *built* for rather than the ones
-  /// still standing, so a battery dying does not shrink the prize halfway
-  /// through — the people who spent the first half of the minute earning a
-  /// share of it would find their share had been quietly revalued.
-  int get _pot => SubwaySkaterConfig.pointsPerPlayer * context.phoneIds.length;
+  /// How much position-time [phoneId] has banked: one a tick for every
+  /// skater behind them in the line.
+  double positionTimeOf(String phoneId) => _skaters[phoneId]?.raw ?? 0;
 
-  /// [phoneId]'s slice of the pot, and the only place the split is worked out.
+  /// [phoneId]'s place on the shared ladder if the round ended now, and the
+  /// only place the split is worked out.
   ///
-  /// Everybody's position-time goes in the same pile and the pot is cut in
-  /// proportion to it. Nobody is measured against a perfect round they will
-  /// never have; they are measured against the round the table actually had,
-  /// which is the one they were all in.
-  ///
-  /// Zero for everybody until somebody has been ahead of somebody — a line of
-  /// one earns no position-time at all, and dividing a pot by nothing is not a
-  /// score, it is a crash.
+  /// Ranked by position-time, the whole table including anybody who has left:
+  /// what they banked before going is still theirs. Zero for everybody until
+  /// somebody has been ahead of somebody — a line of one has earned nothing
+  /// and has nobody to be ranked against.
   int pointsOf(String phoneId) {
-    final total = _totalRaw;
-    if (total <= 0) return 0;
-    final s = _skaters[phoneId];
-    if (s == null) return 0;
-    return (_pot * s.raw / total).round();
+    if (_totalRaw <= 0) return 0;
+    return _placements()[phoneId] ?? 0;
   }
+
+  Map<String, int> _placements() => Scoreboard.placements(
+    Scoreboard.tiersBy({
+      for (final id in context.phoneIds) id: positionTimeOf(id),
+    }),
+  );
 
   /// How many times [phoneId] has been clipped this round.
   int hitsOf(String phoneId) => _skaters[phoneId]?.hits ?? 0;

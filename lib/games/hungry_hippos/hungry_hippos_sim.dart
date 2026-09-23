@@ -6,6 +6,7 @@ import '../../sdk/contract/sim.dart';
 import '../../sdk/model/world_rect.dart';
 import '../../sdk/physics/forge2d_game_sim.dart';
 import '../../sdk/render/shape_view.dart';
+import '../../sdk/score/scoreboard.dart';
 import 'hungry_hippos_config.dart';
 
 /// Marbles in a shallow dish, and everyone lunging for them at once.
@@ -345,7 +346,6 @@ class HungryHipposSim extends Forge2DGameSim {
         _live.remove(id);
         hide(id);
         _eaten[h.phoneId] = (_eaten[h.phoneId] ?? 0) + 1;
-        context.scores.award(h.phoneId, HungryHipposConfig.pointsPerMarble);
       }
     }
   }
@@ -381,10 +381,20 @@ class HungryHipposSim extends Forge2DGameSim {
 
   // --------------------------------------------------------------- outcome
 
+  /// What each phone was paid when the round ended.
+  Map<String, int> _paid = const {};
+
+  /// Marbles are counted as they go down and paid out here, on the placement
+  /// ladder, once — so a round where the dish empties fast is worth no more to
+  /// the evening than one where it does not.
   void _awardOnce() {
-    // Points are awarded as marbles are eaten, so there is nothing to pay out
-    // here. This exists to make the round's end idempotent.
+    if (_awarded) return;
     _awarded = true;
+    _paid = context.scores.awardPlacements(
+      Scoreboard.tiersBy({
+        for (final h in _hippos) h.phoneId: eatenBy(h.phoneId),
+      }),
+    );
   }
 
   @override
@@ -402,8 +412,9 @@ class HungryHipposSim extends Forge2DGameSim {
 
   String _lineFor(String phoneId) {
     final n = eatenBy(phoneId);
-    if (n == 0) return 'Your hippo went hungry';
-    return 'You ate $n marble${n == 1 ? '' : 's'}';
+    final pts = ' — +${_paid[phoneId] ?? 0} pts';
+    if (n == 0) return 'Your hippo went hungry$pts';
+    return 'You ate $n marble${n == 1 ? '' : 's'}$pts';
   }
 
   String _summary() {
@@ -418,6 +429,7 @@ class HungryHipposSim extends Forge2DGameSim {
   void reset() {
     _elapsed = 0;
     _awarded = false;
+    _paid = const {};
     // The latched verdict belongs to the round that just ended.
     _outcome = null;
 

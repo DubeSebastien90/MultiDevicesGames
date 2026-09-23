@@ -51,8 +51,7 @@ class ScoreView {
   /// Highest first. Ties keep their relative order, so the list does not
   /// reshuffle itself while nobody is scoring.
   List<ScoreEntry> get ranked {
-    final list = List.of(_entries)
-      ..sort((a, b) => b.total.compareTo(a.total));
+    final list = List.of(_entries)..sort((a, b) => b.total.compareTo(a.total));
     return List.unmodifiable(list);
   }
 
@@ -68,9 +67,7 @@ class ScoreView {
   /// hide standings entirely for a co-operative game.
   bool get isUsed => _entries.any((e) => e.total != 0);
 
-  List<Map<String, dynamic>> toJson() => [
-    for (final e in _entries) e.toJson(),
-  ];
+  List<Map<String, dynamic>> toJson() => [for (final e in _entries) e.toJson()];
 
   static ScoreView fromJson(List<dynamic> json) => ScoreView([
     for (final e in json) ScoreEntry.fromJson(e as Map<String, dynamic>),
@@ -113,6 +110,65 @@ class Scoreboard {
   }
 
   void setTo(String phoneId, int value) => _totals[phoneId] = value;
+
+  /// What first place is worth in one game. Every game pays out on the same
+  /// ladder so that no minigame decides the evening on its own: first takes
+  /// this, last takes nothing, and the places in between are spaced evenly.
+  static const int pointsPerGame = 100;
+
+  /// What [place] (1-based) is worth out of [count] players, before rounding.
+  static double ladder(int place, int count, {int max = pointsPerGame}) =>
+      count < 2 ? 0 : max * (count - place) / (count - 1);
+
+  /// What a finished round is worth to each phone, by placement, without
+  /// paying anybody — for a game that wants to show the split before it ends.
+  ///
+  /// [tiers] runs best first, one set per place; a set of more than one is a
+  /// tie, and its members share the average of the places they occupy, so a
+  /// tie never changes what the round is worth in total. [max] is what first
+  /// place is worth, for a game that pays part of its prize some other way.
+  static Map<String, int> placements(
+    List<Set<String>> tiers, {
+    int max = pointsPerGame,
+  }) {
+    final count = tiers.fold<int>(0, (n, t) => n + t.length);
+    final paid = <String, int>{};
+    var place = 1;
+    for (final tier in tiers) {
+      if (tier.isEmpty) continue;
+      var sum = 0.0;
+      for (var i = 0; i < tier.length; i++) {
+        sum += ladder(place + i, count, max: max);
+      }
+      final points = (sum / tier.length).round();
+      for (final id in tier) {
+        paid[id] = points;
+      }
+      place += tier.length;
+    }
+    return paid;
+  }
+
+  /// Pays a finished round out by [placements], and says what each phone got.
+  /// Call it once, when the round ends.
+  Map<String, int> awardPlacements(
+    List<Set<String>> tiers, {
+    int max = pointsPerGame,
+  }) {
+    final paid = placements(tiers, max: max);
+    paid.forEach(award);
+    return paid;
+  }
+
+  /// Groups phones into [awardPlacements] tiers by a number, highest first.
+  static List<Set<String>> tiersBy(Map<String, num> values) {
+    final byValue = <num, Set<String>>{};
+    for (final e in values.entries) {
+      byValue.putIfAbsent(e.value, () => {}).add(e.key);
+    }
+    final keys = byValue.keys.toList()..sort((a, b) => b.compareTo(a));
+    return [for (final k in keys) byValue[k]!];
+  }
 
   /// Co-operative scoring: the table did a thing, everyone gets the points.
   void awardAll(int points) {
