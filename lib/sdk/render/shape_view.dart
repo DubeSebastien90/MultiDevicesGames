@@ -106,6 +106,14 @@ class ShapeView extends GameView {
     if (showSeams) _drawSeams(canvas, frame);
   }
 
+  /// How big to draw [e] relative to its declared size this frame. Override
+  /// for per-frame effects — something shrinking away as it falls, say —
+  /// which props cannot carry, since a descriptor never changes.
+  double entityScale(Frame frame, RenderEntity e) => 1;
+
+  /// How opaque to draw [e] this frame, from 0 (not drawn) to 1.
+  double entityOpacity(Frame frame, RenderEntity e) => 1;
+
   /// Every entity that declared a shape.
   void renderEntities(Canvas canvas, Frame frame) {
     final view = frame.visible.inflate(2.0);
@@ -120,10 +128,10 @@ class ShapeView extends GameView {
       final reach = shape == ShapeKind.circle
           ? e.propDouble(ShapeProps.radius)
           : math.sqrt(
-                math.pow(e.propDouble(ShapeProps.width), 2) +
-                    math.pow(e.propDouble(ShapeProps.height), 2),
-              ) /
-              2;
+                  math.pow(e.propDouble(ShapeProps.width), 2) +
+                      math.pow(e.propDouble(ShapeProps.height), 2),
+                ) /
+                2;
       if (e.x + reach < view.left ||
           e.x - reach > view.right ||
           e.y + reach < view.top ||
@@ -131,27 +139,35 @@ class ShapeView extends GameView {
         continue;
       }
 
+      final opacity = entityOpacity(frame, e).clamp(0.0, 1.0);
+      if (opacity <= 0) continue;
+      final scale = entityScale(frame, e);
+
       // Somebody's piece, and we know who: draw them instead of a shape.
       // Unknown phone, empty roster, art still decoding — every one of those
       // falls through to the shape below, which is the same rule the art layer
       // lives by.
-      final player = roster.byPhone(e.props[ShapeProps.player] as String? ?? '');
+      final player = roster.byPhone(
+        e.props[ShapeProps.player] as String? ?? '',
+      );
       if (player != null) {
         PlayerArt.of(player.color, PlayerArtSlot.topdown).draw(
           canvas,
           Offset(e.x, e.y),
-          worldSize: e.propDouble(ShapeProps.radius) * _characterScale,
+          worldSize: e.propDouble(ShapeProps.radius) * _characterScale * scale,
           angle: e.angle,
+          opacity: opacity,
         );
         continue;
       }
 
-      _fill.color = Color(e.propInt(ShapeProps.color, 0xFFFFFFFF));
+      final color = Color(e.propInt(ShapeProps.color, 0xFFFFFFFF));
+      _fill.color = color.withValues(alpha: color.a * opacity);
       switch (shape) {
         case ShapeKind.circle:
-          _drawCircle(canvas, e);
+          _drawCircle(canvas, e, scale, opacity);
         case ShapeKind.box:
-          _drawBox(canvas, e);
+          _drawBox(canvas, e, scale);
       }
     }
   }
@@ -159,12 +175,19 @@ class ShapeView extends GameView {
   /// Override to draw on top of the shapes.
   void renderForeground(Canvas canvas, Frame frame) {}
 
-  void _drawCircle(Canvas canvas, RenderEntity e) {
-    final r = e.propDouble(ShapeProps.radius);
+  void _drawCircle(
+    Canvas canvas,
+    RenderEntity e,
+    double scale,
+    double opacity,
+  ) {
+    final r = e.propDouble(ShapeProps.radius) * scale;
     canvas.drawCircle(Offset(e.x, e.y), r, _fill);
     if (e.props[ShapeProps.spin] == true) {
       // A rotation tell, so a rolling ball reads as rolling.
-      _fill.color = const Color(0x88FFFFFF);
+      _fill.color = const Color(
+        0x88FFFFFF,
+      ).withValues(alpha: 0x88 / 255 * opacity);
       canvas.drawCircle(
         Offset(
           e.x + math.cos(e.angle) * r * 0.45,
@@ -176,9 +199,9 @@ class ShapeView extends GameView {
     }
   }
 
-  void _drawBox(Canvas canvas, RenderEntity e) {
-    final w = e.propDouble(ShapeProps.width);
-    final h = e.propDouble(ShapeProps.height);
+  void _drawBox(Canvas canvas, RenderEntity e, double scale) {
+    final w = e.propDouble(ShapeProps.width) * scale;
+    final h = e.propDouble(ShapeProps.height) * scale;
     canvas
       ..save()
       ..translate(e.x, e.y)

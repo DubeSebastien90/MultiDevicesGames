@@ -53,14 +53,59 @@ class PitchCarsView extends ShapeView {
   /// plus one per walled bend.
   final _paths = <Object, Path>{};
 
-  /// Under the entities, so cars and the finish checkerboard sit on the road
-  /// rather than beneath it — and the kerbs over the road, since they stand on
-  /// its edge.
+  /// Under the entities, so cars sit on the road rather than beneath it; the
+  /// finish checkerboard painted on the road, and the kerbs over both, since
+  /// they stand on its edge.
   @override
   void renderBackground(Canvas canvas, Frame frame) {
     super.renderBackground(canvas, frame);
     _strokePolylines(canvas, frame, PitchCarsConfig.ribbonKind);
+    _fillFinishTiles(canvas, frame);
     _strokePolylines(canvas, frame, PitchCarsConfig.wallKind);
+  }
+
+  final _tileFill = Paint();
+
+  /// Each finish tile is a closed quad bent along the road — see
+  /// `_buildFinishLineEntities` — so it is filled, not stroked.
+  void _fillFinishTiles(Canvas canvas, Frame frame) {
+    for (final e in frame.ofKind(PitchCarsConfig.finishTileKind)) {
+      final points = e.props[PitchCarsConfig.ribbonPoints];
+      if (points is! List || points.length < 6) continue;
+
+      final path = _paths.putIfAbsent(
+        points,
+        () => _pathThrough(points)..close(),
+      );
+      _tileFill.color = Color(
+        e.propInt(
+          PitchCarsConfig.ribbonColor,
+          PitchCarsConfig.finishLineColorA,
+        ),
+      );
+
+      canvas.save();
+      // A tile over the road's round end is cut to that end's disc.
+      final clip = e.props[PitchCarsConfig.finishClip];
+      if (clip is List && clip.length == 3) {
+        canvas.clipPath(
+          Path()..addOval(
+            Rect.fromCircle(
+              center: Offset(
+                (clip[0] as num).toDouble(),
+                (clip[1] as num).toDouble(),
+              ),
+              radius: (clip[2] as num).toDouble(),
+            ),
+          ),
+        );
+      }
+      canvas
+        ..translate(e.x, e.y)
+        ..rotate(e.angle)
+        ..drawPath(path, _tileFill)
+        ..restore();
+    }
   }
 
   /// Every polyline entity of one kind, stroked round-capped and round-joined.
@@ -114,6 +159,21 @@ class PitchCarsView extends ShapeView {
     }
     return path;
   }
+
+  /// How far through its fall a car is, 0 on the road to 1 about to reappear.
+  static double _fallOf(Frame frame, RenderEntity e) =>
+      (frame.sharedState['fall_${e.id}'] as num?)?.toDouble() ?? 0;
+
+  /// A car over the edge drops away: it shrinks slowly at first and faster
+  /// as it goes, the way something falling away from the viewer would.
+  @override
+  double entityScale(Frame frame, RenderEntity e) {
+    final t = _fallOf(frame, e);
+    return 1 - 0.6 * t * t;
+  }
+
+  @override
+  double entityOpacity(Frame frame, RenderEntity e) => 1 - _fallOf(frame, e);
 
   @override
   void renderForeground(Canvas canvas, Frame frame) {

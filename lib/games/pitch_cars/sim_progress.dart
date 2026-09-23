@@ -22,6 +22,21 @@ extension _Progress on PitchCarsSim {
   /// Where it lands is settled the moment it leaves, not when it arrives. The
   /// turn can end mid-fall, and `_preTurnPosition` means somebody else by then.
   void _resolveOffTrack(double dt) {
+    // The visual clock runs on past the landing until the phones, drawing
+    // behind the sim, have seen the car land too.
+    const visualEnd =
+        PitchCarsConfig.fallSeconds +
+        PitchCarsConfig.fallVisualLagSeconds +
+        PitchCarsConfig.fallVisualMarginSeconds;
+    for (final id in _fallVisualFor.keys.toList()) {
+      final t = _fallVisualFor[id]! + dt;
+      if (t >= visualEnd) {
+        _fallVisualFor.remove(id);
+      } else {
+        _fallVisualFor[id] = t;
+      }
+    }
+
     for (final id in _order) {
       if (_finished.contains(id)) continue;
 
@@ -69,6 +84,7 @@ extension _Progress on PitchCarsSim {
 
     _fallenFor[id] = 0;
     _fallTarget[id] = target;
+    _fallVisualFor[id] = 0;
     // Through everything on the way down. A car tumbling into the void should
     // not clip a rival still on the road, and should not be stopped by the
     // kerb it has already cleared.
@@ -147,7 +163,7 @@ extension _Progress on PitchCarsSim {
   }
 
   void _checkFinish() {
-    final threshold = track.length - _finishBandLen / 2 - 1e-6;
+    final threshold = _finishStart - 1e-6;
     for (final id in _order) {
       if (_finished.contains(id) || _progress[id]! < threshold) continue;
       final pos = carOf(id).position;

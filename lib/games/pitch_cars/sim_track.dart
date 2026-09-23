@@ -137,6 +137,7 @@ extension _TrackBuilding on PitchCarsSim {
     required List<Waypoint> points,
     required double thickness,
     required int color,
+    Map<String, Object?> extra = const {},
   }) {
     var minX = points.first.x, maxX = points.first.x;
     var minY = points.first.y, maxY = points.first.y;
@@ -159,6 +160,7 @@ extension _TrackBuilding on PitchCarsSim {
           ],
           PitchCarsConfig.ribbonWidth: thickness,
           PitchCarsConfig.ribbonColor: color,
+          ...extra,
         },
       ),
       x: cx,
@@ -166,10 +168,19 @@ extension _TrackBuilding on PitchCarsSim {
     );
   }
 
-  /// Finish band center: arclength [track.length] on a line (the road's
-  /// actual end), or 0 on a loop (the start/finish point a lap measures
-  /// from, where the starting grid's row 0 already sits).
-  double get _finishCenter => track.closed ? 0.0 : track.length;
+  /// Finish band center. On a line the band ends flush with the road's end,
+  /// so the whole checkerboard sits on tarmac — centred on the end, its far
+  /// half ran straight off along the last tangent, past a road that usually
+  /// curves away there. On a loop it straddles 0, the start/finish point a
+  /// lap measures from, where the starting grid's row 0 already sits.
+  double get _finishCenter => track.closed
+      ? 0.0
+      : math.max(track.length - _finishBandLen / 2, _finishBandLen / 2);
+
+  /// Where the band begins: the progress a car needs before it can finish.
+  double get _finishStart => track.closed
+      ? track.length - _finishBandLen / 2
+      : _finishCenter - _finishBandLen / 2;
 
   double get _finishBandLen =>
       PitchCarsConfig.finishLineCols *
@@ -183,42 +194,69 @@ extension _TrackBuilding on PitchCarsSim {
     return delta <= _finishBandLen / 2;
   }
 
+  /// The checkerboard, bent along the road.
+  ///
+  /// Each tile is a quad whose corners sit on the centerline's own normals at
+  /// the tile's two column boundaries, so the band curves with the road the
+  /// way the ribbon does. Neighbouring tiles share their corners exactly —
+  /// no seams, no overlap — and none of it reaches past `widthWorld / 2`.
+  ///
+  /// On a line the pattern carries on over the round cap past the road's
+  /// end — tarmac a car can stand on, so it would be odd left bare. Those
+  /// extra columns run straight on along the last tangent and are clipped by
+  /// the view to the cap's own disc ([PitchCarsConfig.finishClip]).
   void _buildFinishLineEntities() {
-    final center = _finishCenter;
     final rows = PitchCarsConfig.finishLineRows;
-    final cols = PitchCarsConfig.finishLineCols;
     final tileSize = track.widthWorld / rows;
-    final bandLen = _finishBandLen;
+    final bandStart = _finishCenter - _finishBandLen / 2;
+    final roadCols = PitchCarsConfig.finishLineCols;
+    final capCols = track.closed
+        ? 0
+        : ((track.widthWorld / 2) / tileSize - 1e-9).ceil();
+    final end = track.pointAtArclength(track.length);
+    final endTangent = track.tangentAt(track.length);
 
-    final base = track.pointAtArclength(center);
-    final tangent = track.tangentAt(center);
-    final normal = Waypoint(-tangent.y, tangent.x);
-    final angle = math.atan2(tangent.y, tangent.x);
+    Waypoint corner(int col, int row) {
+      final s = bandStart + col * tileSize;
+      final past = track.closed ? 0.0 : math.max(0.0, s - track.length);
+      final p = track.pointAtArclength(s);
+      final t = past > 0 ? endTangent : track.tangentAt(s);
+      final lateral = row * tileSize - track.widthWorld / 2;
+      return Waypoint(
+        p.x + t.x * past - t.y * lateral,
+        p.y + t.y * past + t.x * lateral,
+      );
+    }
 
-    for (var col = 0; col < cols; col++) {
-      final along = (col + 0.5) * tileSize - bandLen / 2;
+    for (var col = 0; col < roadCols + capCols; col++) {
+      final onCap = col >= roadCols;
       for (var row = 0; row < rows; row++) {
-        final lateral = (row + 0.5) * tileSize - track.widthWorld / 2;
         final color = (row + col) % 2 == 0
             ? PitchCarsConfig.finishLineColorA
             : PitchCarsConfig.finishLineColorB;
-        _trackEntities.add(
-          Entity(
-            descriptor: EntityDescriptor(
-              id: 'finishTile${row}_$col',
-              kind: 'finishLine',
-              props: {
-                ShapeProps.shape: ShapeKind.box,
-                ShapeProps.width: tileSize,
-                ShapeProps.height: tileSize,
-                ShapeProps.color: color,
-              },
-            ),
-            x: base.x + tangent.x * along + normal.x * lateral,
-            y: base.y + tangent.y * along + normal.y * lateral,
-            angle: angle,
-          ),
+        final points = [
+          corner(col, row),
+          corner(col + 1, row),
+          corner(col + 1, row + 1),
+          corner(col, row + 1),
+        ];
+        final tile = _polylineEntity(
+          id: 'finishTile${row}_$col',
+          kind: PitchCarsConfig.finishTileKind,
+          points: points,
+          thickness: 0,
+          color: color,
+          extra: onCap
+              ? {
+                  PitchCarsConfig.finishClip: [
+                    end.x,
+                    end.y,
+                    track.widthWorld / 2,
+                  ],
+                }
+              : const {},
         );
+        _trackEntities.add(tile);
       }
     }
   }
