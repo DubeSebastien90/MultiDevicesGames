@@ -1,6 +1,7 @@
 import '../games/arena/arena_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
+import '../games/fusebox/fusebox_game.dart';
 import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
@@ -29,6 +30,7 @@ class GameCatalog {
     PitchCarsGame(),
     HungryHipposGame(),
     SubwaySkaterGame(),
+    FuseBoxGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds
