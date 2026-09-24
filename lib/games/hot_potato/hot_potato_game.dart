@@ -25,7 +25,6 @@ class HotPotatoGame implements MultiscreenGame {
     goal: "Don't be holding it — or next to it — when it blows.",
     // Two phones would just be passing it back and forth across a table.
     players: PlayerCount.range(min: 3, max: 8),
-    tier: GameTier.premium,
   );
 
   /// A ring. Every phone turned outward to face the person it belongs to, and

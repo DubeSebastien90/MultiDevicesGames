@@ -6,6 +6,7 @@ import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
+import 'package:multiscreen_slingshot/sdk/monetization/premium_status.dart';
 import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
 import 'package:multiscreen_slingshot/sdk/net/websocket_transport.dart';
 
@@ -43,6 +44,13 @@ Future<void> waitFor(
   }
 }
 
+/// Dodgeball is Premium, and a host left at the default is a free host that
+/// cannot start it. This suite is about the platform, not the paywall.
+class _UnlockedPremiumStatus extends PremiumStatus {
+  @override
+  bool get isPremium => true;
+}
+
 void main() {
   late HostSession host;
   late LoopbackPair loopback;
@@ -54,7 +62,11 @@ void main() {
     // No UDP beacon here: this suite is about the game, and binding a
     // broadcast socket on a build machine is a different kind of flaky.
     // Discovery has its own test.
-    host = HostSession(name: 'test board', advertise: false);
+    host = HostSession(
+      name: 'test board',
+      advertise: false,
+      premium: _UnlockedPremiumStatus(),
+    );
     address = await host.start();
 
     loopback = LoopbackPair();
