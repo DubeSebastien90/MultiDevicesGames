@@ -150,11 +150,13 @@ class HostSession extends ChangeNotifier {
     String? joinCode,
     bool advertise = true,
     PremiumStatus? premium,
+    Random? random,
   }) : _transport = transport ?? WebSocketHostTransport(),
        _name = name,
        _joinCode = joinCode ?? generateJoinCode(),
        _advertise = advertise,
-       _premium = premium;
+       _premium = premium,
+       _random = random ?? Random();
 
   // JOIN CODE DISABLED — the lockout only means something with a code to get
   // wrong.
@@ -169,6 +171,10 @@ class HostSession extends ChangeNotifier {
   final String _name;
   final String _joinCode;
   final bool _advertise;
+
+  /// Deals the running order at **Play**. Injectable so a test can seed it and
+  /// know which game comes up first.
+  final Random _random;
 
   /// Null in tests and anywhere else Premium is not wired up — treated the
   /// same as "not premium", never as "everything unlocked". A missing gate
@@ -231,9 +237,18 @@ class HostSession extends ChangeNotifier {
   /// is what makes handles round-scoped without anything having to expire them.
   RoundAudio? _audio;
 
-  /// Position in the playlist. Only ever goes up within a run, and resets when
+  /// Position in [_order]. Only ever goes up within a run, and resets when
   /// the table lands back in the lobby — the list is played through once.
   int _gameIndex = 0;
+
+  /// The order this run walks the catalogue in.
+  ///
+  /// Shuffled at **Play**, so no two evenings open with the same game, and put
+  /// back to catalogue order in the lobby. Only the order is dealt: what gets
+  /// skipped is still asked of [_skipping] and the table size on every step, so
+  /// a shuffled run steps over an unticked, locked or too-big game exactly as
+  /// an ordered one does.
+  List<MultiscreenGame> _order = GameCatalog.playlist;
 
   /// Games the host has unticked, by id.
   ///
@@ -370,6 +385,7 @@ class HostSession extends ChangeNotifier {
     _gameIndex,
     _present.length,
     skipping: _skipping,
+    order: _order,
   );
 
   bool get canStart =>
@@ -1002,6 +1018,7 @@ class HostSession extends ChangeNotifier {
             _gameIndex + 1,
             _present.length,
             skipping: _skipping,
+            order: _order,
           );
 
     if (index == null) {
@@ -1029,7 +1046,7 @@ class HostSession extends ChangeNotifier {
     // *game* changed would leave that looking like the app forgetting itself.
     _tableChange = TableChange(
       who: because,
-      nextGame: GameCatalog.playlist[index].manifest.title,
+      nextGame: _order[index].manifest.title,
     );
     _startGame(index);
   }
@@ -1230,6 +1247,7 @@ class HostSession extends ChangeNotifier {
           _gameIndex + 1,
           _present.length,
           skipping: _skipping,
+          order: _order,
         );
 
   /// The playlist has been played out: this round was the last game that fits
@@ -1277,9 +1295,7 @@ class HostSession extends ChangeNotifier {
     // lives, and "ignores the tick list" must not quietly mean "ignores that
     // too" — see [_mayStart].
     if (!_mayStart(game)) return;
-    final index = GameCatalog.playlist.indexWhere(
-      (g) => g.manifest.id == game.manifest.id,
-    );
+    final index = _order.indexWhere((g) => g.manifest.id == game.manifest.id);
     if (index < 0) return;
     _mode = RoundMode.oneOff;
     // No run to be part of. A one-off that the table outgrows falls back to the
@@ -1298,13 +1314,22 @@ class HostSession extends ChangeNotifier {
     // until there is a run to answer against instead.
     _runGames = {for (final game in runningOrder) game.manifest.id};
 
+    // And the order it is played in, dealt fresh every Play. Only the order:
+    // what is in the run was settled on the line above.
+    _order = List.of(GameCatalog.playlist)..shuffle(_random);
+
     // The one moment the whole table is asked to look at the same thing.
     _introPending = true;
 
     // Always from the top: a run is the whole list, not a resumption of one
     // somebody abandoned.
     _startGame(
-      GameCatalog.playableIndexFrom(0, _present.length, skipping: _skipping)!,
+      GameCatalog.playableIndexFrom(
+        0,
+        _present.length,
+        skipping: _skipping,
+        order: _order,
+      )!,
     );
   }
 
@@ -1319,7 +1344,7 @@ class HostSession extends ChangeNotifier {
       !game.manifest.isPremium || isPremiumUnlocked;
 
   void _startGame(int index) {
-    final game = GameCatalog.playlist[index];
+    final game = _order[index];
 
     // The last gate before a premium game reaches a screen, and the reason it
     // is here rather than only at the callers: every way a round can begin —
@@ -1703,6 +1728,7 @@ class HostSession extends ChangeNotifier {
       _gameIndex + 1,
       _present.length,
       skipping: _skipping,
+      order: _order,
     );
     if (index == null) {
       // Only reachable by somebody dropping out between the button being drawn
@@ -1816,6 +1842,7 @@ class HostSession extends ChangeNotifier {
     // stopped — and after a full run, from past the end, which reads as "no
     // game fits this table".
     _gameIndex = 0;
+    _order = GameCatalog.playlist;
     // And back to the ticks. The next run is worked out from the table as it
     // will be then, not as it was when the last one started.
     _runGames = null;

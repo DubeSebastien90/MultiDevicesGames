@@ -8,7 +8,9 @@ import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
 import 'contract/game.dart';
 
-/// Every game, and the order they are played in.
+/// Every game, in the order the host's list shows them.
+///
+/// Not the order they are played in: a run shuffles this at Play.
 ///
 /// **This is the only file in `sdk/` that knows `games/` exists.** Keeping it to
 /// one import list is what makes the boundary real: everything else in the SDK
@@ -82,9 +84,15 @@ class GameCatalog {
     int index,
     int phoneCount, {
     Set<String> skipping = const {},
+    List<MultiscreenGame> order = playlist,
   }) {
-    final at = playableIndexFrom(index, phoneCount, skipping: skipping);
-    return at == null ? null : playlist[at];
+    final at = playableIndexFrom(
+      index,
+      phoneCount,
+      skipping: skipping,
+      order: order,
+    );
+    return at == null ? null : order[at];
   }
 
   /// The index of the first playable game at or after [index], for advancing
@@ -95,13 +103,17 @@ class GameCatalog {
   /// changes whenever somebody's battery dies. Both are asked here, every time,
   /// rather than baked into a list compiled at the Play button — which is what
   /// keeps a run stepping over a game the table has just become too small for.
+  ///
+  /// [order] is the list walked, and the index is into it. The catalogue order
+  /// by default; a run passes the order it shuffled at Play.
   static int? playableIndexFrom(
     int index,
     int phoneCount, {
     Set<String> skipping = const {},
+    List<MultiscreenGame> order = playlist,
   }) {
-    for (var at = index; at < playlist.length; at++) {
-      final game = playlist[at];
+    for (var at = index; at < order.length; at++) {
+      final game = order[at];
       if (skipping.contains(game.manifest.id)) continue;
       if (game.manifest.fits(phoneCount)) return at;
     }

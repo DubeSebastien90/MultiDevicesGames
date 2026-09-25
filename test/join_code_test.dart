@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
@@ -158,9 +159,11 @@ void main() {
               host.phones.every((p) => p.calibrated));
 
       // Play: the never-ending playlist, so a round knows what follows it.
+      // Which game opens it is dealt at random, but it is always one of the run.
+      final run = [for (final g in host.runningOrder) g.manifest.id];
       host.startRound();
       expect(host.mode, RoundMode.playlist);
-      expect(host.game!.manifest.id, 'flood');
+      expect(run, contains(host.game!.manifest.id));
 
       host.returnToLobby();
       await waitFor('back', () => client.phase == ClientPhase.lobby);
@@ -173,6 +176,51 @@ void main() {
 
       client.dispose();
       second.dispose();
+    });
+
+    test('every Play deals the run in a fresh order', () async {
+      final dealt = HostSession(
+        name: 'shuffled table',
+        advertise: false,
+        premium: _UnlockedPremiumStatus(),
+        random: Random(7),
+      );
+      final address = await dealt.start();
+      final at = address.replace(host: '127.0.0.1');
+      ClientSession seat() => ClientSession(
+        transport: WebSocketTransport(at),
+        metrics: phone('joiner'),
+        joinCode: dealt.joinCode,
+        deviceId: DeviceIdentity.generate(),
+      );
+      final client = seat();
+      final second = seat();
+      await client.connect();
+      await second.connect();
+      await waitFor('calibrated',
+          () => dealt.phones.length == 2 &&
+              dealt.phones.every((p) => p.calibrated));
+
+      // Only the order is dealt: an unticked game stays out however the deck
+      // falls.
+      dealt.chooseGame(const ArenaGame(), chosen: false);
+      final run = {for (final g in dealt.runningOrder) g.manifest.id};
+
+      final openers = <String>{};
+      for (var play = 0; play < 12; play++) {
+        dealt.startRound();
+        final opener = dealt.game!.manifest.id;
+        expect(run, contains(opener));
+        openers.add(opener);
+        dealt.returnToLobby();
+      }
+      expect(openers.length, greaterThan(1),
+          reason: 'the same game opened every run');
+
+      client.dispose();
+      second.dispose();
+      dealt.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     });
 
     test('the playlist ends at the lobby instead of starting over', () async {
