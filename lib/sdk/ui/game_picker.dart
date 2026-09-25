@@ -165,8 +165,15 @@ class GamePicker extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
           child: Row(
             children: [
-              const Expanded(
-                child: Text('Tap a game to add it', style: LobbyText.body),
+              // A free host cannot pick, so telling them to tap one to add it
+              // promises something the tap will not do.
+              Expanded(
+                child: Text(
+                  selectionLocked
+                      ? 'Games included in the run'
+                      : 'Tap a game to add it',
+                  style: LobbyText.body,
+                ),
               ),
               // Twelve taps to play one game is not a choice anybody makes
               // twice, so the two ends of the list are one tap each. Disabled
@@ -389,7 +396,7 @@ class _Row extends StatelessWidget {
         ),
         child: Row(
           children: [
-            _Mark(offer: offer, selectionLocked: selectionLocked),
+            _Mark(offer: offer),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -450,10 +457,9 @@ class _Row extends StatelessWidget {
 
 /// The tick, the padlock, or the spinner — whichever this row has earned.
 class _Mark extends StatelessWidget {
-  const _Mark({required this.offer, required this.selectionLocked});
+  const _Mark({required this.offer});
 
   final GameOffer offer;
-  final bool selectionLocked;
 
   static const _size = 24.0;
 
@@ -478,7 +484,11 @@ class _Mark extends StatelessWidget {
 
     // A locked row has nothing a tap could toggle, so it gets no tick to
     // toggle. The padlock and the badge are the row's whole answer.
-    if (offer.isLocked || selectionLocked) {
+    //
+    // The padlock means Premium and nothing else. A free game on a host that
+    // cannot customise the run keeps its tick — the tap is what sends that
+    // host to the paywall, not the icon.
+    if (offer.isLocked) {
       return const SizedBox(
         width: _size,
         height: _size,

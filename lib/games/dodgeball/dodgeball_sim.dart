@@ -34,6 +34,13 @@ class DodgeballSim implements GameSim {
   double _briefing = 0;
   String? _winnerId;
 
+  /// Who went out, one set per tick, first out first. Two players hit on the
+  /// same tick went out together and share a place.
+  final List<Set<String>> _fallen = [];
+
+  /// What each phone was paid when the round ended.
+  Map<String, int> _paid = const {};
+
   // -- players ----------------------------------------------------------------
   late final List<_Player> _players;
 
@@ -319,6 +326,7 @@ class DodgeballSim implements GameSim {
     }
 
     // Collision: ball vs player.
+    final fell = <String>{};
     for (final p in _players) {
       if (!p.alive) continue;
       if (p.invincibleLeft > 0) continue;
@@ -330,6 +338,7 @@ class DodgeballSim implements GameSim {
         if (dist <
             DodgeballConfig.characterRadius + DodgeballConfig.ballRadius) {
           p.alive = false;
+          fell.add(p.phoneId);
           p.moveAngle = null;
           p.moveScale = 0;
           p.dashTimeLeft = 0;
@@ -343,6 +352,7 @@ class DodgeballSim implements GameSim {
       }
     }
 
+    if (fell.isNotEmpty) _fallen.add(fell);
     _checkWinCondition();
   }
 
@@ -402,10 +412,13 @@ class DodgeballSim implements GameSim {
     final alive = _players.where((p) => p.alive).toList();
     if (alive.length <= 1 && _players.length > 1) {
       _phase = 'finished';
-      if (alive.length == 1) {
-        _winnerId = alive.first.phoneId;
-        context.scores.award(_winnerId!, DodgeballConfig.pointsForWinning);
-      }
+      if (alive.length == 1) _winnerId = alive.first.phoneId;
+      // Paid by the order people went out in: the last one standing first,
+      // the first one hit last.
+      _paid = context.scores.awardPlacements([
+        {for (final p in alive) p.phoneId},
+        ..._fallen.reversed,
+      ]);
     }
   }
 
@@ -569,7 +582,9 @@ class DodgeballSim implements GameSim {
     if (_phase != 'finished') return null;
     return _outcome ??= GameOutcome.perPhone({
       for (final p in _players)
-        p.phoneId: _winnerId == p.phoneId ? 'Last one standing!' : 'Eliminated',
+        p.phoneId:
+            '${_winnerId == p.phoneId ? 'Last one standing!' : 'Eliminated'}'
+            ' — +${_paid[p.phoneId] ?? 0} pts',
     }, summary: _winnerId != null ? 'last one standing' : 'mutual destruction');
   }
 
@@ -581,6 +596,8 @@ class DodgeballSim implements GameSim {
     _briefing = 0;
     _countdown = DodgeballConfig.countdownSeconds;
     _winnerId = null;
+    _fallen.clear();
+    _paid = const {};
     _outcome = null;
     _balls.clear();
     _nextBallId = 0;

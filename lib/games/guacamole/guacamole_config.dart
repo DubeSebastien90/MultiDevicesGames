@@ -61,13 +61,6 @@ class GuacamoleConfig {
   /// so a full table never runs dry mid-round.
   static int poolSize(int playerCount) => (playerCount * 3).clamp(6, 40);
 
-  // ---------------------------------------------------------------- points
-
-  /// Points for a squish. Awarded to the mole's **owner**, whoever's finger
-  /// did it — which is the whole game, and the only rule that can be enforced
-  /// once people are reaching across a table.
-  static const int pointsPerSquish = 1;
-
   // ----------------------------------------------------------------- paint
 
   static const int colorBackground = 0xFF1B2A1F;

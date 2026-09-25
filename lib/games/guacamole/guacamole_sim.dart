@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/model/player_color.dart';
+import '../../sdk/score/scoreboard.dart';
 import 'guacamole_config.dart';
 
 /// Where one mole can appear: a quarter of one phone's screen.
@@ -91,6 +92,17 @@ class GuacamoleSim implements GameSim {
   double _elapsed = 0;
   double _sinceSpawn = 0;
 
+  /// Squishes credited to each phone this round. Counted here and paid out on
+  /// the placement ladder once the minute is up, so a busy round is worth no
+  /// more to the evening than a quiet one.
+  final _squished = <String, int>{};
+
+  /// What each phone was paid when the round ended.
+  Map<String, int> _paid = const {};
+
+  /// Squishes credited to [phoneId] so far this round.
+  int squishedBy(String phoneId) => _squished[phoneId] ?? 0;
+
   /// Whose turn it is to get a mole, as a shuffled bag.
   ///
   /// Spawn *position* is uniform over every hole, as it should be — but the
@@ -149,6 +161,16 @@ class GuacamoleSim implements GameSim {
     if (outcome != null) return;
 
     _elapsed += dt;
+    // Paid on the tick the minute runs out: the platform stops stepping the
+    // moment `outcome` goes non-null, so there is no tick after this one.
+    if (_elapsed >= GuacamoleConfig.roundSeconds) {
+      _paid = context.scores.awardPlacements(
+        Scoreboard.tiersBy({
+          for (final id in context.phoneIds) id: squishedBy(id),
+        }),
+      );
+      return;
+    }
 
     for (final mole in _pool) {
       if (mole.live) _advance(mole, dt);
@@ -296,7 +318,7 @@ class GuacamoleSim implements GameSim {
     if (owner == null) return;
     final phoneId = context.phoneOfColor(owner);
     if (phoneId != null) {
-      context.scores.award(phoneId, GuacamoleConfig.pointsPerSquish);
+      _squished[phoneId] = squishedBy(phoneId) + 1;
     }
   }
 
@@ -412,24 +434,23 @@ class GuacamoleSim implements GameSim {
     }, summary: _roundLeader());
   }
 
-  /// One point per squish, so the round's score *is* the count.
   String _tallyFor(String phoneId) {
-    final n = context.scores.view.roundDelta(phoneId);
-    if (n == 0) return 'Not a single avocado';
-    return 'You squished $n avocado${n == 1 ? '' : 's'}';
+    final n = squishedBy(phoneId);
+    final pts = ' — +${_paid[phoneId] ?? 0} pts';
+    if (n == 0) return 'Not a single avocado$pts';
+    return 'You squished $n avocado${n == 1 ? '' : 's'}$pts';
   }
 
   /// Who did best **this round**.
   ///
-  /// Deliberately from the round's own deltas rather than the session leader:
+  /// Deliberately from the round's own count rather than the session leader:
   /// by the third game of a playlist the phone with the highest total may have
   /// squished nothing at all here, and announcing it as the winner of a round
   /// it lost is worse than saying nothing.
   String _roundLeader() {
     final view = context.scores.view;
     final ranked = [
-      for (final id in context.phoneIds)
-        (id: id, squished: view.roundDelta(id)),
+      for (final id in context.phoneIds) (id: id, squished: squishedBy(id)),
     ]..sort((a, b) => b.squished.compareTo(a.squished));
 
     if (ranked.isEmpty || ranked.first.squished == 0) return 'nobody scored';
@@ -449,6 +470,8 @@ class GuacamoleSim implements GameSim {
     _bag.clear();
     _elapsed = 0;
     _sinceSpawn = 0;
+    _squished.clear();
+    _paid = const {};
     // The latched verdict belongs to the round that just ended.
     _outcome = null;
   }

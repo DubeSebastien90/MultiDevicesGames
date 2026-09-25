@@ -168,8 +168,14 @@ class ArenaConfig {
   static const int parryColor = 0xFFFFFFFF;
 
   // -- scoring ----------------------------------------------------------------
+  /// Paid the instant a fighter is cut down, to whoever did it.
   static const int pointsPerKill = 10;
-  static const int pointsForWinning = 25;
+
+  /// What surviving the longest is worth, on the shared placement ladder.
+  ///
+  /// Below the usual 100 because the kills pay out part of the prize on top,
+  /// and a bigger table has more of them to go round.
+  static int placementMax(int players) => 100 - 5 * players;
 
   // -- getting started --------------------------------------------------------
   /// The three lines of the briefing, and how long each one holds the screen.

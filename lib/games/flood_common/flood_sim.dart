@@ -1,5 +1,6 @@
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
+import '../../sdk/score/scoreboard.dart';
 import 'flood_board.dart';
 import 'flood_config.dart';
 
@@ -205,6 +206,8 @@ abstract class FloodSim extends GameSim {
     final b = effectiveBoundary;
     if (b == 0) {
       // Nobody won, said out loud rather than by everyone being congratulated.
+      // Everyone shares every place, which is half the prize each.
+      context.scores.awardPlacements([teams.keys.toSet()]);
       _outcome = const GameOutcome.draw(summary: 'time — dead level');
       return;
     }
@@ -214,12 +217,13 @@ abstract class FloodSim extends GameSim {
 
   void _finish(String team, String summary) {
     if (_outcome != null) return;
-    // A point each to the winning side. Score belongs to the lobby and follows
-    // these players into the next minigame.
+    // Every winner takes first place's points and every loser last's, which
+    // pays the table the same total as a ranked game of the same size. Score
+    // belongs to the lobby and follows these players into the next minigame.
     final winners = <String>{};
     for (final entry in teams.entries) {
       if (entry.value != team) continue;
-      context.scores.award(entry.key, 1);
+      context.scores.award(entry.key, Scoreboard.pointsPerGame);
       winners.add(entry.key);
     }
     // Named, so the losing side is told it lost rather than congratulated

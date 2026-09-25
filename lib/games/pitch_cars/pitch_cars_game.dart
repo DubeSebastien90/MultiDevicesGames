@@ -18,7 +18,6 @@ class PitchCarsGame implements MultiscreenGame {
     tagline: 'Flick your car around a randomized track.',
     goal: 'First past the finish line.',
     players: PlayerCount.range(min: 2, max: 8),
-    tier: GameTier.premium,
   );
 
   /// A winding path, different every round.

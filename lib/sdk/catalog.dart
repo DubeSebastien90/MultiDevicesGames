@@ -21,14 +21,16 @@ class GameCatalog {
   const GameCatalog._();
 
   static const playlist = <MultiscreenGame>[
+    // Free.
     HotPotatoGame(),
     FloodGame(),
     ArenaGame(),
-    DodgeballGame(),
-    GuacamoleGame(),
     PitchCarsGame(),
-    HungryHipposGame(),
     SubwaySkaterGame(),
+    // Premium, at the end.
+    GuacamoleGame(),
+    HungryHipposGame(),
+    DodgeballGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

@@ -1,10 +1,15 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/painting.dart' show Canvas;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_config.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_sim.dart';
+import 'package:multiscreen_slingshot/sdk/contract/entity.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
+import 'package:multiscreen_slingshot/sdk/contract/view.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
@@ -59,19 +64,42 @@ void swipeAlongScreen(
   final wy = sy * math.cos(turn);
 
   final reach = HotPotatoConfig.minSwipeWorld * 3;
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: me.worldCenterX,
-    worldY: me.worldCenterY,
-    phase: TouchPhase.down,
-  ));
-  sim.onTouch(TouchEvent(
-    phoneId: phoneId,
-    worldX: me.worldCenterX + wx * reach,
-    worldY: me.worldCenterY + wy * reach,
-    phase: TouchPhase.up,
-  ));
+  sim.onTouch(
+    TouchEvent(
+      phoneId: phoneId,
+      worldX: me.worldCenterX,
+      worldY: me.worldCenterY,
+      phase: TouchPhase.down,
+    ),
+  );
+  sim.onTouch(
+    TouchEvent(
+      phoneId: phoneId,
+      worldX: me.worldCenterX + wx * reach,
+      worldY: me.worldCenterY + wy * reach,
+      phase: TouchPhase.up,
+    ),
+  );
 }
+
+/// A swipe, then long enough for the potato to land in a hand and go.
+///
+/// A swipe only *queues* the throw — it leaves at the next catch — so the
+/// holder changes up to one hop later, not on the spot.
+void pass(
+  HotPotatoSim sim,
+  BoardLayout board,
+  String phoneId, {
+  required bool up,
+}) {
+  swipeAlongScreen(sim, board, phoneId, up: up);
+  for (var i = 0; i < PlatformConfig.simHz && sim.holder == phoneId; i++) {
+    sim.step(1 / PlatformConfig.simHz);
+  }
+}
+
+Entity potatoOf(HotPotatoSim sim) =>
+    sim.entities.firstWhere((e) => e.kind == 'potato');
 
 /// The seats in the order they sit round the ring, by angle.
 ///
@@ -82,9 +110,11 @@ List<String> ringOrder(BoardLayout board) {
   final cx = board.board.centerX;
   final cy = board.board.centerY;
   final seats = List.of(board.slices)
-    ..sort((a, b) => math
-        .atan2(a.screen.centerY - cy, a.screen.centerX - cx)
-        .compareTo(math.atan2(b.screen.centerY - cy, b.screen.centerX - cx)));
+    ..sort(
+      (a, b) => math
+          .atan2(a.screen.centerY - cy, a.screen.centerX - cx)
+          .compareTo(math.atan2(b.screen.centerY - cy, b.screen.centerX - cx)),
+    );
   return [for (final s in seats) s.phoneId];
 }
 
@@ -97,7 +127,9 @@ int upStep(BoardLayout board, String phoneId) {
   final upX = math.sin(turn), upY = -math.cos(turn);
 
   double towardSeat(int step) {
-    final other = board.forPhone(ring[(here + step + ring.length) % ring.length])!;
+    final other = board.forPhone(
+      ring[(here + step + ring.length) % ring.length],
+    )!;
     final dx = other.worldCenterX - me.worldCenterX;
     final dy = other.worldCenterY - me.worldCenterY;
     final len = math.sqrt(dx * dx + dy * dy);
@@ -178,9 +210,7 @@ void main() {
     );
 
     test('radial facing is still available, and points long edges inward', () {
-      final lobby = LobbyInfo([
-        for (var i = 0; i < 5; i++) phone('p$i'),
-      ]);
+      final lobby = LobbyInfo([for (var i = 0; i < 5; i++) phone('p$i')]);
       final board = const BoardCompiler().compile(
         Layouts.circle(lobby.phones, facing: RingFacing.radial),
         lobby,
@@ -206,9 +236,7 @@ void main() {
     });
 
     test('a tangential ring fits more phones in the same rim', () {
-      final lobby = LobbyInfo([
-        for (var i = 0; i < 6; i++) phone('p$i'),
-      ]);
+      final lobby = LobbyInfo([for (var i = 0; i < 6; i++) phone('p$i')]);
       double radiusOf(RingFacing facing) {
         final board = const BoardCompiler().compile(
           Layouts.circle(lobby.phones, facing: facing),
@@ -281,10 +309,40 @@ void main() {
       expect(sim.sharedState['exploded'], isFalse);
       expect(started.scores.isUsed, isFalse);
 
-      for (var i = 0; i < PlatformConfig.simHz * 2; i++) {
+      for (var i = 0; i < PlatformConfig.simHz * 4; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
       expect(sim.sharedState['exploded'], isTrue);
+      expect(sim.outcome, isNotNull);
+    });
+
+    test('lets the bang play before calling the round', () {
+      final started = start(3);
+      final sim = started.sim;
+      final victim = sim.holder;
+
+      // Just past the fuse: it has gone off, and it has already been paid…
+      final fuseTicks =
+          (HotPotatoConfig.fuseSeconds * PlatformConfig.simHz).ceil() + 1;
+      for (var i = 0; i < fuseTicks; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.sharedState['exploded'], isTrue);
+      expect(started.scores.isUsed, isTrue);
+      expect(started.scores[victim], 0);
+      // …but the results wait.
+      expect(sim.outcome, isNull);
+
+      final holdTicks =
+          (HotPotatoConfig.blastHoldSeconds * PlatformConfig.simHz).ceil() - 2;
+      for (var i = 0; i < holdTicks; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.outcome, isNull, reason: 'called before the hold was up');
+
+      for (var i = 0; i < 4; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
       expect(sim.outcome, isNotNull);
     });
 
@@ -304,8 +362,11 @@ void main() {
       expect(outcome.kind, OutcomeKind.contest);
       expect(outcome.winners, isNot(contains(victim)));
       expect(outcome.winners, hasLength(2));
-      expect(outcome.lines![victim], isNotNull,
-          reason: 'the loser is told why');
+      expect(
+        outcome.lines![victim],
+        isNotNull,
+        reason: 'the loser is told why',
+      );
 
       // Polled repeatedly, as the platform does — always the same verdict.
       expect(identical(sim.outcome, outcome), isTrue);
@@ -326,27 +387,67 @@ void main() {
       expect(sim.outcome, isNull);
     });
 
-    test('costs the holder ten points, once', () {
+    test('at three phones only the holder goes without, once', () {
       final started = start(3);
       final sim = started.sim;
-      final victim = sim.holder;
 
       for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
+      final victim = sim.holder;
 
-      expect(started.scores[victim], -HotPotatoConfig.explosionPenalty);
-      // Kept stepping well past the bang; it must not keep charging.
+      Map<String, int> totals() => {
+        for (final e in started.scores.view.ranked) e.phoneId: e.total,
+      };
+      final paid = totals();
+      expect(paid[victim], 0);
+      for (final e in paid.entries.where((e) => e.key != victim)) {
+        expect(
+          e.value,
+          HotPotatoConfig.clearOfBlastPoints,
+          reason: 'both neighbours are everyone else at three phones',
+        );
+      }
+
+      // Kept stepping well past the bang; it must not pay twice.
       for (var i = 0; i < PlatformConfig.simHz * 5; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
-      expect(started.scores[victim], -HotPotatoConfig.explosionPenalty);
+      expect(totals(), paid);
+    });
 
-      // Nobody else paid for it.
-      final others = started.scores.view.ranked
-          .where((e) => e.phoneId != victim)
-          .map((e) => e.total);
-      expect(others.every((t) => t == 0), isTrue);
+    test('from four phones the blast catches both neighbours', () {
+      for (final n in [4, 6, 8]) {
+        final started = start(n);
+        final sim = started.sim;
+
+        for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
+          sim.step(1 / PlatformConfig.simHz);
+        }
+        final victim = sim.holder;
+        final outcome = sim.outcome!;
+
+        final caught = [
+          for (final e in started.scores.view.ranked)
+            if (e.total == HotPotatoConfig.caughtInBlastPoints) e.phoneId,
+        ];
+        expect(caught, hasLength(2), reason: 'at $n phones');
+        expect(started.scores[victim], 0);
+        final clear = started.scores.view.ranked.where(
+          (e) => e.total == HotPotatoConfig.clearOfBlastPoints,
+        );
+        expect(clear, hasLength(n - 3));
+
+        expect(
+          outcome.winners,
+          hasLength(n - 3),
+          reason: 'only those clear of the blast won',
+        );
+        for (final id in caught) {
+          expect(outcome.winners, isNot(contains(id)));
+          expect(outcome.lines![id], contains('Caught in the blast'));
+        }
+      }
     });
 
     test('counts down identically for everyone, off one clock', () {
@@ -371,7 +472,7 @@ void main() {
       final expected =
           ring[(ring.indexOf(from) + step + ring.length) % ring.length];
 
-      swipeAlongScreen(sim, board, from, up: true);
+      pass(sim, board, from, up: true);
       expect(sim.holder, expected);
     });
 
@@ -386,7 +487,7 @@ void main() {
       final expected =
           ring[(ring.indexOf(from) + step + ring.length) % ring.length];
 
-      swipeAlongScreen(sim, board, from, up: false);
+      pass(sim, board, from, up: false);
       expect(sim.holder, expected);
     });
 
@@ -402,16 +503,20 @@ void main() {
         final board = started.board;
         final ring = ringOrder(board);
 
-        for (var pass = 0; pass < count * 3; pass++) {
+        for (var hop = 0; hop < count * 3; hop++) {
           final from = sim.holder;
-          swipeAlongScreen(sim, board, from, up: pass.isEven);
+          pass(sim, board, from, up: hop.isEven);
 
           final was = ring.indexOf(from);
           final now = ring.indexOf(sim.holder);
-          final hop = (now - was + count) % count;
-          expect(hop == 1 || hop == count - 1, isTrue,
-              reason: '$count players: the potato went from $from to '
-                  '${sim.holder}, which is $hop seats away round the ring');
+          final seats = (now - was + count) % count;
+          expect(
+            seats == 1 || seats == count - 1,
+            isTrue,
+            reason:
+                '$count players: the potato went from $from to '
+                '${sim.holder}, which is $seats seats away round the ring',
+          );
         }
       }
     });
@@ -431,16 +536,17 @@ void main() {
         for (var i = 0; i < count - 1; i++) {
           final from = sim.holder;
           final step = upStep(board, from);
-          swipeAlongScreen(sim, board, from, up: true);
+          pass(sim, board, from, up: true);
 
-          final expected =
-              ring[(ring.indexOf(from) + step + count) % count];
-          expect(sim.holder, expected,
-              reason: '$count players, from $from');
+          final expected = ring[(ring.indexOf(from) + step + count) % count];
+          expect(sim.holder, expected, reason: '$count players, from $from');
           visited.add(sim.holder);
         }
-        expect(visited, hasLength(count),
-            reason: '$count players: swiping up never reached everybody');
+        expect(
+          visited,
+          hasLength(count),
+          reason: '$count players: swiping up never reached everybody',
+        );
       }
     });
 
@@ -453,7 +559,7 @@ void main() {
           .firstWhere((id) => id != sim.holder);
       final before = sim.holder;
 
-      swipeAlongScreen(sim, board, notHolder, up: true);
+      pass(sim, board, notHolder, up: true);
       expect(sim.holder, before);
     });
 
@@ -491,14 +597,56 @@ void main() {
       }
       final victim = sim.holder;
 
-      swipeAlongScreen(sim, started.board, victim, up: true);
+      pass(sim, started.board, victim, up: true);
 
       expect(sim.holder, victim, reason: 'no passing the blame after the bang');
+    });
+
+    test('a swipe waits for the potato to land in a hand', () {
+      final started = start(4);
+      final sim = started.sim;
+      final from = sim.holder;
+
+      // Mid-hop: in the air between the two hands.
+      for (var i = 0; i < PlatformConfig.simHz ~/ 6; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      swipeAlongScreen(sim, started.board, from, up: true);
+      expect(sim.holder, from, reason: 'nobody can throw what is in the air');
+      expect(sim.passPending, isTrue);
+
+      // It goes at the catch — within one hop, never later.
+      final hopTicks = (HotPotatoConfig.hopSecondsCalm * PlatformConfig.simHz)
+          .ceil();
+      for (var i = 0; i < hopTicks && sim.holder == from; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.holder, isNot(from));
+      expect(sim.passPending, isFalse);
+    });
+
+    test('a swipe made while it is flying goes straight back out', () {
+      final started = start(5);
+      final sim = started.sim;
+      final board = started.board;
+
+      final first = sim.holder;
+      pass(sim, board, first, up: true);
+      final second = sim.holder;
+
+      // Swiped by the catcher before it has arrived: queued, then thrown the
+      // moment it lands.
+      swipeAlongScreen(sim, board, second, up: true);
+      expect(sim.passPending, isTrue);
+      for (var i = 0; i < PlatformConfig.simHz && sim.holder == second; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      expect(sim.holder, isNot(second));
     });
   });
 
   group('the potato itself', () {
-    test('is an entity, so it slides between screens on the shared clock', () {
+    test('is an entity, so it flies between screens on the shared clock', () {
       final started = start(4);
       final sim = started.sim;
       final board = started.board;
@@ -506,44 +654,153 @@ void main() {
       final ring = ringOrder(board);
       final from = sim.holder;
       final step = upStep(board, from);
-      final next = ring[(ring.indexOf(from) + step + ring.length) % ring.length];
-      final target = board.forPhone(next)!;
+      final next =
+          ring[(ring.indexOf(from) + step + ring.length) % ring.length];
+      final target = started.board.contextFor(Scoreboard());
 
-      final startPos = sim.entities.single;
-      swipeAlongScreen(sim, board, from, up: true);
+      pass(sim, board, from, up: true);
+      final thrown = potatoOf(sim);
 
       // One step is not a teleport — it is on its way.
       sim.step(1 / PlatformConfig.simHz);
-      final moving = sim.entities.single;
-      final movedX = (moving.x - startPos.x).abs();
-      expect(movedX + (moving.y - startPos.y).abs(), greaterThan(0));
+      final moving = potatoOf(sim);
+      expect(
+        (moving.x - thrown.x).abs() + (moving.y - thrown.y).abs(),
+        greaterThan(0),
+      );
 
-      // Given time, it arrives at the new holder's screen.
+      // Given time, it lands on the new holder's screen, in one of their hands.
       for (var i = 0; i < PlatformConfig.simHz; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
-      final arrived = sim.entities.single;
-      expect(arrived.x, closeTo(target.worldCenterX, 0.01));
-      expect(arrived.y, closeTo(target.worldCenterY, 0.01));
+      final shadow = sim.entities.firstWhere((e) => e.kind == 'shadow');
+      expect(target.phoneAt(shadow.x, shadow.y), next);
     });
 
-    test('swells and changes kind when it goes off', () {
+    test('is juggled from hand to hand while it is held', () {
+      final started = start(3);
+      final sim = started.sim;
+      final context = started.board.contextFor(Scoreboard());
+      final holder = sim.holder;
+
+      final seen = <double>[];
+      for (var i = 0; i < PlatformConfig.simHz * 2; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+        final p = potatoOf(sim);
+        seen.add(p.x + p.y);
+        // Never leaves the holder's screen.
+        expect(context.phoneAt(p.x, p.y), holder);
+      }
+      // And it does not sit still.
+      final spread = seen.reduce(math.max) - seen.reduce(math.min);
+      expect(spread, greaterThan(1));
+    });
+
+    test('spins faster as the fuse burns down', () {
       final started = start(3);
       final sim = started.sim;
 
-      final calm = sim.entities.single;
-      expect(calm.kind, 'potato');
+      double spinOver(int ticks) {
+        final before = potatoOf(sim).angle;
+        for (var i = 0; i < ticks; i++) {
+          sim.step(1 / PlatformConfig.simHz);
+        }
+        return potatoOf(sim).angle - before;
+      }
+
+      final early = spinOver(PlatformConfig.simHz);
+      for (var i = 0; i < PlatformConfig.simHz * 12; i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+      final late = spinOver(PlatformConfig.simHz);
+      expect(late, greaterThan(early * 3));
+    });
+
+    test('every seat has two arms', () {
+      final started = start(5);
+      final arms = started.sim.entities.where((e) => e.kind == 'arm');
+      expect(arms, hasLength(10));
+    });
+
+    test('goes off as a blast of its own', () {
+      final started = start(3);
+      final sim = started.sim;
+
+      final calm = potatoOf(sim);
 
       for (var i = 0; i < PlatformConfig.simHz * 20; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
-      final blast = sim.entities.single;
-      expect(blast.kind, 'blast');
+      // A new entity rather than the potato changing kind: descriptors are
+      // only sent when an entity first appears, so a change of kind would
+      // never reach the other screens.
+      expect(sim.entities.where((e) => e.kind == 'potato'), isEmpty);
+      final blast = sim.entities.firstWhere((e) => e.kind == 'blast');
+      expect(blast.id, isNot(calm.id));
       expect(
         (blast.props['r']! as num).toDouble(),
         greaterThan((calm.props['r']! as num).toDouble()),
       );
     });
+  });
+
+  test('draws on every screen, from what actually crosses the wire', () {
+    final started = start(5);
+    final sim = started.sim;
+    final board = started.board;
+
+    void drawEverywhere() {
+      // Descriptors and shared state as a client receives them: JSON.
+      final state = (jsonDecode(jsonEncode(sim.sharedState)) as Map)
+          .cast<String, Object?>();
+      final entities = {
+        for (final e in sim.entities)
+          e.id: RenderEntity(
+            descriptor: EntityDescriptor.fromJson(
+              (jsonDecode(jsonEncode(e.descriptor.toJson())) as Map)
+                  .cast<String, dynamic>(),
+            ),
+            x: e.x,
+            y: e.y,
+            angle: e.angle,
+          ),
+      };
+      for (final phone in board.phones) {
+        final view = const HotPotatoGame().createView(
+          ViewContext(phoneId: phone.phoneId, board: board.coverage.board),
+        );
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        for (var i = 0; i < 3; i++) {
+          view.render(
+            canvas,
+            Frame(
+              entities: entities,
+              sharedState: state,
+              scores: ScoreView.empty,
+              timeMs: i * 16.0,
+              dt: 1 / 60,
+              me: phone,
+              board: board.coverage.board,
+              coverage: board.coverage,
+            ),
+          );
+        }
+        recorder.endRecording();
+      }
+    }
+
+    drawEverywhere(); // Fresh.
+    for (var i = 0; i < PlatformConfig.simHz * 12; i++) {
+      sim.step(1 / PlatformConfig.simHz);
+    }
+    drawEverywhere(); // Hot and smoking.
+    pass(sim, board, sim.holder, up: true);
+    drawEverywhere(); // In flight.
+    for (var i = 0; i < PlatformConfig.simHz * 5; i++) {
+      sim.step(1 / PlatformConfig.simHz);
+    }
+    drawEverywhere(); // Gone off.
   });
 
   test('reset puts the fuse back and clears the bang', () {

@@ -48,6 +48,17 @@ class PitchCarsConfig {
   /// to register as a fall, short enough that the table is not waiting on it.
   static const double fallSeconds = 0.45;
 
+  /// How far behind the sim the fall's shrink-and-fade is played, to match
+  /// the phones' own lag: they draw positions `SnapshotBuffer.interpDelayMs`
+  /// in the past, but apply shared state the moment it lands. Unlagged, the
+  /// fade ran ahead of the picture — and at the end the car came back at full
+  /// size out in the void, 80 ms before it jumped home, which read as a slide.
+  static const double fallVisualLagSeconds = 0.08;
+
+  /// Kept invisible a little past the lag before being shown again, so a
+  /// late snapshot cannot flash the car at its last spot in the void.
+  static const double fallVisualMarginSeconds = 0.05;
+
   /// How far back down the road a knocked-off car returns, in track widths.
   ///
   /// In widths rather than centimetres so it costs the same fraction of a lap
@@ -123,12 +134,13 @@ class PitchCarsConfig {
   static const int finishLineColorA = 0xFF000000;
   static const int finishLineColorB = 0xFFFFFFFF;
 
-  /// Points the race winner nets in a full 8-player race, matching
-  /// `ReactionConfig.bestScore`.
-  static const int bestScore = 30;
+  /// One square of the finish checkerboard, as a filled quad whose four
+  /// corners ride [ribbonPoints] — bent to follow the road rather than a box
+  /// laid flat along a single tangent, which on a curved finish would stick
+  /// out past the tarmac.
+  static const String finishTileKind = 'finishTile';
 
-  /// Must match `PitchCarsGame.manifest.players.max` — the scoring ladder's
-  /// fixed size, so a small race occupies its top slots instead of
-  /// stretching to fill it.
-  static const int maxPlayers = 8;
+  /// On a tile past the road's end, the round cap it must stay inside, as
+  /// `[x, y, r]` in world coordinates: the tile is drawn clipped to that disc.
+  static const String finishClip = 'clip';
 }

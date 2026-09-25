@@ -22,10 +22,6 @@ class DodgeballConfig {
   static const double ballSpawnIntervalDecay = 0.92; // multiplier each spawn
   static const int ballMaxCount = 20;
 
-  // -- scoring ----------------------------------------------------------------
-  static const int pointsPerSurvival = 5; // per ball dodge wave
-  static const int pointsForWinning = 25;
-
   // -- getting started --------------------------------------------------------
   /// The three lines of the briefing, and how long each one holds the screen.
   ///

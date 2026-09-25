@@ -96,8 +96,6 @@ class HungryHipposConfig {
   /// one or two that nobody can corner.
   static const double maxRoundSeconds = 60;
 
-  static const int pointsPerMarble = 1;
-
   // ------------------------------------------------------------- colours
 
   static const int colorMarble = 0xFFF4F6FB;

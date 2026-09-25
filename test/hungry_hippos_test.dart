@@ -57,12 +57,9 @@ void run(HungryHipposSim sim, double seconds) {
   }
 }
 
-void tap(HungryHipposSim sim, String phoneId) => sim.onTouch(TouchEvent(
-      phoneId: phoneId,
-      worldX: 0,
-      worldY: 0,
-      phase: TouchPhase.down,
-    ));
+void tap(HungryHipposSim sim, String phoneId) => sim.onTouch(
+  TouchEvent(phoneId: phoneId, worldX: 0, worldY: 0, phase: TouchPhase.down),
+);
 
 Iterable<RenderableProbe> marblesOf(HungryHipposSim sim) sync* {
   for (final e in sim.entities) {
@@ -97,8 +94,11 @@ void main() {
         final started = start(count);
         expect(started.board.slices, hasLength(count));
         run(started.sim, 1);
-        expect(started.sim.marblesLeft, HungryHipposConfig.marbleCount,
-            reason: '$count phones: marbles vanished on their own');
+        expect(
+          started.sim.marblesLeft,
+          HungryHipposConfig.marbleCount,
+          reason: '$count phones: marbles vanished on their own',
+        );
       }
     });
 
@@ -107,7 +107,8 @@ void main() {
       // sliver. This is the reason the game refuses odd counts at all.
       for (final count in [2, 4, 6]) {
         final board = start(count).board.board;
-        final ratio = math.max(board.width, board.height) /
+        final ratio =
+            math.max(board.width, board.height) /
             math.min(board.width, board.height);
         expect(ratio, lessThan(2.6), reason: '$count phones: $ratio to 1');
       }
@@ -123,8 +124,11 @@ void main() {
         final board = started.board.board;
         final shortHalf = math.min(board.width, board.height) / 2;
 
-        expect(started.sim.dishRadius / shortHalf, greaterThan(0.5),
-            reason: '$count phones: the dish is a coin on a big table');
+        expect(
+          started.sim.dishRadius / shortHalf,
+          greaterThan(0.5),
+          reason: '$count phones: the dish is a coin on a big table',
+        );
       }
     });
 
@@ -136,9 +140,11 @@ void main() {
         final board = started.board.board;
         final shortHalf = math.min(board.width, board.height) / 2;
 
-        expect(started.sim.dishRadius,
-            lessThanOrEqualTo(shortHalf - HungryHipposConfig.playerMarginWorld),
-            reason: '$count phones: the dish runs to the very edge');
+        expect(
+          started.sim.dishRadius,
+          lessThanOrEqualTo(shortHalf - HungryHipposConfig.playerMarginWorld),
+          reason: '$count phones: the dish runs to the very edge',
+        );
       }
     });
 
@@ -148,11 +154,14 @@ void main() {
         final board = started.board.board;
 
         for (final h in started.sim.entities.where((e) => e.kind == 'hippo')) {
-          final d = math.sqrt(math.pow(h.x - board.centerX, 2) +
-              math.pow(h.y - board.centerY, 2));
-          expect(d - HungryHipposConfig.hippoRadius,
-              greaterThanOrEqualTo(started.sim.dishRadius - 0.01),
-              reason: '$count phones: ${h.id} starts inside the bowl');
+          final d = math.sqrt(
+            math.pow(h.x - board.centerX, 2) + math.pow(h.y - board.centerY, 2),
+          );
+          expect(
+            d - HungryHipposConfig.hippoRadius,
+            greaterThanOrEqualTo(started.sim.dishRadius - 0.01),
+            reason: '$count phones: ${h.id} starts inside the bowl',
+          );
         }
       }
     });
@@ -161,8 +170,10 @@ void main() {
       // Published rather than worked out twice: every time one fact has had two
       // implementations in this codebase, they have eventually disagreed.
       final started = start(4);
-      expect(started.sim.sharedState['dish'],
-          closeTo(started.sim.dishRadius, 0.01));
+      expect(
+        started.sim.sharedState['dish'],
+        closeTo(started.sim.dishRadius, 0.01),
+      );
     });
   });
 
@@ -172,10 +183,14 @@ void main() {
       final board = started.board.board;
 
       for (final m in marblesOf(started.sim)) {
-        final d = math.sqrt(math.pow(m.x - board.centerX, 2) +
-            math.pow(m.y - board.centerY, 2));
-        expect(d, lessThan(math.min(board.width, board.height) / 2),
-            reason: '${m.id} started outside the dish');
+        final d = math.sqrt(
+          math.pow(m.x - board.centerX, 2) + math.pow(m.y - board.centerY, 2),
+        );
+        expect(
+          d,
+          lessThan(math.min(board.width, board.height) / 2),
+          reason: '${m.id} started outside the dish',
+        );
       }
     });
 
@@ -189,8 +204,9 @@ void main() {
       double furthest() {
         var far = 0.0;
         for (final m in marblesOf(started.sim)) {
-          final d = math.sqrt(math.pow(m.x - board.centerX, 2) +
-              math.pow(m.y - board.centerY, 2));
+          final d = math.sqrt(
+            math.pow(m.x - board.centerX, 2) + math.pow(m.y - board.centerY, 2),
+          );
           if (d > far) far = d;
         }
         return far;
@@ -206,8 +222,11 @@ void main() {
       final scattered = furthest();
 
       run(started.sim, 4);
-      expect(furthest(), lessThan(scattered),
-          reason: 'the marbles never drifted back toward the middle');
+      expect(
+        furthest(),
+        lessThan(scattered),
+        reason: 'the marbles never drifted back toward the middle',
+      );
     });
 
     test('marbles settle rather than rattling about forever', () {
@@ -229,8 +248,9 @@ void main() {
     test('one per phone, resting on its own glass', () {
       for (final count in [2, 4, 6]) {
         final started = start(count);
-        final hippos =
-            started.sim.entities.where((e) => e.kind == 'hippo').toList();
+        final hippos = started.sim.entities
+            .where((e) => e.kind == 'hippo')
+            .toList();
         expect(hippos, hasLength(count));
 
         for (final h in hippos) {
@@ -268,8 +288,11 @@ void main() {
           final facing = Offset(math.cos(h.angle), math.sin(h.angle));
           final aim = toCentre / toCentre.distance;
           // The dot product of two unit vectors: 1 is dead on.
-          expect(facing.dx * aim.dx + facing.dy * aim.dy, closeTo(1, 0.01),
-              reason: 'hippo ${h.id} is turned away from the dish');
+          expect(
+            facing.dx * aim.dx + facing.dy * aim.dy,
+            closeTo(1, 0.01),
+            reason: 'hippo ${h.id} is turned away from the dish',
+          );
         }
       }
     });
@@ -284,22 +307,33 @@ void main() {
 
         final distances = [
           for (final h in started.sim.entities.where((e) => e.kind == 'hippo'))
-            math.sqrt(math.pow(h.x - board.centerX, 2) +
-                math.pow(h.y - board.centerY, 2)),
+            math.sqrt(
+              math.pow(h.x - board.centerX, 2) +
+                  math.pow(h.y - board.centerY, 2),
+            ),
         ];
 
         expect(distances, hasLength(count));
         for (final d in distances) {
-          expect(d, closeTo(distances.first, 0.01),
-              reason: '\$count phones: the hippos are not level with each other');
+          expect(
+            d,
+            closeTo(distances.first, 0.01),
+            reason: '\$count phones: the hippos are not level with each other',
+          );
         }
 
         // And that distance is the rim of the dish, not something the board
         // happened to hand out.
-        expect(distances.first,
-            closeTo(started.sim.dishRadius + HungryHipposConfig.hippoRadius +
-                HungryHipposConfig.hippoClearance, 0.01),
-            reason: '\$count phones: hippos are not waiting at the rim');
+        expect(
+          distances.first,
+          closeTo(
+            started.sim.dishRadius +
+                HungryHipposConfig.hippoRadius +
+                HungryHipposConfig.hippoClearance,
+            0.01,
+          ),
+          reason: '\$count phones: hippos are not waiting at the rim',
+        );
       }
     });
 
@@ -314,17 +348,24 @@ void main() {
           final phoneId = h.id.substring('hippo_'.length);
           final rect = started.board.forPhone(phoneId)!.viewport;
 
-          expect(h.x, greaterThanOrEqualTo(rect.left - 0.01),
-              reason: '$count phones: $phoneId is off its own screen');
+          expect(
+            h.x,
+            greaterThanOrEqualTo(rect.left - 0.01),
+            reason: '$count phones: $phoneId is off its own screen',
+          );
           expect(h.x, lessThanOrEqualTo(rect.right + 0.01));
           expect(h.y, greaterThanOrEqualTo(rect.top - 0.01));
           expect(h.y, lessThanOrEqualTo(rect.bottom + 0.01));
 
           // On the outward half of the board, with the dish in front of it.
-          final toCentre = math.sqrt(math.pow(h.x - board.centerX, 2) +
-              math.pow(h.y - board.centerY, 2));
-          expect(toCentre, greaterThan(started.sim.dishRadius),
-              reason: '$count phones: $phoneId begins inside the dish');
+          final toCentre = math.sqrt(
+            math.pow(h.x - board.centerX, 2) + math.pow(h.y - board.centerY, 2),
+          );
+          expect(
+            toCentre,
+            greaterThan(started.sim.dishRadius),
+            reason: '$count phones: $phoneId begins inside the dish',
+          );
         }
       }
     });
@@ -348,13 +389,17 @@ void main() {
         for (var i = 0; i < 60; i++) {
           started.sim.step(_dt);
           final h = started.sim.entities.firstWhere((e) => e.id == 'hippo_p1');
-          final d = math.sqrt(math.pow(h.x - board.centerX, 2) +
-              math.pow(h.y - board.centerY, 2));
+          final d = math.sqrt(
+            math.pow(h.x - board.centerX, 2) + math.pow(h.y - board.centerY, 2),
+          );
           if (d < closest) closest = d;
         }
 
-        expect(closest, lessThan(HungryHipposConfig.mouthRadius),
-            reason: '$count phones: the middle of the dish is out of reach');
+        expect(
+          closest,
+          lessThan(HungryHipposConfig.mouthRadius),
+          reason: '$count phones: the middle of the dish is out of reach',
+        );
       }
     });
 
@@ -369,9 +414,13 @@ void main() {
           started.sim.step(_dt);
           ticks++;
         }
-        expect(started.sim.marblesLeft, 0,
-            reason: '$count phones: ${started.sim.marblesLeft} marbles were '
-                'left stranded where nobody could eat them');
+        expect(
+          started.sim.marblesLeft,
+          0,
+          reason:
+              '$count phones: ${started.sim.marblesLeft} marbles were '
+              'left stranded where nobody could eat them',
+        );
       }
     });
 
@@ -389,13 +438,20 @@ void main() {
         run(started.sim, HungryHipposConfig.lungeOutSeconds);
 
         final h = started.sim.entities.firstWhere((e) => e.id == 'hippo_p1');
-        final reached = math.sqrt(math.pow(h.x - board.centerX, 2) +
-            math.pow(h.y - board.centerY, 2));
+        final reached = math.sqrt(
+          math.pow(h.x - board.centerX, 2) + math.pow(h.y - board.centerY, 2),
+        );
 
-        expect(reached, lessThan(dish),
-            reason: '\$count phones: the lunge stops outside the dish');
-        expect(reached, greaterThan(0),
-            reason: '\$count phones: the lunge went past the middle');
+        expect(
+          reached,
+          lessThan(dish),
+          reason: '\$count phones: the lunge stops outside the dish',
+        );
+        expect(
+          reached,
+          greaterThan(0),
+          reason: '\$count phones: the lunge went past the middle',
+        );
       }
     });
 
@@ -404,23 +460,35 @@ void main() {
       run(started.sim, 0.5);
 
       double reachOf(String phoneId) {
-        final h = started.sim.entities
-            .firstWhere((e) => e.id == 'hippo_$phoneId');
+        final h = started.sim.entities.firstWhere(
+          (e) => e.id == 'hippo_$phoneId',
+        );
         final board = started.board.board;
-        return math.sqrt(math.pow(h.x - board.centerX, 2) +
-            math.pow(h.y - board.centerY, 2));
+        return math.sqrt(
+          math.pow(h.x - board.centerX, 2) + math.pow(h.y - board.centerY, 2),
+        );
       }
 
       final resting = reachOf('p1');
       tap(started.sim, 'p1');
       run(started.sim, HungryHipposConfig.lungeOutSeconds);
-      expect(reachOf('p1'), lessThan(resting - 1),
-          reason: 'the hippo never left home');
+      expect(
+        reachOf('p1'),
+        lessThan(resting - 1),
+        reason: 'the hippo never left home',
+      );
 
-      run(started.sim, HungryHipposConfig.lungeBackSeconds +
-          HungryHipposConfig.lungeCooldownSeconds + 0.1);
-      expect(reachOf('p1'), closeTo(resting, 0.2),
-          reason: 'the hippo did not come home');
+      run(
+        started.sim,
+        HungryHipposConfig.lungeBackSeconds +
+            HungryHipposConfig.lungeCooldownSeconds +
+            0.1,
+      );
+      expect(
+        reachOf('p1'),
+        closeTo(resting, 0.2),
+        reason: 'the hippo did not come home',
+      );
     });
 
     test('a tap moves your own hippo and no one else', () {
@@ -439,14 +507,17 @@ void main() {
 
       expect(after['hippo_p1'], isNot(closeTo(before['hippo_p1']!, 0.5)));
       for (final id in ['hippo_p2', 'hippo_p3', 'hippo_p4']) {
-        expect(after[id], closeTo(before[id]!, 0.01),
-            reason: '$id moved when p1 tapped');
+        expect(
+          after[id],
+          closeTo(before[id]!, 0.01),
+          reason: '$id moved when p1 tapped',
+        );
       }
     });
   });
 
   group('eating', () {
-    test('a hippo swallows what it lunges into, and scores it', () {
+    test('a hippo swallows what it lunges into, and counts it', () {
       final started = start(4);
       run(started.sim, 2);
 
@@ -460,17 +531,24 @@ void main() {
         run(started.sim, 0.6);
       }
 
-      expect(started.sim.marblesLeft, lessThan(before),
-          reason: 'nobody managed to eat anything at all');
+      expect(
+        started.sim.marblesLeft,
+        lessThan(before),
+        reason: 'nobody managed to eat anything at all',
+      );
 
       var totalEaten = 0;
       for (final id in ['p1', 'p2', 'p3', 'p4']) {
         totalEaten += started.sim.eatenBy(id);
-        expect(started.scores[id], started.sim.eatenBy(id),
-            reason: '$id scored a different number than it ate');
+        if (started.sim.outcome == null) {
+          expect(started.scores[id], 0, reason: 'nothing is paid mid-round');
+        }
       }
-      expect(totalEaten, before - started.sim.marblesLeft,
-          reason: 'marbles went missing without anybody eating them');
+      expect(
+        totalEaten,
+        before - started.sim.marblesLeft,
+        reason: 'marbles went missing without anybody eating them',
+      );
     });
 
     test('a marble is eaten once, by one hippo', () {
@@ -484,8 +562,12 @@ void main() {
       }
 
       final eaten = HungryHipposConfig.marbleCount - started.sim.marblesLeft;
-      final claimed = ['p1', 'p2', 'p3', 'p4']
-          .fold<int>(0, (sum, id) => sum + started.sim.eatenBy(id));
+      final claimed = [
+        'p1',
+        'p2',
+        'p3',
+        'p4',
+      ].fold<int>(0, (sum, id) => sum + started.sim.eatenBy(id));
       expect(claimed, eaten, reason: 'a marble was counted twice');
     });
 
@@ -508,8 +590,11 @@ void main() {
         run(other.sim, 12 * _dt);
       }
 
-      expect(spammed, lessThanOrEqualTo(other.sim.eatenBy('p1') + 2),
-          reason: 'spamming ate far more than timing did');
+      expect(
+        spammed,
+        lessThanOrEqualTo(other.sim.eatenBy('p1') + 2),
+        reason: 'spamming ate far more than timing did',
+      );
     });
   });
 
@@ -528,6 +613,16 @@ void main() {
         expect(outcome.lines![id], isNotNull);
       }
 
+      // Paid on the placement ladder, which is worth 50 a head however the
+      // places fell.
+      final paid = [
+        'p1',
+        'p2',
+        'p3',
+        'p4',
+      ].fold<int>(0, (sum, id) => sum + started.scores[id]);
+      expect(paid, closeTo(200, 2));
+
       // Polled repeatedly, as the platform does: one verdict, built once.
       expect(identical(started.sim.outcome, outcome), isTrue);
     });
@@ -545,8 +640,11 @@ void main() {
 
       started.sim.reset();
       expect(started.sim.outcome, isNull);
-      expect(started.sim.marblesLeft, HungryHipposConfig.marbleCount,
-          reason: 'the marbles did not come back');
+      expect(
+        started.sim.marblesLeft,
+        HungryHipposConfig.marbleCount,
+        reason: 'the marbles did not come back',
+      );
       expect(started.sim.eatenBy('p1'), 0);
     });
   });
@@ -561,8 +659,11 @@ void main() {
 
     expect(a.length, b.length);
     for (final entry in a.entries) {
-      expect(b[entry.key], entry.value,
-          reason: '${entry.key} is not comparable to itself');
+      expect(
+        b[entry.key],
+        entry.value,
+        reason: '${entry.key} is not comparable to itself',
+      );
     }
   });
 }

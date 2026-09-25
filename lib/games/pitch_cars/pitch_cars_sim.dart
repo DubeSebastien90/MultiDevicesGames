@@ -80,6 +80,11 @@ class PitchCarsSim extends Forge2DGameSim {
   /// Where each falling car will reappear, decided when it went over rather
   /// than when it lands — by then the turn may have moved on.
   final _fallTarget = <String, Vector2>{};
+
+  /// The fall as the phones should see it: a clock started with the fall that
+  /// outlives the landing by [PitchCarsConfig.fallVisualLagSeconds], since
+  /// that is how far behind the sim they draw the car.
+  final _fallVisualFor = <String, double>{};
   final _rawProgress = <String, double>{};
   final _progress = <String, double>{};
   late Vector2 _preTurnPosition;
@@ -200,18 +205,14 @@ class PitchCarsSim extends Forge2DGameSim {
   }
 
   void _awardPoints() {
-    final maxLast = PitchCarsConfig.maxPlayers - 1;
-    final last = _order.length - 1;
-    final lines = <String, String>{};
-    for (var i = 0; i < _finishOrder.length; i++) {
-      final id = _finishOrder[i];
-      final points = math.max(
-        1,
-        (PitchCarsConfig.bestScore * (last - i) / maxLast).round(),
-      );
-      context.scores.award(id, points);
-      lines[id] = '${_placeLabel(i + 1)} — +$points pts';
-    }
+    final paid = context.scores.awardPlacements([
+      for (final id in _finishOrder) {id},
+    ]);
+    final lines = <String, String>{
+      for (var i = 0; i < _finishOrder.length; i++)
+        _finishOrder[i]:
+            '${_placeLabel(i + 1)} — +${paid[_finishOrder[i]]} pts',
+    };
     _outcome = GameOutcome.contest(
       winners: {_finishOrder.first},
       summary: '$_winnerLabel wins the race',
@@ -234,10 +235,9 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   Iterable<Entity> get entities sync* {
-    // The finish checkerboard first, so cars (from super.entities) paint on
-    // top of it. The road itself is in here too but draws nowhere near this
-    // order — it carries no `ShapeProps.shape`, so `ShapeView` passes over it
-    // and `PitchCarsView` paints it in the background, under everything.
+    // The road, kerbs and finish checkerboard. None of them draws in this
+    // order — they carry no `ShapeProps.shape`, so `ShapeView` passes over
+    // them and `PitchCarsView` paints them in the background, under the cars.
     yield* _trackEntities;
     yield* super.entities;
   }
@@ -251,6 +251,16 @@ class PitchCarsSim extends Forge2DGameSim {
     'currentTurn': _roundOver ? null : currentTurn,
     'winner': _finishOrder.isEmpty ? null : _finishOrder.first,
     for (final id in _order) 'finished_$id': _finished.contains(id),
+    // How far through its fall each car over the edge is, 0 to 1, so the view
+    // can shrink and fade it into the void. Absent for a car on the road.
+    // Lagged to line up with the positions the phones are drawing.
+    for (final entry in _fallVisualFor.entries)
+      'fall_${entry.key}': double.parse(
+        ((entry.value - PitchCarsConfig.fallVisualLagSeconds) /
+                PitchCarsConfig.fallSeconds)
+            .clamp(0.0, 1.0)
+            .toStringAsFixed(3),
+      ),
     for (final id in _order)
       'progress_$id': track.length < 1e-9
           ? 0.0
@@ -300,6 +310,7 @@ class PitchCarsSim extends Forge2DGameSim {
     // update and by the rest check, and never put back.
     _fallenFor.clear();
     _fallTarget.clear();
+    _fallVisualFor.clear();
 
     for (var i = 0; i < _order.length; i++) {
       final pos = _startPositionFor(i);

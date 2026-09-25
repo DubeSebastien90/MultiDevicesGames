@@ -22,10 +22,9 @@ class HotPotatoGame implements MultiscreenGame {
     id: 'hotpotato',
     title: 'Hot Potato',
     tagline: 'Swipe it to a neighbour before the fuse runs out.',
-    goal: 'Holding it when it goes off costs you 10 points.',
+    goal: "Don't be holding it — or next to it — when it blows.",
     // Two phones would just be passing it back and forth across a table.
     players: PlayerCount.range(min: 3, max: 8),
-    tier: GameTier.premium,
   );
 
   /// A ring. Every phone turned outward to face the person it belongs to, and
@@ -37,12 +36,13 @@ class HotPotatoGame implements MultiscreenGame {
     sort: PhoneSort.joinOrder,
     instruction:
         'Sit in a circle with your phone flat in front of you, screen facing '
-        'you. Swipe left or right to shove the potato at a neighbour.',
+        'you. Swipe up or down to throw the potato to a neighbour.',
   );
 
   @override
   GameSim createSim(BoardContext context) => HotPotatoSim(context);
 
   @override
-  GameView createView(ViewContext context) => HotPotatoView();
+  GameView createView(ViewContext context) =>
+      HotPotatoView(phoneId: context.phoneId);
 }

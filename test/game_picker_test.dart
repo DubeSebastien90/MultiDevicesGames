@@ -229,6 +229,11 @@ void main() {
       offer(const DodgeballGame(), chosen: false),
     ], selectionLocked: true);
 
+    // The padlock means Premium: a free game keeps its tick even when the
+    // host cannot change the selection.
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
+    expect(find.text('Tap a game to add it'), findsNothing);
+
     await tester.tap(find.text('Arena'));
     await tester.tap(find.text('None'));
     await tester.tap(find.text('All'));

@@ -17,12 +17,17 @@ import 'hot_potato_config.dart';
 /// Because the potato is an entity, easing it from one phone to the next makes
 /// it visibly slide across the table on every screen at once, in step, for the
 /// price of a lerp.
+///
+/// **Juggled, not held.** The holder's two hands toss it back and forth, faster
+/// and faster as the fuse burns. A swipe does not throw it on the spot: it is
+/// thrown the next time it lands in a hand. That is the animation and the rule
+/// at once — the potato is never somewhere a hand could not have sent it from.
+/// All of that motion is worked out here, on the host, and sent as plain
+/// transforms, so every screen juggles in step.
 class HotPotatoSim implements GameSim {
   HotPotatoSim(this.context, {math.Random? random})
     : _random = random ?? math.Random() {
-    _holderIndex = _random.nextInt(_order.length);
-    _potato = _seatOf(_holderIndex);
-    _target = _potato;
+    _startRound();
   }
 
   final BoardContext context;
@@ -56,27 +61,68 @@ class HotPotatoSim implements GameSim {
   /// Phone ids in ring order — the passing order.
   List<String> get _order => [for (final i in _ring) context.slices[i].phoneId];
 
+  /// Where each seat's hands are, in ring order. Fixed for the round.
+  late final List<_Seat> _seats = [
+    for (var i = 0; i < _ring.length; i++) _Seat.of(this, i),
+  ];
+
   static const _potatoId = 'potato';
+  static const _shadowId = 'potato-shadow';
+  static const _blastId = 'blast';
 
   late int _holderIndex;
-  late _Point _potato;
-  late _Point _target;
+
+  /// Where the potato is on the *ground* — under it, where its shadow falls.
+  late _Point _ground;
+
+  /// How high above [_ground] it is, in world units.
+  double _height = 0;
+
+  /// Accumulated rather than `time × rate`: the rate climbs with the heat, and
+  /// multiplying would make it lurch as the rate moved.
+  double _spin = 0;
+
+  // Juggling: from hand [_hand] toward the other one, [_hopT] of the way.
+  int _hand = 0;
+  double _hopT = 0;
+
+  // Throwing: from [_throwFrom] to [_throwTo], on the way to a neighbour.
+  bool _flying = false;
+  _Point _throwFrom = const _Point(0, 0);
+  _Point _throwTo = const _Point(0, 0);
+
+  /// A swipe waiting for the potato to land in a hand: +1 or -1 round the
+  /// ring, 0 for none.
+  int _pendingStep = 0;
 
   double _fuseLeft = HotPotatoConfig.fuseSeconds;
   double _elapsed = 0;
   bool _exploded = false;
   bool _awarded = false;
 
+  /// The holder's neighbours round the ring when it went off, if the ring is
+  /// big enough for them to be anybody but everyone else.
+  Set<String> _caught = const {};
+
+  /// Sim time since the bang — the round is only called once it has played.
+  double _sinceBlast = 0;
+
   /// Swipes in progress, by phone. A pass is a down and an up far enough apart.
   final _swipeStart = <String, _Point>{};
 
   String get holder => _order[_holderIndex];
 
+  /// A throw is queued and goes at the next catch.
+  bool get passPending => _pendingStep != 0;
+
+  /// 0 when the fuse is lit, 1 when it goes off.
+  double get _urgency => 1 - (_fuseLeft / HotPotatoConfig.fuseSeconds);
+
   int get _tick => (_elapsed * 60).round();
 
   // ----------------------------------------------------------------- seats
 
-  /// The middle of a seat's screen — where the potato rests when held.
+  /// The middle of a seat's screen.
   _Point _seatOf(int index) {
     final slice = _sliceAt(index);
     return _Point(slice.screen.centerX, slice.screen.centerY);
@@ -88,11 +134,8 @@ class HotPotatoSim implements GameSim {
   /// Which way the next seat round the ring lies from this one.
   _Point _towardNeighbour(int from, int step) {
     final here = _seatOf(from);
-    final there = _seatOf((from + step + _order.length) % _order.length);
-    final dx = there.x - here.x;
-    final dy = there.y - here.y;
-    final len = math.sqrt(dx * dx + dy * dy);
-    return len < 1e-9 ? const _Point(1, 0) : _Point(dx / len, dy / len);
+    final there = _seatOf((from + step + _ring.length) % _ring.length);
+    return (there - here).unit(orElse: const _Point(1, 0));
   }
 
   // ----------------------------------------------------------------- input
@@ -115,11 +158,12 @@ class HotPotatoSim implements GameSim {
         if (math.sqrt(dx * dx + dy * dy) < HotPotatoConfig.minSwipeWorld) {
           return; // A tap, not a throw.
         }
-        _passInDirection(dx, dy);
+        // Latest swipe wins: changing your mind mid-hop is allowed.
+        _pendingStep = _stepForSwipe(dx, dy);
     }
   }
 
-  /// Send it round the ring, the way the swipe went up or down the screen.
+  /// Which way round the ring a swipe goes, up or down the holder's screen.
   ///
   /// **Up and down, not left and right**, and the phones are the reason. They
   /// lie with their long edge along the rim, so each screen's top points *along*
@@ -131,18 +175,15 @@ class HotPotatoSim implements GameSim {
   /// Which of up or down leads to which neighbour is read off the geometry
   /// rather than assumed from the angle the layout chose, so this keeps working
   /// if the ring is ever built the other way round.
-  void _passInDirection(double dx, double dy) {
+  int _stepForSwipe(double dx, double dy) {
     final up = _screenUpOf(_holderIndex);
     final toNext = _towardNeighbour(_holderIndex, 1);
     final toPrev = _towardNeighbour(_holderIndex, -1);
 
-    final upLeadsToNext =
-        up.x * toNext.x + up.y * toNext.y > up.x * toPrev.x + up.y * toPrev.y;
+    final upLeadsToNext = up.dot(toNext) > up.dot(toPrev);
     final swipedUp = dx * up.x + dy * up.y >= 0;
 
-    final step = swipedUp == upLeadsToNext ? 1 : -1;
-    _holderIndex = (_holderIndex + step + _order.length) % _order.length;
-    _target = _seatOf(_holderIndex);
+    return swipedUp == upLeadsToNext ? 1 : -1;
   }
 
   /// Which way "toward the top of the screen" points, in the world, for the
@@ -159,84 +200,223 @@ class HotPotatoSim implements GameSim {
   @override
   void step(double dt) {
     _elapsed += dt;
-
-    if (!_exploded) {
-      _fuseLeft -= dt;
-      if (_fuseLeft <= 0) {
-        _fuseLeft = 0;
-        _exploded = true;
-      }
+    if (_exploded) {
+      _sinceBlast += dt;
+      return;
     }
 
-    // Ease toward whoever holds it. The platform interpolates the transform,
-    // so this reads as one continuous slide across the table on every screen.
-    final speed = _exploded ? 0.0 : HotPotatoConfig.passSpeed;
-    if (speed > 0) {
-      final dx = _target.x - _potato.x;
-      final dy = _target.y - _potato.y;
-      final distance = math.sqrt(dx * dx + dy * dy);
-      if (distance > 1e-6) {
-        final stepLength = math.min(distance, speed * dt);
-        _potato = _Point(
-          _potato.x + dx / distance * stepLength,
-          _potato.y + dy / distance * stepLength,
-        );
-      }
+    _fuseLeft -= dt;
+    if (_fuseLeft <= 0) {
+      _fuseLeft = 0;
+      _exploded = true;
     }
 
     // Award once, here rather than in `outcome` — that getter is polled more
     // than once a tick, and points must not be charged twice.
-    if (_exploded && !_awarded) {
-      _awarded = true;
-      context.scores.award(holder, -HotPotatoConfig.explosionPenalty);
+    if (_exploded) {
+      if (!_awarded) {
+        _awarded = true;
+        _payOut();
+      }
+      return;
+    }
+
+    final u = _urgency;
+    _spin +=
+        dt *
+        _lerp(HotPotatoConfig.spinCalm, HotPotatoConfig.spinFrantic, u * u);
+
+    if (_flying) {
+      _stepThrow(dt);
+    } else {
+      _stepJuggle(dt, u);
     }
   }
 
-  @override
-  void reset() {
+  void _stepJuggle(double dt, double u) {
+    final seat = _seats[_holderIndex];
+    final hopSeconds = _lerp(
+      HotPotatoConfig.hopSecondsCalm,
+      HotPotatoConfig.hopSecondsFrantic,
+      u,
+    );
+    _hopT += dt / hopSeconds;
+
+    if (_hopT >= 1) {
+      // Landed in the other hand. That is the moment a queued throw goes.
+      _hopT = 0;
+      _hand = 1 - _hand;
+      _ground = seat.hands[_hand];
+      _height = 0;
+      if (_pendingStep != 0) _throw();
+      return;
+    }
+
+    final from = seat.hands[_hand];
+    final to = seat.hands[1 - _hand];
+    _ground = from.lerp(to, _easeInOut(_hopT));
+    _height =
+        math.sin(math.pi * _hopT) *
+        _lerp(HotPotatoConfig.hopArcCalm, HotPotatoConfig.hopArcFrantic, u);
+  }
+
+  /// Off the hand it just landed in, toward the nearer hand of a neighbour.
+  void _throw() {
+    final step = _pendingStep;
+    _pendingStep = 0;
+
+    _throwFrom = _ground;
+    _holderIndex = (_holderIndex + step + _ring.length) % _ring.length;
+    // Thrown to the next seat, it lands in that seat's hand facing back — the
+    // "previous" hand. Thrown the other way, the "next" one.
+    _hand = step > 0 ? 0 : 1;
+    _throwTo = _seats[_holderIndex].hands[_hand];
+    _flying = true;
+  }
+
+  void _stepThrow(double dt) {
+    final toGo = _throwTo - _ground;
+    final stepLength = math.min(toGo.length, HotPotatoConfig.passSpeed * dt);
+    _ground = _ground + toGo.unit() * stepLength;
+
+    final remaining = (_throwTo - _ground).length;
+    if (remaining <= 1e-6) {
+      // Caught. Juggling carries on from this hand — and landing in a hand
+      // counts as a contact, so a swipe made mid-flight goes straight back out.
+      _flying = false;
+      _ground = _throwTo;
+      _height = 0;
+      _hopT = 0;
+      if (_pendingStep != 0) _throw();
+      return;
+    }
+
+    final total = (_throwTo - _throwFrom).length;
+    final progress = total < 1e-6 ? 1.0 : 1 - remaining / total;
+    _height = math.sin(math.pi * progress) * HotPotatoConfig.throwArc;
+  }
+
+  /// The bang, in points: nothing for the holder, half for whoever sits either
+  /// side of them, and the full prize for everybody clear of it.
+  void _payOut() {
+    final order = _order;
+    final n = order.length;
+    _caught = n > 3
+        ? {order[(_holderIndex + 1) % n], order[(_holderIndex - 1 + n) % n]}
+        : const {};
+    for (final id in order) {
+      if (id == holder) continue;
+      context.scores.award(
+        id,
+        _caught.contains(id)
+            ? HotPotatoConfig.caughtInBlastPoints
+            : HotPotatoConfig.clearOfBlastPoints,
+      );
+    }
+  }
+
+  void _startRound() {
     _fuseLeft = HotPotatoConfig.fuseSeconds;
     _elapsed = 0;
     _exploded = false;
     _awarded = false;
+    _caught = const {};
+    _sinceBlast = 0;
+    _swipeStart.clear();
+    _pendingStep = 0;
+    _flying = false;
+    _spin = 0;
+    _holderIndex = _random.nextInt(_ring.length);
+    _hand = _random.nextInt(2);
+    _hopT = 0;
+    _ground = _seats[_holderIndex].hands[_hand];
+    _height = 0;
+  }
+
+  @override
+  void reset() {
+    _startRound();
     // The latched verdict belongs to the round that just ended.
     _outcome = null;
-    _swipeStart.clear();
-    _holderIndex = _random.nextInt(_order.length);
-    _potato = _seatOf(_holderIndex);
-    _target = _potato;
   }
 
   // ------------------------------------------------------------- snapshots
 
+  /// Where the potato is drawn: its height shown as a nudge toward the middle
+  /// of the table, which from any seat is "away from me", which reads as up.
+  _Point get _drawnAt {
+    final middle = _Point(context.board.centerX, context.board.centerY);
+    final inward = (middle - _ground).unit(orElse: const _Point(0, -1));
+    return _ground + inward * (_height * HotPotatoConfig.heightShown);
+  }
+
   @override
   Iterable<Entity> get entities sync* {
-    // The fuse drives the potato's size and colour, so every screen sees it
-    // swell and redden in step without a single extra message.
-    final urgency = 1 - (_fuseLeft / HotPotatoConfig.fuseSeconds);
-    final radius =
-        HotPotatoConfig.potatoRadius *
-        (1 + urgency * HotPotatoConfig.swellAtZero);
+    // Everybody's arms, all the time: the potato always has hands to land in.
+    for (var i = 0; i < _seats.length; i++) {
+      for (var h = 0; h < 2; h++) {
+        yield _seats[i].arm(h, bob: _bobOf(i, h));
+      }
+    }
+
+    if (_exploded) {
+      // A new id rather than a new kind: descriptors are sent once, when an
+      // entity first appears, so a potato that *became* a blast would stay a
+      // potato on every screen but the host's.
+      yield Entity(
+        descriptor: const EntityDescriptor(
+          id: _blastId,
+          kind: 'blast',
+          props: {
+            ShapeProps.shape: ShapeKind.circle,
+            ShapeProps.radius:
+                HotPotatoConfig.potatoRadius * HotPotatoConfig.blastScale,
+            ShapeProps.color: HotPotatoConfig.colorBlast,
+          },
+        ),
+        x: _ground.x,
+        y: _ground.y,
+      );
+      return;
+    }
 
     yield Entity(
-      descriptor: EntityDescriptor(
+      descriptor: const EntityDescriptor(id: _shadowId, kind: 'shadow'),
+      x: _ground.x,
+      y: _ground.y,
+    );
+
+    // The heat — colour, swell, smoke — is not in here: props are sent once,
+    // so anything that changes over the round is read by the view off the fuse
+    // in `sharedState`. Only the spin rides the transform.
+    final at = _drawnAt;
+    yield Entity(
+      descriptor: const EntityDescriptor(
         id: _potatoId,
-        kind: _exploded ? 'blast' : 'potato',
+        kind: 'potato',
         props: {
           ShapeProps.shape: ShapeKind.circle,
-          ShapeProps.radius: _exploded
-              ? HotPotatoConfig.potatoRadius * HotPotatoConfig.blastScale
-              : radius,
-          ShapeProps.color: _exploded
-              ? HotPotatoConfig.colorBlast
-              : HotPotatoConfig.colorPotato,
+          ShapeProps.radius: HotPotatoConfig.potatoRadius,
+          ShapeProps.color: HotPotatoConfig.colorPotato,
           ShapeProps.spin: true,
         },
       ),
-      x: _potato.x,
-      y: _potato.y,
-      // Spinning faster as the fuse burns down.
-      angle: _elapsed * (1 + urgency * 6),
+      x: at.x,
+      y: at.y,
+      angle: _spin,
     );
+  }
+
+  /// How far a hand is bobbing: the holder's hands give as they catch and
+  /// flick as they throw. Nobody else's move.
+  double _bobOf(int seat, int hand) {
+    if (_exploded || _flying || seat != _holderIndex) return 0;
+    // Just thrown from this hand, or about to catch in it.
+    final t = hand == _hand ? _hopT : 1 - _hopT;
+    const window = 0.3;
+    if (t >= window) return 0;
+    final k = 1 - t / window;
+    return k * k * HotPotatoConfig.handBob;
   }
 
   @override
@@ -251,16 +431,28 @@ class HotPotatoSim implements GameSim {
   @override
   GameOutcome? get outcome {
     if (!_exploded) return null;
+    // Let the bang play first. The points were already charged at the bang;
+    // this only holds back the results screen.
+    if (_sinceBlast < HotPotatoConfig.blastHoldSeconds) return null;
 
-    // Everyone who passed it on in time; the holder is the one person at the
-    // table who did not. Built once — `outcome` is polled several times a tick.
+    // Everyone clear of the blast; the holder and whoever sat beside them
+    // were not. Built once — `outcome` is polled several times a tick.
     return _outcome ??= GameOutcome.contest(
       winners: {
         for (final id in _order)
-          if (id != holder) id,
+          if (id != holder && !_caught.contains(id)) id,
       },
       summary: 'the potato went off',
-      lines: {holder: 'You were holding it'},
+      lines: {
+        for (final id in _order)
+          id: id == holder
+              ? 'You were holding it — +0 pts'
+              : _caught.contains(id)
+              ? 'Caught in the blast — '
+                    '+${HotPotatoConfig.caughtInBlastPoints} pts'
+              : 'Clear of the blast — '
+                    '+${HotPotatoConfig.clearOfBlastPoints} pts',
+      },
     );
   }
 
@@ -270,8 +462,100 @@ class HotPotatoSim implements GameSim {
   void dispose() {}
 }
 
+/// One seat's two hands, and the arms that reach them.
+///
+/// The player sits on the outside of the ring, so the arms come in from the
+/// screen's outer edge. Hand 0 is on the side of the previous seat round the
+/// ring and hand 1 the next: the potato juggles along the same line it is
+/// thrown along.
+class _Seat {
+  _Seat(this.phoneId, this.hands, this.shoulders, this.outward);
+
+  factory _Seat.of(HotPotatoSim sim, int index) {
+    final slice = sim._sliceAt(index);
+    final screen = slice.screen;
+    final centre = _Point(screen.centerX, screen.centerY);
+    final middle = _Point(sim.context.board.centerX, sim.context.board.centerY);
+
+    final outward = (centre - middle).unit(orElse: const _Point(0, 1));
+    // Along the rim, toward the next seat.
+    var along = _Point(-outward.y, outward.x);
+    if (along.dot(sim._towardNeighbour(index, 1)) < 0) along = along * -1;
+
+    // How far the screen reaches from its middle in a world direction.
+    final c = math.cos(screen.turnRadians);
+    final s = math.sin(screen.turnRadians);
+    double reach(_Point d) =>
+        (d.x * c + d.y * s).abs() * screen.width / 2 +
+        (-d.x * s + d.y * c).abs() * screen.height / 2;
+    final halfAlong = reach(along);
+    final halfOut = reach(outward);
+
+    _Point hand(double side) =>
+        centre + along * (side * halfAlong * 0.4) + outward * (halfOut * 0.05);
+    _Point shoulder(double side) =>
+        centre +
+        along * (side * halfAlong * 0.62) +
+        outward * (halfOut + HotPotatoConfig.armWidth);
+
+    return _Seat(
+      slice.phoneId,
+      [hand(-1), hand(1)],
+      [shoulder(-1), shoulder(1)],
+      outward,
+    );
+  }
+
+  final String phoneId;
+  final List<_Point> hands;
+  final List<_Point> shoulders;
+  final _Point outward;
+
+  /// A grey bar from shoulder to hand, pulled back toward the player by [bob].
+  Entity arm(int hand, {double bob = 0}) {
+    final from = shoulders[hand];
+    final to = hands[hand];
+    final reach = to - from;
+    final mid = from.lerp(to, 0.5) + outward * bob;
+    return Entity(
+      descriptor: EntityDescriptor(
+        id: 'arm-$phoneId-$hand',
+        kind: 'arm',
+        props: {
+          ShapeProps.shape: ShapeKind.box,
+          ShapeProps.width: reach.length,
+          ShapeProps.height: HotPotatoConfig.armWidth,
+          ShapeProps.color: HotPotatoConfig.colorArm,
+        },
+      ),
+      x: mid.x,
+      y: mid.y,
+      angle: math.atan2(reach.y, reach.x),
+    );
+  }
+}
+
+double _lerp(double a, double b, double t) => a + (b - a) * t.clamp(0.0, 1.0);
+
+double _easeInOut(double t) => t * t * (3 - 2 * t);
+
 class _Point {
   const _Point(this.x, this.y);
   final double x;
   final double y;
+
+  _Point operator +(_Point o) => _Point(x + o.x, y + o.y);
+  _Point operator -(_Point o) => _Point(x - o.x, y - o.y);
+  _Point operator *(double k) => _Point(x * k, y * k);
+
+  double dot(_Point o) => x * o.x + y * o.y;
+  double get length => math.sqrt(x * x + y * y);
+
+  _Point unit({_Point orElse = const _Point(0, 0)}) {
+    final l = length;
+    return l < 1e-9 ? orElse : _Point(x / l, y / l);
+  }
+
+  _Point lerp(_Point o, double t) =>
+      _Point(x + (o.x - x) * t, y + (o.y - y) * t);
 }

@@ -15,27 +15,8 @@ class SubwaySkaterConfig {
   /// standing at the far side of the corridor.
   static const int lanes = 3;
 
-  /// One minute, which is what the scoring is normalised against.
+  /// One minute.
   static const double roundSeconds = 60;
-
-  /// What each player at the table puts into the pot.
-  ///
-  /// The round pays out `pointsPerPlayer * players` between everybody, shared
-  /// in proportion to the position-time each of them held — so a table always
-  /// takes home this much a head *on average*, however the minute went, and
-  /// what varies is who got more than their share of it.
-  ///
-  /// A pot rather than a score out of a fixed maximum, and the difference shows
-  /// up at the table: a score normalised against the best possible round is a
-  /// number you are measured against on your own, while a pot is one everybody
-  /// is drawing from the same pile of. It also self-scales — a bigger table
-  /// brings a bigger pot rather than squeezing the same points more thinly.
-  ///
-  /// Two constants fall out of the arithmetic and are worth knowing when tuning
-  /// this: holding the front for the whole round is worth exactly
-  /// `2 * pointsPerPlayer` at *any* table size, and the back of the line is
-  /// worth nothing at any table size.
-  static const int pointsPerPlayer = 20;
 
   /// How fast the corridor comes at you at the start, in world units per
   /// second.
