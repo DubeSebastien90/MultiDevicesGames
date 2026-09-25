@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../audio/game_audio.dart';
+import '../audio/sounds.dart';
 import 'lobby_flow_style.dart';
 
 /// Press anywhere and keep pressing: a ring fills, and at the end of it the
@@ -27,6 +29,7 @@ class HoldToConfirm extends StatefulWidget {
     this.decay = const Duration(milliseconds: 2200),
     this.padding = const EdgeInsets.all(16),
     this.footer,
+    this.audio = const SilentLocalAudio(),
   });
 
   /// Shown next to the ring. The reason someone is holding at all.
@@ -60,6 +63,10 @@ class HoldToConfirm extends StatefulWidget {
   /// the gutter is the only thing holding it off the edge stripes.
   final EdgeInsets padding;
 
+  /// Where the gauge is heard: a tick per step of the ring, rising as it
+  /// fills. This phone's own speaker only — the finger is on this glass.
+  final LocalAudio audio;
+
   @override
   State<HoldToConfirm> createState() => _HoldToConfirmState();
 }
@@ -70,7 +77,16 @@ class _HoldToConfirmState extends State<HoldToConfirm>
     vsync: this,
     duration: widget.hold,
     reverseDuration: widget.decay,
-  )..addStatusListener(_onStatus);
+  )
+    ..addStatusListener(_onStatus)
+    ..addListener(_onProgress);
+
+  /// The highest gauge step already sounded, -1 for none.
+  ///
+  /// Follows the ring down as it drains, silently, so a finger that slips and
+  /// comes back picks the climb up where the ring is rather than replaying
+  /// the low notes.
+  int _step = -1;
 
   /// The idle animation: something alive on screen while people shuffle phones
   /// around. Fades out as the hold takes over, so the two never compete.
@@ -110,6 +126,25 @@ class _HoldToConfirmState extends State<HoldToConfirm>
       _done = false;
       _progress.value = 0;
     }
+  }
+
+  void _onProgress() {
+    final steps = Sounds.holdSteps;
+    final step = (_progress.value * steps.length)
+        .floor()
+        .clamp(0, steps.length - 1);
+    if (_progress.status != AnimationStatus.forward) {
+      // Draining: nothing to hear, only to remember.
+      if (_progress.value == 0) {
+        _step = -1;
+      } else if (step < _step) {
+        _step = step;
+      }
+      return;
+    }
+    if (step <= _step) return;
+    _step = step;
+    widget.audio.play(steps[step]);
   }
 
   void _onStatus(AnimationStatus status) {

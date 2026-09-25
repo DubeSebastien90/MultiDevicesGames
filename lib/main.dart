@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'sdk/app_controller.dart';
+import 'sdk/audio/audio_engine.dart';
+import 'sdk/audio/audioplayers_output.dart';
+import 'sdk/audio/ui_audio.dart';
 import 'sdk/ui/age_gate_screen.dart';
 import 'sdk/ui/ball_wipe.dart';
 import 'sdk/ui/intro_animation.dart';
@@ -12,6 +15,10 @@ import 'sdk/ui/session_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The menus' speaker. Here and not in a widget, so tests that pump screens
+  // directly keep the silent default.
+  UiAudio.speaker = AudioEngine(output: AudioPlayersOutput());
 
   // Landscape, because the v1 arrangement is a left-to-right strip: phones on
   // their sides make a wide board, and the bird's flight crosses the seam

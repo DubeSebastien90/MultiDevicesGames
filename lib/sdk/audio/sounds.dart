@@ -66,6 +66,29 @@ class Sounds {
   /// round — see `persist` on the audio API.
   static const lobbyTheme = SoundCue('lobbyTheme');
 
+  /// The hold-to-confirm gauge, lowest first: one tick per step of the ring,
+  /// each higher than the last. Separate files rather than one rising sweep,
+  /// because the low-latency path cannot start a clip halfway — and a hold
+  /// resumed from half full has to sound half full.
+  ///
+  /// Synthesised by `audio-src/gen_hold_steps.py`; change the count there and
+  /// here together.
+  static final holdSteps = List<SoundCue>.unmodifiable([
+    for (var i = 0; i < 12; i++)
+      SoundCue(
+        'hold.$i',
+        'assets/sdk/sfx/hold_${i.toString().padLeft(2, '0')}.wav',
+      ),
+  ]);
+
+  /// A menu button pressed: one recording at five pitches, -0.9% to +1.1%,
+  /// picked at random per press by [UiAudio.buttonPress]. Built by
+  /// `audio-src/gen_boup_variants.py`.
+  static final buttonPress = List<SoundCue>.unmodifiable([
+    for (var i = 0; i < 5; i++)
+      SoundCue('button.$i', 'assets/sdk/sfx/boup_$i.wav'),
+  ]);
+
   /// Everything above, for a test that wants to walk the table and for the
   /// asset audit that will eventually check each one is really there.
   static const all = <SoundCue>[

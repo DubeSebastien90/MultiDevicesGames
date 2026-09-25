@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../audio/ui_audio.dart';
 
 /// Something the table needs to know, on whichever screen it is looking at.
 ///
@@ -53,7 +54,7 @@ class TableNotice extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Dismiss',
-            onPressed: _dismiss,
+            onPressed: withButtonSound(_dismiss),
             visualDensity: VisualDensity.compact,
             icon: Icon(Icons.close, color: scheme.onTertiaryContainer, size: 16),
           ),

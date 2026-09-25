@@ -100,6 +100,7 @@ class PlacementView extends StatelessWidget {
           HoldToConfirm(
             confirmed: confirmedIds.contains(client.phoneId),
             onConfirmed: client.confirmPlacement,
+            audio: client.audio,
             // Two stripe widths of air all round, so a board drawn as large as
             // it can be still never runs under the bands on the glass.
             padding: const EdgeInsets.all(kEdgeStripeWidth * 2),

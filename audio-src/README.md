@@ -32,6 +32,23 @@ The clips in `originals/` are the untouched exports. What sits in
 over something that short reads quiet however loud it sounds. It is peak
 normalised to −3 dBFS and kept out of the voices' loudness pool.
 
+## Levels
+
+Whole-file RMS is the wrong ruler for a 60 ms click next to a one-second
+voice: the click is mostly its own attack, the voice mostly pauses. So levels
+are compared on the **loudest 50 ms** of each sound (RMS over that window):
+
+| Sound | Loudest 50 ms | Why |
+| --- | --- | --- |
+| Character voices | about −11 dBFS (−9 to −14) | the reference; from the −18 RMS pass above |
+| Hold gauge (`hold_*.wav`) | −12 dBFS | feedback the player is waiting on — same family as the voices |
+| Menu button (`boup_*.wav`) | −18 dBFS | answers every tap in every menu; heard that often, it sits 6 dB under |
+
+New sounds should land in the voices' band unless, like the button, they are
+heard constantly. `gen_hold_steps.py` and `gen_boup_variants.py` normalise to
+their target themselves (`TARGET_DB` at the top of each), peak-limited at
+−1 dBFS.
+
 ## Re-exporting
 
 Export from Audacity into `originals/`, then re-run the processing pass — the

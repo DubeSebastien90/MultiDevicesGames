@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multiscreen_slingshot/sdk/audio/game_audio.dart';
+import 'package:multiscreen_slingshot/sdk/audio/sound_cue.dart';
+import 'package:multiscreen_slingshot/sdk/audio/sounds.dart';
 import 'package:multiscreen_slingshot/sdk/ui/hold_to_confirm.dart';
 
 /// The placement screen's only control. A hold rather than a button because both
@@ -207,4 +210,83 @@ void main() {
     expect(calls, 0, reason: 'a dozen taps on a chip confirmed the placement');
     expect(find.text('Ready'), findsNothing);
   });
+
+  group('the gauge sound', () {
+    Future<_HeardAudio> mountHeard(WidgetTester tester) async {
+      final audio = _HeardAudio();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: HoldToConfirm(
+            onConfirmed: () {},
+            content: const Text('the board'),
+            audio: audio,
+          ),
+        ),
+      ));
+      return audio;
+    }
+
+    // Frame by frame, as a phone would: one long pump is one animation tick,
+    // and would sound one step instead of the climb.
+    Future<void> frames(WidgetTester tester, Duration total) async {
+      const frame = Duration(milliseconds: 16);
+      for (var t = Duration.zero; t < total; t += frame) {
+        await tester.pump(frame);
+      }
+    }
+
+    testWidgets('a full hold climbs every step once, lowest first',
+        (tester) async {
+      final audio = await mountHeard(tester);
+
+      final finger = await tester.startGesture(const Offset(200, 300));
+      await tester.pump();
+      await frames(tester, const Duration(milliseconds: 1100));
+      await finger.up();
+      await frames(tester, const Duration(seconds: 3));
+
+      expect(audio.played, Sounds.holdSteps);
+    });
+
+    testWidgets('a slip picks the climb up where the ring is', (tester) async {
+      final audio = await mountHeard(tester);
+
+      final finger = await tester.startGesture(const Offset(200, 300));
+      await tester.pump();
+      await frames(tester, const Duration(milliseconds: 600));
+      await finger.up();
+      await tester.pump();
+      await frames(tester, const Duration(milliseconds: 300));
+
+      final beforeSlip = audio.played.length;
+      expect(audio.played, Sounds.holdSteps.take(beforeSlip),
+          reason: 'draining must be silent');
+
+      final again = await tester.startGesture(const Offset(200, 300));
+      await tester.pump();
+      await frames(tester, const Duration(milliseconds: 1000));
+      await again.up();
+
+      final after = audio.played.skip(beforeSlip).toList();
+      expect(after, isNotEmpty);
+      expect(after.first, isNot(Sounds.holdSteps.first),
+          reason: 'a resumed hold replayed the bottom of the gauge');
+      expect(after.last, Sounds.holdSteps.last);
+      final order = [for (final c in after) Sounds.holdSteps.indexOf(c)];
+      expect(order, [...order]..sort(), reason: 'the climb went down');
+    });
+  });
+}
+
+class _HeardAudio implements LocalAudio {
+  final played = <SoundCue>[];
+
+  @override
+  SoundHandle play(SoundCue cue, {bool loop = false, double volume = 1.0}) {
+    played.add(cue);
+    return SoundHandle.none;
+  }
+
+  @override
+  void stopSound(SoundHandle handle, {Duration fade = Duration.zero}) {}
 }
