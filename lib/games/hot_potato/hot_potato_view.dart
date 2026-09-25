@@ -5,10 +5,13 @@ import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
+import '../../sdk/model/player_color.dart';
+import '../../sdk/render/player_hand.dart';
 import '../../sdk/render/shape_view.dart';
 import 'hot_potato_config.dart';
 
-/// Hot Potato's look: grey arms juggling a potato that gets redder, spins
+/// Hot Potato's look: everybody's arms, in their colours, juggling a potato that gets redder, spins
 /// faster and smokes harder as the fuse burns down.
 ///
 /// Where the potato is, how high, how fast it spins — all of that arrives as
@@ -16,8 +19,10 @@ import 'hot_potato_config.dart';
 /// entity's props are sent once, so the colour, the swell, the glow and the
 /// smoke are all read here off the fuse in `sharedState`.
 class HotPotatoView extends ShapeView {
-  HotPotatoView({this.phoneId = ''})
-    : super(grid: false, playfield: const Color(0xFF141C33));
+  HotPotatoView({this.phoneId = '', super.roster = Roster.empty})
+    : super(grid: false, playfield: const Color(0xFF141C33)) {
+    PlayerHand.preload([for (final p in roster.players) p.color]);
+  }
 
   /// This screen's phone, so the holder's screen can be the one that burns.
   final String phoneId;
@@ -143,25 +148,23 @@ class HotPotatoView extends ShapeView {
     _fill.shader = null;
   }
 
-  /// Placeholder arms: grey bars, until the art arrives.
+  /// An arm and hand in its player's colour, the palm on the hand end of the
+  /// entity. Somebody the roster does not know — a view built without one —
+  /// gets the grey the arms used to be.
   void _drawArm(Canvas canvas, RenderEntity arm) {
-    final w = arm.propDouble(ShapeProps.width);
-    final h = arm.propDouble(ShapeProps.height);
-    _fill.color = Color(
-      arm.propInt(ShapeProps.color, HotPotatoConfig.colorArm),
+    final length = arm.propDouble(ShapeProps.width);
+    final seat = arm.props[HotPotatoConfig.propSeat] as String?;
+    final color = roster.byPhone(seat ?? '')?.color ?? PlayerPalette.away;
+    PlayerHand.of(color).draw(
+      canvas,
+      Offset(
+        arm.x + math.cos(arm.angle) * length / 2,
+        arm.y + math.sin(arm.angle) * length / 2,
+      ),
+      angle: arm.angle,
+      length: length,
+      left: arm.props[HotPotatoConfig.propLeft] == true,
     );
-    canvas
-      ..save()
-      ..translate(arm.x, arm.y)
-      ..rotate(arm.angle)
-      ..drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset.zero, width: w, height: h),
-          Radius.circular(h * 0.35),
-        ),
-        _fill,
-      )
-      ..restore();
   }
 
   void _drawShadow(

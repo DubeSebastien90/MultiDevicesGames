@@ -44,5 +44,5 @@ class HotPotatoGame implements MultiscreenGame {
 
   @override
   GameView createView(ViewContext context) =>
-      HotPotatoView(phoneId: context.phoneId);
+      HotPotatoView(phoneId: context.phoneId, roster: context.roster);
 }

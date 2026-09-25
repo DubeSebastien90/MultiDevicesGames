@@ -469,7 +469,7 @@ class HotPotatoSim implements GameSim {
 /// ring and hand 1 the next: the potato juggles along the same line it is
 /// thrown along.
 class _Seat {
-  _Seat(this.phoneId, this.hands, this.shoulders, this.outward);
+  _Seat(this.phoneId, this.hands, this.shoulders, this.isLeft, this.outward);
 
   factory _Seat.of(HotPotatoSim sim, int index) {
     final slice = sim._sliceAt(index);
@@ -493,15 +493,23 @@ class _Seat {
 
     _Point hand(double side) =>
         centre + along * (side * halfAlong * 0.4) + outward * (halfOut * 0.05);
+    // Straight back from the hand and just off the screen: the arm is drawn
+    // to fill the distance, so its cut end is never seen.
     _Point shoulder(double side) =>
         centre +
-        along * (side * halfAlong * 0.62) +
-        outward * (halfOut + HotPotatoConfig.armWidth);
+        along * (side * halfAlong * 0.4) +
+        outward * (halfOut + HotPotatoConfig.shoulderOffscreen);
+
+    // The player sits outside the ring looking in, so their right is a quarter
+    // turn from outward. Whichever hand lies that way is their right hand.
+    final right = _Point(outward.y, -outward.x);
+    final leftSide = along.dot(right) > 0 ? -1.0 : 1.0;
 
     return _Seat(
       slice.phoneId,
       [hand(-1), hand(1)],
       [shoulder(-1), shoulder(1)],
+      [leftSide == -1, leftSide == 1],
       outward,
     );
   }
@@ -509,9 +517,12 @@ class _Seat {
   final String phoneId;
   final List<_Point> hands;
   final List<_Point> shoulders;
+
+  /// Which of [hands] is the player's left, from where they sit.
+  final List<bool> isLeft;
   final _Point outward;
 
-  /// A grey bar from shoulder to hand, pulled back toward the player by [bob].
+  /// From shoulder to hand, pulled back toward the player by [bob].
   Entity arm(int hand, {double bob = 0}) {
     final from = shoulders[hand];
     final to = hands[hand];
@@ -524,8 +535,10 @@ class _Seat {
         props: {
           ShapeProps.shape: ShapeKind.box,
           ShapeProps.width: reach.length,
-          ShapeProps.height: HotPotatoConfig.armWidth,
-          ShapeProps.color: HotPotatoConfig.colorArm,
+          // Whose arm, so it is drawn in their colour, and which one, so the
+          // right hand is drawn as a right hand.
+          HotPotatoConfig.propSeat: phoneId,
+          HotPotatoConfig.propLeft: isLeft[hand],
         },
       ),
       x: mid.x,
