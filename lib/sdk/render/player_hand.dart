@@ -6,14 +6,12 @@
 /// in the file — the left is the same artboard mirrored.
 library;
 
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
-import 'package:rive/rive.dart' as rive;
 
 import '../model/player_color.dart';
-import '../ui/intro_animation.dart';
+import 'tinted_rive.dart';
 
 /// One colour's hand. Cached and shared, so a view may ask for it every frame.
 ///
@@ -38,10 +36,12 @@ class PlayerHand {
 
   final PlayerColor color;
 
-  rive.Artboard? _artboard;
-  bool _started = false;
+  static final _art = TintedRive(
+    'assets/sdk/players/hand.riv',
+    property: 'HandColor',
+  );
 
-  bool get isLoaded => _artboard != null;
+  bool get isLoaded => _art.artboard(color.value) != null;
 
   // Where things are on the artboard, in its own units (500 x 500, top-left
   // origin). Read off the drawing, so they move if it is redrawn.
@@ -60,54 +60,7 @@ class PlayerHand {
   static final _reachAngle = math.atan2(_palm.dy - _cut.dy, _palm.dx - _cut.dx);
   static final _reachLength = (_palm - _cut).distance;
 
-  void beginLoading() {
-    if (_started) return;
-    _started = true;
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    final file = await _HandFile.file();
-    if (file == null) return;
-    try {
-      final artboard = file.defaultArtboard(frameOrigin: true);
-      if (artboard == null) throw StateError('no artboard');
-      final machine = artboard.defaultStateMachine();
-      _bind(file, artboard, machine);
-      // Once: this is a still, and advancing by zero is what applies the
-      // binding.
-      machine?.advanceAndApply(0);
-      _artboard = artboard;
-    } on Object catch (e) {
-      debugPrint('[player hand] no hand for ${color.id}: $e');
-    }
-  }
-
-  void _bind(
-    rive.File file,
-    rive.Artboard artboard,
-    rive.StateMachine? machine,
-  ) {
-    final viewModel = file.defaultArtboardViewModel(artboard);
-    final instance = viewModel?.createDefaultInstance();
-    if (viewModel == null || instance == null) {
-      debugPrint(
-        '[player hand] ${_HandFile.asset} has no view model — '
-        'hands keep the colour they were drawn',
-      );
-      return;
-    }
-    // Each colour binds its own instance, or every hand at the table would be
-    // whoever was coloured last.
-    artboard.bindViewModelInstance(instance);
-    machine?.bindViewModelInstance(instance);
-    final property = instance.color('HandColor');
-    if (property == null) {
-      debugPrint('[player hand] ${viewModel.name} has no HandColor');
-      return;
-    }
-    property.value = color.value;
-  }
+  void beginLoading() => _art.artboard(color.value);
 
   /// Paints the arm with the palm on [palm], reaching along [angle] — the
   /// direction from the shoulder to the hand, in the same convention as an
@@ -128,7 +81,6 @@ class PlayerHand {
     bool left = false,
     double opacity = 1,
   }) {
-    beginLoading();
     if (length <= 0) return;
     final scale = length / _reachLength;
 
@@ -140,7 +92,7 @@ class PlayerHand {
     // at the origin. Flipping y mirrors the hand across its own arm.
     if (left) canvas.scale(1, -1);
 
-    final artboard = _artboard;
+    final artboard = _art.artboard(color.value);
     if (artboard == null) {
       _drawFallback(canvas, length, _cutWidth * scale, opacity);
     } else {
@@ -148,9 +100,7 @@ class PlayerHand {
         ..rotate(-_reachAngle)
         ..scale(scale)
         ..translate(-_palm.dx, -_palm.dy);
-      final renderer = rive.Renderer.make(canvas);
-      if (opacity < 1) renderer.modulateOpacity(opacity);
-      artboard.draw(renderer);
+      TintedRive.paint(canvas, artboard, opacity: opacity);
     }
     canvas.restore();
   }
@@ -171,30 +121,5 @@ class PlayerHand {
       ),
       _fill,
     );
-  }
-}
-
-/// The hand file, opened once for the whole app. Resolves to null rather than
-/// throwing — on a platform that cannot render Rive, or a file that will not
-/// parse — and null is the bar.
-class _HandFile {
-  const _HandFile._();
-
-  static const asset = 'assets/sdk/players/hand.riv';
-
-  static Future<rive.File?>? _opening;
-
-  static Future<rive.File?> file() => _opening ??= _open();
-
-  static Future<rive.File?> _open() async {
-    // Same gate as every other Rive file: see
-    // [IntroAnimation.platformSupportsRive].
-    if (!IntroAnimation.available) return null;
-    try {
-      return await rive.File.asset(asset, riveFactory: rive.Factory.flutter);
-    } on Object catch (e) {
-      debugPrint('[player hand] $asset did not load: $e');
-      return null;
-    }
   }
 }

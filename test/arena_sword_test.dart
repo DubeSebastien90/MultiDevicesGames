@@ -199,17 +199,24 @@ void main() {
 
       final me = positionOf(sim, 0);
       final hilt = hiltOf(sim, 0);
-      final out = math.sqrt(
-        math.pow(hilt.x - me.x, 2) + math.pow(hilt.y - me.y, 2),
-      );
+      final facing = facingOf(sim, 0);
+      final dx = hilt.x - me.x;
+      final dy = hilt.y - me.y;
+      final ahead = dx * math.cos(facing) + dy * math.sin(facing);
+      final aside = -dx * math.sin(facing) + dy * math.cos(facing);
 
       expect(
-        out,
+        ahead,
         closeTo(ArenaConfig.swordGrip, 0.01),
         reason: 'the hilt is meant to be held out, not stuck to the chest',
       );
       expect(
-        out,
+        aside,
+        closeTo(ArenaConfig.swordHandSide, 0.01),
+        reason: 'the sword is meant to be in the right hand',
+      );
+      expect(
+        math.sqrt(dx * dx + dy * dy),
         greaterThan(ArenaConfig.characterRadius),
         reason: 'the hilt is inside the body',
       );
@@ -219,10 +226,13 @@ void main() {
       final sim = start(2);
       run(sim, 0.4);
 
+      // Measured along the facing: the hand is off to one side, and the reach
+      // is how far ahead the blade gets.
       final me = positionOf(sim, 0);
       final tip = tipOf(sim, 0);
+      final facing = facingOf(sim, 0);
       expect(
-        math.sqrt(math.pow(tip.x - me.x, 2) + math.pow(tip.y - me.y, 2)),
+        (tip.x - me.x) * math.cos(facing) + (tip.y - me.y) * math.sin(facing),
         closeTo(ArenaConfig.attackRange, 0.01),
       );
     });
