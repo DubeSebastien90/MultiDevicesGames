@@ -464,6 +464,21 @@ void main() {
       expect(out.log, isEmpty);
     });
 
+    test('picking a character plays its happy voice, on this phone', () {
+      client.pickColor(PlayerPalette.green);
+      expect(out.log, ['play -2 assets/sdk/players/green-happy.wav']);
+    });
+
+    test('trying characters in a row cuts the last voice off', () {
+      client.pickColor(PlayerPalette.green);
+      client.pickColor(PlayerPalette.red);
+      expect(out.log, [
+        'play -2 assets/sdk/players/green-happy.wav',
+        'stop -2',
+        'play -3 assets/sdk/players/red-happy.wav',
+      ]);
+    });
+
     test('winning sounds happy and losing sounds sad, per phone', () async {
       seat(PlayerPalette.red);
       await pumpEvents();

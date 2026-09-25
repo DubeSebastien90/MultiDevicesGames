@@ -856,7 +856,9 @@ class _Swatch extends StatelessWidget {
       selected: selected,
       button: !taken,
       child: GestureDetector(
-        onTap: withButtonSound(taken ? null : onTap),
+        // No button sound: picking plays the character's own voice instead
+        // (see [ClientSession.pickColor]).
+        onTap: taken ? null : onTap,
         child: SizedBox(
           width: _width,
           child: Column(

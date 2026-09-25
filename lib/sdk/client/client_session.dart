@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import '../audio/audio_engine.dart';
 import '../audio/audio_output.dart';
+import '../audio/sound_cue.dart';
+import '../audio/sounds.dart';
 import '../layout/board_links.dart';
 import '../model/name_drop_status.dart';
 import '../model/table_change.dart';
@@ -502,8 +504,18 @@ class ClientSession extends ChangeNotifier {
       if (p['color'] is String) p['color'] as String,
   };
 
+  /// The voice [pickColor] last started, so the next pick can cut it off.
+  SoundHandle _pickVoice = SoundHandle.none;
+
   /// Ask to be [color]. The host decides; watch [myColor] for the answer.
+  ///
+  /// Answered in that character's happy voice, on this phone, straight away —
+  /// the same local feedback as [confirmPlacement], and the way a player
+  /// hears who they are picking before they have picked. Trying characters in
+  /// a quick run cuts the previous voice off rather than stacking a chorus.
   void pickColor(PlayerColor color) {
+    audio.stopSound(_pickVoice);
+    _pickVoice = audio.play(PlayerSounds.happy(color));
     _requestedColorId = color.id;
     _transport.send({
       'type': ClientMsg.pickColor,
