@@ -71,5 +71,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Settings → See Privacy Policy opens an https page. From Android 11
+             url_launcher can only find a browser the app has declared it will
+             look for. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

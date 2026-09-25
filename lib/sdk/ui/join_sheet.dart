@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 // import 'package:flutter/services.dart';
 
 import '../model/device_metrics.dart';
+import '../monetization/premium_status.dart';
 import '../net/discovery.dart';
 import '../net/discovery_stack.dart';
 import '../net/host_address.dart';
@@ -41,6 +42,7 @@ class JoinSheet extends StatefulWidget {
     this.seatFingerprint,
     required this.metrics,
     required this.onMetricsChanged,
+    required this.premium,
   });
 
   /// How this phone appears in a host's list of empty seats, so a game already
@@ -50,6 +52,7 @@ class JoinSheet extends StatefulWidget {
   /// Carried only so the gear in the header can open settings from here.
   final DeviceMetrics metrics;
   final ValueChanged<DeviceMetrics> onMetricsChanged;
+  final PremiumStatus premium;
 
   @override
   State<JoinSheet> createState() => _JoinSheetState();
@@ -139,6 +142,7 @@ class _JoinSheetState extends State<JoinSheet> {
         builder: (_) => SettingsScreen(
           metrics: widget.metrics,
           onMetricsChanged: widget.onMetricsChanged,
+          premium: widget.premium,
         ),
       ),
     );

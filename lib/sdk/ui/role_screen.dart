@@ -231,6 +231,7 @@ class _RoleScreenState extends State<RoleScreen> {
         builder: (_) => SettingsScreen(
           metrics: metrics,
           onMetricsChanged: _onMetricsChanged,
+          premium: widget.controller.premium,
         ),
       ),
     );
@@ -275,6 +276,7 @@ class _RoleScreenState extends State<RoleScreen> {
           seatFingerprint: widget.controller.seatFingerprint,
           metrics: _metrics!,
           onMetricsChanged: _onMetricsChanged,
+          premium: widget.controller.premium,
         ),
       ),
     );

@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../model/device_metrics.dart';
+import '../monetization/premium_status.dart';
 import 'lobby_flow_style.dart';
 import 'screen_size_screen.dart';
+
+/// Where the privacy policy is published. The page lives in its own repo
+/// (BubbleGamesPrivacy) on GitHub Pages, so it can be corrected without shipping
+/// a build.
+final Uri kPrivacyPolicyUrl = Uri.parse(
+  'https://dubesebastien90.github.io/BubbleGamesPrivacy/',
+);
 
 /// The formal odds and ends: what this screen measures, and the buttons that
 /// belong nowhere else.
@@ -11,10 +20,12 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.metrics,
     required this.onMetricsChanged,
+    required this.premium,
   });
 
   final DeviceMetrics metrics;
   final ValueChanged<DeviceMetrics> onMetricsChanged;
+  final PremiumStatus premium;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -22,6 +33,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late DeviceMetrics _metrics = widget.metrics;
+  bool _restoring = false;
 
   void _onMetricsChanged(DeviceMetrics m) {
     setState(() => _metrics = m);
@@ -40,6 +52,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (_) =>
             ScreenSizeScreen(metrics: _metrics, onChanged: _onMetricsChanged),
       ),
+    );
+  }
+
+  /// The paywall's restore, reachable without first tapping a locked game —
+  /// the place a player who reinstalled goes looking for it.
+  Future<void> _reloadPurchases() async {
+    setState(() => _restoring = true);
+    final outcome = await widget.premium.restore();
+    if (!mounted) return;
+    setState(() => _restoring = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(restoreMessage(outcome))),
+    );
+  }
+
+  /// Opens the policy in an in-app browser sheet (SFSafariViewController on
+  /// iOS, a Custom Tab on Android) rather than throwing the player out to the
+  /// browser app: they are reading one page, and should land back here.
+  Future<void> _openPrivacyPolicy() async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        kPrivacyPolicyUrl,
+        mode: LaunchMode.inAppBrowserView,
+      );
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Couldn't open the privacy policy.")),
     );
   }
 
@@ -68,10 +111,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onPressed: _calibrate,
                 ),
                 const SizedBox(height: 14),
-                // Not wired yet — the reload itself does not exist.
-                const _SettingsButton(label: 'Reload Purchases'),
+                _SettingsButton(
+                  label: _restoring ? 'Checking…' : 'Reload Purchases',
+                  onPressed: _restoring ? null : _reloadPurchases,
+                ),
                 const SizedBox(height: 14),
-                const _SettingsButton(label: 'See Privacy Policy'),
+                _SettingsButton(
+                  label: 'See Privacy Policy',
+                  onPressed: _openPrivacyPolicy,
+                ),
               ],
             ),
           ),
@@ -90,7 +138,7 @@ class _SettingsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LobbyPillButton(
     label: label,
-    onPressed: onPressed ?? () {},
+    onPressed: onPressed,
     background: LobbyFlowColors.field,
     foreground: LobbyFlowColors.ink,
     fontSize: 17,

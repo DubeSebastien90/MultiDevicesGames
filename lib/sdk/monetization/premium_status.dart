@@ -1,10 +1,42 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 /// The RevenueCat entitlement identifier that unlocks the full catalogue and
 /// the game-selection screen. Must match the entitlement created in the
 /// RevenueCat dashboard exactly.
 const String kPremiumEntitlementId = 'premium';
+
+/// How a [PremiumStatus.restore] ended — one per message the player is shown.
+enum RestoreOutcome {
+  /// Premium was found on the store account and is now unlocked.
+  restored,
+
+  /// This device already had Premium before asking.
+  alreadyActive,
+
+  /// The store answered, and there is nothing on this account to restore.
+  nothingFound,
+
+  /// The store could not be reached: no network, or the SDK never configured.
+  unreachable,
+
+  /// Anything else. Deliberately carries no detail — the raw error is for the
+  /// logs, not for the player.
+  failed,
+}
+
+/// What to tell the player after a restore, in the same words wherever the
+/// button was.
+String restoreMessage(RestoreOutcome outcome) => switch (outcome) {
+  RestoreOutcome.restored => 'Premium restored. All games are unlocked.',
+  RestoreOutcome.alreadyActive => 'Premium is already active on this device.',
+  RestoreOutcome.nothingFound =>
+    'No previous purchase found for this App Store / Google Play account.',
+  RestoreOutcome.unreachable =>
+    "Couldn't reach the store. Check your connection and try again.",
+  RestoreOutcome.failed => "Couldn't restore purchases. Please try again later.",
+};
 
 /// The public RevenueCat API keys for this app, one per store.
 ///
@@ -214,6 +246,35 @@ class PremiumStatus extends ChangeNotifier {
       _error = '$e';
       notifyListeners();
     }
+  }
+
+  /// Asks the store for purchases made on this store account, and says how it
+  /// went.
+  ///
+  /// The one restore both the paywall and Settings use, so the two buttons can
+  /// never disagree about what happened. Never throws: every way it can end is
+  /// a [RestoreOutcome] the caller turns into a message.
+  Future<RestoreOutcome> restore() async {
+    final wasPremium = isPremium;
+    // [_configured], not [isConfigured]: under [debugUnlocked] the latter is
+    // true without the SDK ever being set up, and the native SDK crashes
+    // rather than throws when called unconfigured.
+    if (!_configured) {
+      return wasPremium ? RestoreOutcome.alreadyActive : RestoreOutcome.unreachable;
+    }
+    try {
+      _apply(await Purchases.restorePurchases());
+    } on PlatformException catch (e) {
+      final code = PurchasesErrorHelper.getErrorCode(e);
+      return code == PurchasesErrorCode.networkError ||
+              code == PurchasesErrorCode.offlineConnectionError
+          ? RestoreOutcome.unreachable
+          : RestoreOutcome.failed;
+    } catch (_) {
+      return RestoreOutcome.failed;
+    }
+    if (!isPremium) return RestoreOutcome.nothingFound;
+    return wasPremium ? RestoreOutcome.alreadyActive : RestoreOutcome.restored;
   }
 
   /// Ask again, after a failure, from wherever it failed.

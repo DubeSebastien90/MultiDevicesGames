@@ -60,6 +60,11 @@ class _PaywallSheetState extends State<PaywallSheet> {
   bool _purchasing = false;
   String? _error;
 
+  /// Kept apart from [_error]: that one belongs to the offer and the buy
+  /// button, and a restore failing must not take over the place where the
+  /// price would be.
+  String? _restoreError;
+
   @override
   void initState() {
     super.initState();
@@ -149,33 +154,21 @@ class _PaywallSheetState extends State<PaywallSheet> {
   }
 
   Future<void> _restore() async {
-    if (!widget.premium.isConfigured) {
-      setState(() => _error = "Couldn't reach the store.");
+    setState(() {
+      _purchasing = true;
+      _restoreError = null;
+    });
+    final outcome = await widget.premium.restore();
+    if (!mounted) return;
+    if (outcome == RestoreOutcome.restored ||
+        outcome == RestoreOutcome.alreadyActive) {
+      Navigator.of(context).pop();
       return;
     }
     setState(() {
-      _purchasing = true;
-      _error = null;
+      _purchasing = false;
+      _restoreError = restoreMessage(outcome);
     });
-    try {
-      await Purchases.restorePurchases();
-      await widget.premium.refresh();
-      if (!mounted) return;
-      if (widget.premium.isPremium) {
-        Navigator.of(context).pop();
-      } else {
-        setState(() {
-          _purchasing = false;
-          _error = 'No previous purchase found on this account.';
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = "Couldn't restore: $e";
-        _purchasing = false;
-      });
-    }
   }
 
   @override
@@ -301,6 +294,14 @@ class _PaywallSheetState extends State<PaywallSheet> {
               fontSize: 15,
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
             ),
+            if (_restoreError != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _restoreError!,
+                style: _troubleStyle,
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),
