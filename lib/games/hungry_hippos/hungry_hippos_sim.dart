@@ -9,23 +9,26 @@ import '../../sdk/render/shape_view.dart';
 import '../../sdk/score/scoreboard.dart';
 import 'hungry_hippos_config.dart';
 
-/// Marbles in a shallow dish, and everyone lunging for them at once.
+/// Marbles circling a shallow dish, and everyone lunging for them at once.
 ///
 /// The board has no gravity. What it has instead is a **bowl**: every marble is
 /// pulled toward the middle in proportion to how far out it is, which is what a
-/// slice of a very large sphere does. The radius is large on purpose — the dish
-/// is nearly flat, so marbles drift back and mill about in the middle rather
-/// than rolling to the centre like ball bearings in a saucer.
+/// slice of a very large sphere does. On top of that the dish **turns**, a
+/// gentle push along the rim that keeps the marbles circling on a ring rather
+/// than piling up in the middle — so a marble comes round past each hippo at a
+/// pace you can read, and a lunge is something you time.
 ///
-/// Every player has a hippo at the rim of the table in front of them, and a tap
-/// sends it lunging in. One rule places all of them — out along the line from
-/// the middle of the board through the middle of your phone — and each
-/// arrangement decides what that means: an outer corner on a block of four,
-/// which is where the real toy puts them.
+/// Every player has a hippo at the rim of the table in front of them. Press to
+/// charge it, let go to send it: a tap is a quick, short snap; a full charge
+/// reaches the middle but is slow to launch and slow to recover. The jaws only
+/// open at the end of the lunge, and whatever is just outside them is thrown
+/// clear — which is how you steal a marble on its way to your neighbour. A
+/// lunge that neither eats nor shoves anything leaves the hippo dazed.
 ///
-/// This is the first game here where the seam is the *whole* board rather than
-/// a line across it: marbles wander from screen to screen constantly, and the
-/// physics never learns the gaps exist.
+/// One rule places all the hippos — out along the line from the middle of the
+/// board through the middle of your phone — and each arrangement decides what
+/// that means: an outer corner on a block of four, which is where the real toy
+/// puts them.
 class HungryHipposSim extends Forge2DGameSim {
   HungryHipposSim(super.context, {math.Random? random})
     : _random = random ?? math.Random() {
@@ -50,8 +53,13 @@ class HungryHipposSim extends Forge2DGameSim {
   double get _centreX => board.centerX;
   double get _centreY => board.centerY;
 
+  /// How long the dish has been empty. The round is called a moment after the
+  /// last marble goes, not on the same tick, so everyone sees it swallowed.
+  double _emptyFor = 0;
+
   bool get _over =>
-      _live.isEmpty || _elapsed >= HungryHipposConfig.maxRoundSeconds;
+      (_live.isEmpty && _emptyFor >= HungryHipposConfig.endDelaySeconds) ||
+      _elapsed >= HungryHipposConfig.maxRoundSeconds;
 
   /// How many marbles [phoneId] has swallowed this round.
   int eatenBy(String phoneId) => _eaten[phoneId] ?? 0;
@@ -144,7 +152,7 @@ class HungryHipposSim extends Forge2DGameSim {
           CircleShape()..radius = HungryHipposConfig.hippoRadius,
           density: 1,
           friction: 0.1,
-          restitution: 0.1,
+          restitution: HungryHipposConfig.hippoRestitution,
         ),
       );
 
@@ -157,9 +165,9 @@ class HungryHipposSim extends Forge2DGameSim {
           restY: restY,
           dirX: -aim.awayX,
           dirY: -aim.awayY,
-          // Right to the middle of the dish. The same for everyone, because they
-          // all start from the same place.
-          lungeDistance: along * HungryHipposConfig.lungeFraction,
+          // The same for everyone, because they all start from the same place.
+          // How much of it a lunge covers is up to the charge.
+          toMiddle: along,
         ),
       );
       _eaten[slice.phoneId] = 0;
@@ -190,26 +198,15 @@ class HungryHipposSim extends Forge2DGameSim {
     );
   }
 
-  /// Marbles scattered in the middle, well short of anybody's reach.
+  /// Every marble body, made once. Where they go is [_deal]'s business.
   void _buildMarbles() {
-    final spread = _scatterRadius();
-
     for (var i = 0; i < HungryHipposConfig.marbleCount; i++) {
-      // Square-rooted so they spread evenly over the disc rather than bunching
-      // in the middle, which is what a plain random radius does.
-      final r = spread * math.sqrt(_random.nextDouble());
-      final a = _random.nextDouble() * 2 * math.pi;
-
-      final id = 'marble$i';
       final body = addBody(
-        id,
+        'marble$i',
         'marble',
         BodyDef(
           type: BodyType.dynamic,
-          position: Vector2(
-            _centreX + r * math.cos(a),
-            _centreY + r * math.sin(a),
-          ),
+          position: Vector2(_centreX, _centreY),
           linearDamping: HungryHipposConfig.marbleDamping,
           angularDamping: HungryHipposConfig.marbleDamping,
         ),
@@ -228,6 +225,52 @@ class HungryHipposSim extends Forge2DGameSim {
           restitution: HungryHipposConfig.marbleRestitution,
         ),
       );
+    }
+    _deal();
+  }
+
+  /// Which way the dish turns this round: 1 or -1.
+  double _swirlSign = 1;
+
+  /// Puts every marble on the table, spread over a band of the dish and
+  /// already circling — the round starts in motion rather than as a heap
+  /// waiting for somebody to break it.
+  void _deal() {
+    _live.clear();
+    _swirlSign = _random.nextBool() ? 1 : -1;
+
+    final inner = dishRadius * HungryHipposConfig.spawnInnerFraction;
+    final outer = dishRadius * HungryHipposConfig.spawnOuterFraction;
+    final omega = math.sqrt(HungryHipposConfig.bowlPull);
+
+    for (var i = 0; i < HungryHipposConfig.marbleCount; i++) {
+      final id = 'marble$i';
+      final body = bodyOf(id);
+      if (body == null) continue;
+
+      // Square-rooted over the band's area so they spread evenly rather than
+      // bunching at its inner edge.
+      final r = math.sqrt(
+        inner * inner + _random.nextDouble() * (outer * outer - inner * inner),
+      );
+      final a = _random.nextDouble() * 2 * math.pi;
+
+      // The speed of a free orbit at that radius in this bowl, so each marble
+      // starts on a path the dish would keep it on — give or take a little, so
+      // they do not all travel in lockstep.
+      final jitter =
+          1 +
+          HungryHipposConfig.spawnSpeedJitter * (_random.nextDouble() * 2 - 1);
+      final speed = r * omega * jitter * _swirlSign;
+
+      show(id);
+      body
+        ..setTransform(
+          Vector2(_centreX + r * math.cos(a), _centreY + r * math.sin(a)),
+          0,
+        )
+        ..linearVelocity = Vector2(-math.sin(a) * speed, math.cos(a) * speed)
+        ..angularVelocity = 0;
       _live.add(id);
     }
   }
@@ -251,9 +294,6 @@ class HungryHipposSim extends Forge2DGameSim {
     return math.min(tx, ty);
   }
 
-  /// Where the marbles are dealt — a heap in the middle, not spread to the rim.
-  double _scatterRadius() => dishRadius * HungryHipposConfig.scatterFraction;
-
   // ------------------------------------------------------------------ step
 
   @override
@@ -263,17 +303,18 @@ class HungryHipposSim extends Forge2DGameSim {
       return;
     }
     _elapsed += dt;
+    if (_live.isEmpty) _emptyFor += dt;
 
-    _pullMarblesToTheMiddle();
+    _turnTheBowl();
     _driveHippos(dt);
 
     // Swallowed *before* the physics runs, against the place each hippo is
     // about to be. A hippo is a solid kinematic body travelling most of the
-    // board in a sixth of a second: let the step happen first and it punts the
-    // marbles clear of its own mouth, and a lunge dead through the heap eats
-    // nothing at all. Checking the target first means what is in the way gets
-    // eaten, and only what is beside it gets shoved.
+    // board in a fraction of a second: let the step happen first and it punts
+    // the marbles clear of its own mouth. Checking the target first means what
+    // is in the jaws gets eaten, and only what is beside them gets shoved.
     _swallow();
+    _shoveAndJudge();
 
     super.step(dt);
 
@@ -283,38 +324,63 @@ class HungryHipposSim extends Forge2DGameSim {
     if (_over) _awardOnce();
   }
 
-  /// The bowl. A pull toward the middle, proportional to distance out.
-  void _pullMarblesToTheMiddle() {
+  /// The bowl, and the slow turn of the dish.
+  ///
+  /// The pull is toward the middle, proportional to distance out — what a
+  /// spherical dish gives. The swirl is a constant push along the rim; against
+  /// the pull and the felt it holds every marble on a ring at
+  /// [HungryHipposConfig.swirlRingFraction] of the dish. Worked out rather than
+  /// tuned by hand: in a bowl of pull `k` an orbit of radius `r` runs at
+  /// `r * sqrt(k)`, the felt takes `damping * v` off it, and that is exactly
+  /// what the push puts back. Inside the ring a marble is going too fast for
+  /// its orbit and drifts out; outside, too slow, and falls in.
+  void _turnTheBowl() {
+    final ring = dishRadius * HungryHipposConfig.swirlRingFraction;
+    final swirl =
+        HungryHipposConfig.marbleDamping *
+        ring *
+        math.sqrt(HungryHipposConfig.bowlPull) *
+        _swirlSign;
+
     for (final id in _live) {
       final body = bodyOf(id);
       if (body == null) continue;
       final dx = _centreX - body.position.x;
       final dy = _centreY - body.position.y;
-      // Proportional to displacement, which is what a spherical dish gives —
-      // no normalising, because the distance *is* the slope.
-      body.applyForce(
-        Vector2(
-          dx * HungryHipposConfig.bowlPull * body.mass,
-          dy * HungryHipposConfig.bowlPull * body.mass,
-        ),
-      );
+      // No normalising for the pull: the distance *is* the slope.
+      var fx = dx * HungryHipposConfig.bowlPull;
+      var fy = dy * HungryHipposConfig.bowlPull;
+
+      final r = math.sqrt(dx * dx + dy * dy);
+      if (r > 1e-4) {
+        // Square to the line from the middle, the same way round for everyone.
+        fx += dy / r * swirl;
+        fy -= dx / r * swirl;
+      }
+      body.applyForce(Vector2(fx * body.mass, fy * body.mass));
     }
   }
 
-  /// Move each hippo along its lunge, out and back.
+  /// Move each hippo: drawn back while charging, then out and back.
   void _driveHippos(double dt) {
     for (final h in _hippos) {
       h.advance(dt);
 
-      final target = h.reach * h.lungeDistance;
-      final wantX = h.restX + h.dirX * target;
-      final wantY = h.restY + h.dirY * target;
+      // Solid everywhere but on the way out. A lunge that knocked marbles
+      // aside on the way in threw away the very marbles it was aimed at before
+      // the jaws had opened: now the mouth decides what happens to what is in
+      // its path, and the body only shoves on the way home.
+      h.body.fixtures.first.setSensor(h.passesThrough);
+
+      final along = h.reach * h.lungeDistance - h.recoil;
+      final wantX = h.restX + h.dirX * along - h.dirY * h.sway;
+      final wantY = h.restY + h.dirY * along + h.dirX * h.sway;
       h.targetX = wantX;
       h.targetY = wantY;
 
       // Driven by velocity rather than teleported: a kinematic body that is
       // moved by setting its transform passes straight through whatever is in
-      // the way, and shoving the marbles aside is half of what a hippo is for.
+      // the way, and knocking marbles about is half of what a hippo is for.
       h.body.linearVelocity = Vector2(
         (wantX - h.body.position.x) / dt,
         (wantY - h.body.position.y) / dt,
@@ -347,19 +413,85 @@ class HungryHipposSim extends Forge2DGameSim {
         hide(id);
         _eaten[h.phoneId] = (_eaten[h.phoneId] ?? 0) + 1;
       }
+      h.ateThisLunge += swallowed.length;
     }
   }
 
+  /// At full stretch: throw clear whatever is just outside the jaws, then
+  /// decide whether that lunge was a miss.
+  ///
+  /// After [_swallow], so a marble is either eaten or shoved, never both.
+  void _shoveAndJudge() {
+    for (final h in _hippos) {
+      if (!h.extendedThisTick) continue;
+
+      final mouthX = h.targetX;
+      final mouthY = h.targetY;
+      const reach = HungryHipposConfig.pushRadius;
+      final speed = _lerp(
+        HungryHipposConfig.pushSpeedTap,
+        HungryHipposConfig.pushSpeedFull,
+        h.charge,
+      );
+
+      var shoved = 0;
+      for (final id in _live) {
+        final body = bodyOf(id);
+        if (body == null) continue;
+        var dx = body.position.x - mouthX;
+        var dy = body.position.y - mouthY;
+        final d = math.sqrt(dx * dx + dy * dy);
+        if (d > reach) continue;
+        if (d < 1e-4) {
+          dx = h.dirX;
+          dy = h.dirY;
+        } else {
+          dx /= d;
+          dy /= d;
+        }
+        // Keep a little of where it was already going, so a shove bends a
+        // marble's path rather than replacing it.
+        final v = body.linearVelocity;
+        body.linearVelocity = Vector2(
+          v.x * 0.4 + dx * speed,
+          v.y * 0.4 + dy * speed,
+        );
+        shoved++;
+      }
+
+      _shoves++;
+      _lastShove[h.phoneId] =
+          '$_shoves:${mouthX.toStringAsFixed(2)}:${mouthY.toStringAsFixed(2)}';
+
+      // A lunge that moved nothing at all was a guess. Shoving counts: sending
+      // a marble away from your neighbour is a move, not a miss.
+      if (h.ateThisLunge == 0 && shoved == 0) h.stunned = true;
+    }
+  }
+
+  /// Counts every shove, so two from the same spot still read as two.
+  int _shoves = 0;
+
+  /// Where each hippo last shoved, for the view's flash: `count:x:y`. A string
+  /// because shared state is diffed by value, and it changes once a lunge.
+  final _lastShove = <String, String>{};
+
   // ----------------------------------------------------------------- input
 
+  /// Press to charge your own hippo, let go to send it — wherever on your
+  /// glass you happen to touch. There is nothing else on the screen to press,
+  /// and asking someone to hit a target *and* time a lunge is one thing too
+  /// many.
   @override
   void onTouch(TouchEvent touch) {
-    if (touch.phase != TouchPhase.down || _over) return;
+    if (_over) return;
     for (final h in _hippos) {
-      // Your own hippo, wherever on your glass you happened to tap. There is
-      // nothing else on the screen to press, and asking someone to hit a target
-      // *and* time a lunge is one thing too many.
-      if (h.phoneId == touch.phoneId) h.lunge();
+      if (h.phoneId != touch.phoneId) continue;
+      if (touch.phase == TouchPhase.down) {
+        h.press(touch.pointerId);
+      } else if (touch.phase == TouchPhase.up) {
+        h.lift(touch.pointerId);
+      }
     }
   }
 
@@ -377,6 +509,10 @@ class HungryHipposSim extends Forge2DGameSim {
       0,
       999,
     ),
+    // What each hippo is up to, for the picture: 'c' charging, 's' dazed after
+    // a miss, '' otherwise. Changes a few times a lunge, never every tick.
+    'hippos': {for (final h in _hippos) h.phoneId: h.status},
+    'shoves': Map<String, String>.of(_lastShove),
   };
 
   // --------------------------------------------------------------- outcome
@@ -428,15 +564,17 @@ class HungryHipposSim extends Forge2DGameSim {
   @override
   void reset() {
     _elapsed = 0;
+    _emptyFor = 0;
     _awarded = false;
     _paid = const {};
     // The latched verdict belongs to the round that just ended.
     _outcome = null;
+    _lastShove.clear();
 
     for (final h in _hippos) {
       h.reset();
       h.body
-        ..setTransform(Vector2(h.restX, h.restY), 0)
+        ..setTransform(Vector2(h.restX, h.restY), h.body.angle)
         ..linearVelocity = Vector2.zero();
     }
 
@@ -444,27 +582,11 @@ class HungryHipposSim extends Forge2DGameSim {
       _eaten[key] = 0;
     }
 
-    _live.clear();
-    final spread = _scatterRadius();
-    for (var i = 0; i < HungryHipposConfig.marbleCount; i++) {
-      final id = 'marble$i';
-      final body = bodyOf(id);
-      if (body == null) continue;
-
-      final r = spread * math.sqrt(_random.nextDouble());
-      final a = _random.nextDouble() * 2 * math.pi;
-      show(id);
-      body
-        ..setTransform(
-          Vector2(_centreX + r * math.cos(a), _centreY + r * math.sin(a)),
-          0,
-        )
-        ..linearVelocity = Vector2.zero()
-        ..angularVelocity = 0;
-      _live.add(id);
-    }
+    _deal();
   }
 }
+
+double _lerp(double a, double b, double t) => a + (b - a) * t;
 
 /// One player's hippo, and where it is in its lunge.
 class _Hippo {
@@ -476,7 +598,7 @@ class _Hippo {
     required this.restY,
     required this.dirX,
     required this.dirY,
-    required this.lungeDistance,
+    required this.toMiddle,
   }) : targetX = restX,
        targetY = restY;
 
@@ -490,15 +612,36 @@ class _Hippo {
   final double dirX;
   final double dirY;
 
-  /// How far this hippo travels when it lunges — its own distance to the
-  /// middle, scaled, so every board size plays the same.
-  final double lungeDistance;
+  /// From here to the middle of the dish. A lunge covers a fraction of it,
+  /// set by the charge, so every board size plays the same.
+  final double toMiddle;
 
   _HippoPhase _phase = _HippoPhase.resting;
   double _t = 0;
 
+  /// Fingers down on this phone right now.
+  final _fingers = <int>{};
+
+  /// 0 for a tap, 1 for a full charge. Grows while charging, then is fixed for
+  /// the lunge it launched.
+  double charge = 0;
+
   /// 0 at rest, 1 fully extended.
   double reach = 0;
+
+  /// Drawn back while charging, and trembling — the tell everyone else reads.
+  double recoil = 0;
+  double sway = 0;
+
+  /// What this lunge has eaten so far.
+  int ateThisLunge = 0;
+
+  /// Dazed after a miss: recovery takes longer.
+  bool stunned = false;
+
+  /// True on the one tick the lunge reaches full stretch — when the shove
+  /// happens and the miss is judged.
+  bool extendedThisTick = false;
 
   /// Where the body is being driven to this tick — and so where the mouth is
   /// about to be, which is what decides what it swallows.
@@ -507,54 +650,113 @@ class _Hippo {
 
   /// Whether the mouth is open this tick.
   ///
-  /// Set inside [advance] rather than read off the phase, and that is the whole
-  /// point: the tick where the lunge reaches full stretch is also the tick the
-  /// phase turns around, so asking "is the phase still `out`?" answered no at
-  /// exactly the moment the hippo was deepest. That left a small disc at the
-  /// very middle of the dish that no mouth ever covered — and the bowl gathers
-  /// stragglers into precisely that spot, so every round ended with a few
-  /// marbles sitting in the centre that nobody could reach.
-  ///
-  /// Only on the way out, so a hippo still cannot hoover marbles up on the way
-  /// home: the lunge has to be aimed.
+  /// Set inside [advance] rather than read off the phase: the tick where the
+  /// lunge reaches full stretch is also the tick the phase turns around, and
+  /// the deepest point of a lunge has to count — the bowl can leave marbles
+  /// there, and a mouth that never covers it strands them.
   bool mouthOpen = false;
 
-  bool get canLunge => _phase == _HippoPhase.resting;
+  double get lungeDistance =>
+      toMiddle *
+      _lerp(
+        HungryHipposConfig.lungeFractionTap,
+        HungryHipposConfig.lungeFractionFull,
+        charge,
+      );
 
-  void lunge() {
-    if (!canLunge) return;
+  bool get passesThrough => _phase == _HippoPhase.out;
+
+  String get status {
+    if (_phase == _HippoPhase.charging) return 'c';
+    if (stunned) return 's';
+    return '';
+  }
+
+  void press(int pointer) {
+    _fingers.add(pointer);
+    if (_phase == _HippoPhase.resting) _startCharging();
+  }
+
+  void lift(int pointer) {
+    _fingers.remove(pointer);
+    if (_fingers.isEmpty && _phase == _HippoPhase.charging) _release();
+  }
+
+  void _startCharging() {
+    _phase = _HippoPhase.charging;
+    _t = 0;
+    charge = 0;
+  }
+
+  void _release() {
     _phase = _HippoPhase.out;
     _t = 0;
+    recoil = 0;
+    sway = 0;
+    ateThisLunge = 0;
+    stunned = false;
   }
 
   void advance(double dt) {
     _t += dt;
     mouthOpen = false;
+    extendedThisTick = false;
     switch (_phase) {
       case _HippoPhase.resting:
         reach = 0;
+      case _HippoPhase.charging:
+        reach = 0;
+        charge = (_t / HungryHipposConfig.chargeFullSeconds).clamp(0.0, 1.0);
+        recoil = HungryHipposConfig.chargeRecoil * charge;
+        sway = math.sin(_t * 50) * HungryHipposConfig.chargeShake * charge;
+        if (_t >= HungryHipposConfig.chargeMaxHoldSeconds) {
+          // Held too long: it goes anyway, and the finger still on the glass
+          // does not start another one — that takes a fresh press.
+          _fingers.clear();
+          _release();
+        }
       case _HippoPhase.out:
-        final p = (_t / HungryHipposConfig.lungeOutSeconds).clamp(0.0, 1.0);
+        final seconds = _lerp(
+          HungryHipposConfig.lungeOutSecondsTap,
+          HungryHipposConfig.lungeOutSecondsFull,
+          charge,
+        );
+        final p = (_t / seconds).clamp(0.0, 1.0);
         reach = p;
-        // Open for every tick of the lunge, this one included — even when it
-        // is the one that turns the hippo around.
-        mouthOpen = true;
+        // Only at the end of the way out: timing, not sweeping.
+        mouthOpen = p >= 1 - HungryHipposConfig.mouthOpenFraction;
         if (p >= 1) {
+          extendedThisTick = true;
           _phase = _HippoPhase.back;
           _t = 0;
         }
       case _HippoPhase.back:
-        final p = (_t / HungryHipposConfig.lungeBackSeconds).clamp(0.0, 1.0);
+        final seconds = _lerp(
+          HungryHipposConfig.lungeBackSecondsTap,
+          HungryHipposConfig.lungeBackSecondsFull,
+          charge,
+        );
+        final p = (_t / seconds).clamp(0.0, 1.0);
         reach = 1 - p;
         if (p >= 1) {
-          _phase = _HippoPhase.cooling;
+          _phase = _HippoPhase.recovering;
           _t = 0;
         }
-      case _HippoPhase.cooling:
+      case _HippoPhase.recovering:
         reach = 0;
-        if (_t >= HungryHipposConfig.lungeCooldownSeconds) {
+        final wait =
+            _lerp(
+              HungryHipposConfig.recoverSecondsTap,
+              HungryHipposConfig.recoverSecondsFull,
+              charge,
+            ) +
+            (stunned ? HungryHipposConfig.missStunSeconds : 0);
+        if (_t >= wait) {
+          stunned = false;
           _phase = _HippoPhase.resting;
           _t = 0;
+          // A finger pressed a moment early is not thrown away.
+          if (_fingers.isNotEmpty) _startCharging();
         }
     }
   }
@@ -562,14 +764,21 @@ class _Hippo {
   void reset() {
     _phase = _HippoPhase.resting;
     _t = 0;
+    _fingers.clear();
+    charge = 0;
     reach = 0;
+    recoil = 0;
+    sway = 0;
+    ateThisLunge = 0;
+    stunned = false;
+    extendedThisTick = false;
     mouthOpen = false;
     targetX = restX;
     targetY = restY;
   }
 }
 
-enum _HippoPhase { resting, out, back, cooling }
+enum _HippoPhase { resting, charging, out, back, recovering }
 
 /// Which way a phone faces from the middle of the table, and how much of its
 /// own glass lies along that line.

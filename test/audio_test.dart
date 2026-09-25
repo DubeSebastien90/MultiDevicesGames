@@ -469,12 +469,11 @@ void main() {
       expect(out.log, ['play -2 assets/sdk/players/green-happy.wav']);
     });
 
-    test('trying characters in a row cuts the last voice off', () {
+    test('trying characters in a row lets the voices overlap', () {
       client.pickColor(PlayerPalette.green);
       client.pickColor(PlayerPalette.red);
       expect(out.log, [
         'play -2 assets/sdk/players/green-happy.wav',
-        'stop -2',
         'play -3 assets/sdk/players/red-happy.wav',
       ]);
     });
