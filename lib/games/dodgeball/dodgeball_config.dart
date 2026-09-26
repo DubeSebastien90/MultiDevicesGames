@@ -22,6 +22,26 @@ class DodgeballConfig {
   static const double ballSpawnIntervalDecay = 0.92; // multiplier each spawn
   static const int ballMaxCount = 20;
 
+  // -- falling ----------------------------------------------------------------
+  /// How long the round keeps running after the last player but one goes out.
+  ///
+  /// The round is decided the instant it happens; this is only the phase
+  /// waiting, so the burst that says *how* it was decided plays to somebody —
+  /// the same second Arena holds for.
+  static const double deathShowSeconds = 1.0;
+
+  /// The burst itself: a ring of round bits of the player's own colour, thrown
+  /// outwards and slowing as they fade. Arena's numbers, so going out looks
+  /// the same in both games.
+  static const int deathParticles = 16;
+  static const double deathBurstSeconds = 1.0;
+
+  /// How fast the fastest bits leave, in world units per second.
+  static const double deathBurstSpeed = 7.0;
+
+  /// The size of a bit, as a fraction of the body it came out of.
+  static const double deathParticleScale = 0.22;
+
   // -- getting started --------------------------------------------------------
   /// The three lines of the briefing, and how long each one holds the screen.
   ///

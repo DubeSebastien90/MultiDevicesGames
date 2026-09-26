@@ -28,7 +28,7 @@ class DodgeballGame implements MultiscreenGame {
   @override
   BoardPlan planBoard(LobbyInfo lobby) {
     final n = lobby.phones.length;
-    if (n <= 3) {
+    if (n <= 2) {
       return Layouts.row(
         lobby.phones,
         sort: PhoneSort.joinOrder,
@@ -51,14 +51,16 @@ class DodgeballGame implements MultiscreenGame {
             'edges touching.',
       );
     }
-    return Layouts.row(
-      lobby.phones,
+    // Odd: a grid with one more phone on top, the rows centred like bricks.
+    return Layouts.brick(
+      n == 3 ? Layouts.shortestLast(lobby.phones) : lobby.phones,
       sort: PhoneSort.joinOrder,
       orientation: PhoneOrientation.sideways,
       gap: Gaps.casingsTouching,
-      instruction:
-          'Lay your phones side by side on their sides, '
-          'short edges touching.',
+      instruction: n == 3
+          ? 'Two phones on their sides, short edges touching; '
+              'the third below them, across the join.'
+          : null,
     );
   }
 

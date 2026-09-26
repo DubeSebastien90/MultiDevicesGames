@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../sdk/contract/view.dart';
 import '../../sdk/model/player.dart';
+import '../../sdk/render/particle_burst.dart';
 import '../../sdk/render/player_animation.dart';
 import 'dodgeball_config.dart';
 
@@ -58,6 +59,11 @@ class DodgeballView extends GameView {
   /// Where each player was last frame, to tell walking from standing.
   final _lastSeen = <String, Offset>{};
 
+  /// When each player's burst started, on this phone's clock — the moment it
+  /// was told they were out. See the same map in `ArenaView` for why the
+  /// instant is local and everything after it runs off [Frame.timeMs].
+  final _burstAt = <String, double>{};
+
   @override
   void render(Canvas canvas, Frame frame) {
     // Floor, over the whole panel — see the note in `ArenaView`. Painting it
@@ -91,6 +97,11 @@ class DodgeballView extends GameView {
         _fill,
       );
     }
+
+    // Whoever has just gone out, over the balls and under the living: the
+    // burst happened *there*, and a player standing on the spot is standing
+    // on it.
+    _drawDeaths(canvas, frame);
 
     // Draw players.
     for (final e in frame.ofKind('player')) {
@@ -227,10 +238,60 @@ class DodgeballView extends GameView {
       );
     }
 
-    // Finished overlay.
-    if (frame.sharedState['phase'] == 'finished') {
-      _drawCentered(canvas, frame, 'OUT!', frame.me.halfWidth * 2 * 0.22);
+    // No finished overlay, as in Arena: the round holds for a second after the
+    // last player goes out so the burst can play, and the phones move on to
+    // the score by themselves a moment later.
+  }
+
+  /// Everybody's burst, for as long as theirs lasts.
+  ///
+  /// Driven from `alive_pN` going false: the roster of who is still standing
+  /// is already on the wire, and the moment it changes is the moment somebody
+  /// went out.
+  void _drawDeaths(Canvas canvas, Frame frame) {
+    for (var i = 0; i < 8; i++) {
+      final key = 'p$i';
+      if (frame.sharedState['phoneId_$key'] == null) break;
+
+      if (frame.sharedState['alive_$key'] == true) {
+        // Alive, so any burst of theirs belongs to a previous round. Cleared
+        // rather than left: this view outlives a replay.
+        _burstAt.remove(key);
+        continue;
+      }
+
+      final started = _burstAt[key] ??= frame.timeMs;
+      final t =
+          (frame.timeMs - started) / 1000 / DodgeballConfig.deathBurstSeconds;
+      if (t < 0 || t >= 1) continue;
+
+      final x = (frame.sharedState['deadX_$key'] as num?)?.toDouble();
+      final y = (frame.sharedState['deadY_$key'] as num?)?.toDouble();
+      if (x == null || y == null) continue;
+
+      drawParticleBurst(
+        canvas,
+        _fill,
+        Offset(x, y),
+        _colorOf(frame, key),
+        t,
+        count: DodgeballConfig.deathParticles,
+        speed: DodgeballConfig.deathBurstSpeed,
+        seconds: DodgeballConfig.deathBurstSeconds,
+        particleRadius: DodgeballConfig.characterRadius *
+            DodgeballConfig.deathParticleScale,
+      );
     }
+  }
+
+  /// A player's colour: the platform one they have worn since the lobby where
+  /// there is a seat for them, and the sim's palette otherwise — the same
+  /// choice the body itself makes.
+  Color _colorOf(Frame frame, String key) {
+    final phoneId = frame.sharedState['phoneId_$key'] as String? ?? '';
+    final seated = roster.byPhone(phoneId);
+    return seated?.color.value ??
+        Color((frame.sharedState['color_$key'] as num?)?.toInt() ?? 0xFFFFFFFF);
   }
 
   /// The anchor the drag is measured from, under the finger that set it.

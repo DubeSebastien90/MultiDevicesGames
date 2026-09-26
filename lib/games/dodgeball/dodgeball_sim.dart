@@ -88,6 +88,11 @@ class DodgeballSim implements GameSim {
         _stepWalkingHome(dt);
       case 'playing':
         _stepPlaying(dt);
+        final ending = _finishIn;
+        if (ending != null) {
+          _finishIn = ending - dt;
+          if (_finishIn! <= 0) _phase = 'finished';
+        }
       case 'finished':
         break;
     }
@@ -325,9 +330,12 @@ class DodgeballSim implements GameSim {
         ..vy = hit.vy;
     }
 
-    // Collision: ball vs player.
+    // Collision: ball vs player. Not once the round is decided: the winner
+    // is already paid, and going out in the second after winning would show
+    // them bursting on the way to a score that says they won.
     final fell = <String>{};
     for (final p in _players) {
+      if (_finishIn != null) break;
       if (!p.alive) continue;
       if (p.invincibleLeft > 0) continue;
 
@@ -338,6 +346,8 @@ class DodgeballSim implements GameSim {
         if (dist <
             DodgeballConfig.characterRadius + DodgeballConfig.ballRadius) {
           p.alive = false;
+          p.deadX = p.x;
+          p.deadY = p.y;
           fell.add(p.phoneId);
           p.moveAngle = null;
           p.moveScale = 0;
@@ -408,10 +418,19 @@ class DodgeballSim implements GameSim {
     p.dashAngle = p.moveAngle ?? p.facingAngle;
   }
 
+  /// Decide the round, but do not end it yet.
+  ///
+  /// The winner and the points are settled here, the instant the last player
+  /// but one goes out — that part must not wait for anything. What waits is
+  /// the *phase*: the round keeps running for
+  /// [DodgeballConfig.deathShowSeconds] so the burst has somewhere to play,
+  /// and only then does the table move on to the score.
   void _checkWinCondition() {
+    if (_finishIn != null) return;
+
     final alive = _players.where((p) => p.alive).toList();
     if (alive.length <= 1 && _players.length > 1) {
-      _phase = 'finished';
+      _finishIn = DodgeballConfig.deathShowSeconds;
       if (alive.length == 1) _winnerId = alive.first.phoneId;
       // Paid by the order people went out in: the last one standing first,
       // the first one hit last.
@@ -421,6 +440,10 @@ class DodgeballSim implements GameSim {
       ]);
     }
   }
+
+  /// Seconds left of the pause after the round is decided, or null while it
+  /// is still being played.
+  double? _finishIn;
 
   // -- input ------------------------------------------------------------------
 
@@ -553,6 +576,14 @@ class DodgeballSim implements GameSim {
       final key = 'p${p.index}';
       map['phoneId_$key'] = p.phoneId;
       map['alive_$key'] = p.alive;
+      // Static for the round, and sent once because the broadcast is diffed.
+      // The view needs it after the player is gone, which is exactly when the
+      // entity that used to carry it no longer exists.
+      map['color_$key'] = p.color;
+      if (!p.alive) {
+        map['deadX_$key'] = _quantize(p.deadX);
+        map['deadY_$key'] = _quantize(p.deadY);
+      }
       map['dashing_$key'] = p.dashTimeLeft > 0;
       map['dashCd_$key'] = _quantize(p.dashCooldownLeft);
       map['invincible_$key'] = p.invincibleLeft > 0;
@@ -596,6 +627,7 @@ class DodgeballSim implements GameSim {
     _briefing = 0;
     _countdown = DodgeballConfig.countdownSeconds;
     _winnerId = null;
+    _finishIn = null;
     _fallen.clear();
     _paid = const {};
     _outcome = null;
@@ -644,6 +676,11 @@ class _Player {
   double x, y;
   double facingAngle = 0;
   bool alive = true;
+
+  /// Where this player was standing when they went out. Read by the view,
+  /// which has nothing else left to put a burst on.
+  double deadX = 0;
+  double deadY = 0;
 
   // Movement direction (null = stopped).
   double? moveAngle;

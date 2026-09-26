@@ -414,4 +414,66 @@ void main() {
       expect(half, closeTo(full / 2, 0.2));
     });
   });
+
+  // Going out, as in Arena: a burst in the player's colour where they stood,
+  // and the round held open for a second so it has somewhere to play.
+  group('the last one out', () {
+    /// Stand still until the balls take somebody, and answer with the sim the
+    /// instant it happens.
+    DodgeballSim untilTheLastFall() {
+      final sim = start(2);
+      for (var t = 0.0; t < 300; t += _dt) {
+        sim.step(_dt);
+        if (sim.sharedState['alive_p0'] == false ||
+            sim.sharedState['alive_p1'] == false) {
+          return sim;
+        }
+      }
+      fail('nobody was hit');
+    }
+
+    test('the round is decided at once but does not end at once', () {
+      final sim = untilTheLastFall();
+
+      expect(sim.outcome, isNull, reason: 'the round ended on the same frame');
+      expect(sim.sharedState['phase'], 'playing');
+
+      run(sim, DodgeballConfig.deathShowSeconds * 0.5);
+      expect(sim.sharedState['phase'], 'playing');
+
+      run(sim, DodgeballConfig.deathShowSeconds * 0.6);
+      expect(sim.sharedState['phase'], 'finished');
+      expect(sim.outcome, isNotNull);
+    });
+
+    test('says where they fell, and in what colour, for the burst', () {
+      final sim = untilTheLastFall();
+      final out = sim.sharedState['alive_p0'] == false ? 'p0' : 'p1';
+      final standing = out == 'p0' ? 'p1' : 'p0';
+
+      expect(sim.sharedState['deadX_$out'], isA<num>());
+      expect(sim.sharedState['deadY_$out'], isA<num>());
+      expect(sim.sharedState['color_$out'], isA<int>());
+      expect(sim.sharedState['deadX_$standing'], isNull);
+    });
+
+    test('the winner cannot go out in the second after winning', () {
+      final sim = untilTheLastFall();
+      final standing = sim.sharedState['alive_p0'] == false ? 'p1' : 'p0';
+
+      run(sim, DodgeballConfig.deathShowSeconds * 1.1);
+      expect(sim.sharedState['alive_$standing'], isTrue);
+      expect(sim.outcome!.summary, 'last one standing');
+    });
+
+    test('a replay forgets the fall', () {
+      final sim = untilTheLastFall();
+      run(sim, DodgeballConfig.deathShowSeconds * 1.1);
+      sim.reset();
+
+      expect(sim.sharedState['phase'], 'briefing');
+      expect(sim.sharedState['deadX_p0'], isNull);
+      expect(sim.sharedState['deadX_p1'], isNull);
+    });
+  });
 }

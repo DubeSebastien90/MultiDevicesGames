@@ -99,6 +99,7 @@ class PlayArea {
         }
       }
     }
+    _fillJunctions(xs, ys, inside, cols, rows);
 
     return PlayArea._(
       xs,
@@ -107,6 +108,71 @@ class PlayArea {
       _wallsOf(xs, ys, inside, cols, rows),
       WorldRect(xs.first, ys.first, xs.last - xs.first, ys.last - ys.first),
     );
+  }
+
+  /// Where seams cross or meet, a bezel-sized patch belongs to no seam: the
+  /// seam between two screens only runs as far as they overlap. In a grid it
+  /// is the square at the middle of the cross, in a brick layout the one where
+  /// the join above meets the phone below.
+  ///
+  /// Left out, it is a hole in the middle of the playfield with walls round
+  /// it — a ball rebounds off nothing and a player snags on a corner nobody can
+  /// see. So every patch of outside that is enclosed by the region and no
+  /// bigger than a seam either way is taken in. Open table beside a short
+  /// phone reaches the edge of the grid, so it is never enclosed and stays out.
+  ///
+  /// Patches rather than cells, because mismatched phones cut one junction
+  /// into several cells, each with another piece of the hole beside it.
+  static void _fillJunctions(
+    List<double> xs,
+    List<double> ys,
+    List<bool> inside,
+    int cols,
+    int rows,
+  ) {
+    final seen = List<bool>.filled(cols * rows, false);
+    for (var start = 0; start < cols * rows; start++) {
+      if (inside[start] || seen[start]) continue;
+
+      final patch = <int>[];
+      final stack = [start];
+      seen[start] = true;
+      var enclosed = true;
+      var left = double.infinity;
+      var right = double.negativeInfinity;
+      var top = double.infinity;
+      var bottom = double.negativeInfinity;
+      while (stack.isNotEmpty) {
+        final k = stack.removeLast();
+        patch.add(k);
+        final i = k % cols;
+        final j = k ~/ cols;
+        left = math.min(left, xs[i]);
+        right = math.max(right, xs[i + 1]);
+        top = math.min(top, ys[j]);
+        bottom = math.max(bottom, ys[j + 1]);
+        for (final (di, dj) in const [(-1, 0), (1, 0), (0, -1), (0, 1)]) {
+          final ni = i + di;
+          final nj = j + dj;
+          if (ni < 0 || nj < 0 || ni >= cols || nj >= rows) {
+            enclosed = false;
+            continue;
+          }
+          final n = nj * cols + ni;
+          if (inside[n] || seen[n]) continue;
+          seen[n] = true;
+          stack.add(n);
+        }
+      }
+
+      if (enclosed &&
+          right - left <= CoverageMap.maxSeamWorld &&
+          bottom - top <= CoverageMap.maxSeamWorld) {
+        for (final k in patch) {
+          inside[k] = true;
+        }
+      }
+    }
   }
 
   static List<double> _gridLines(List<double> raw) {

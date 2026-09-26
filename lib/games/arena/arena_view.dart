@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/model/player.dart';
+import '../../sdk/render/particle_burst.dart';
 import '../../sdk/render/player_animation.dart';
 import 'arena_config.dart';
 import 'lightsaber_art.dart';
@@ -371,11 +372,7 @@ class ArenaView extends GameView {
         Color((frame.sharedState['color_$key'] as num?)?.toInt() ?? 0xFFFFFFFF);
   }
 
-  /// One burst: round bits of [color] thrown out of [at], slowing and fading.
-  ///
-  /// A pure function of [t], 0 to 1 — no particle list, no per-frame state.
-  /// Every bit's direction and speed comes from its own index, so the burst is
-  /// the same burst on every phone and costs nothing to keep between frames.
+  /// One burst — see [drawParticleBurst] — sized to a fighter.
   void _drawBurst(
     Canvas canvas,
     Offset at,
@@ -384,43 +381,17 @@ class ArenaView extends GameView {
     required int count,
     required double speed,
     required double seconds,
-  }) {
-    final n = count;
-    final radius = ArenaConfig.characterRadius;
-
-    // Slowing as they go, rather than flying at a constant rate: the give in
-    // the first tenth of a second is most of what makes it read as a burst.
-    final travel =
-        speed * seconds * (1 - math.pow(1 - t, 2.4).toDouble()) * 0.45;
-
-    final fade = math.pow(1 - t, 1.6).toDouble();
-    final size = radius * ArenaConfig.deathParticleScale * (1 - 0.55 * t);
-
-    for (var i = 0; i < n; i++) {
-      // Spread evenly, then nudged off the ring by a number that depends only
-      // on which bit this is — a tidy circle of dots looks like a diagram.
-      final wobble = _scatter(i);
-      final angle = i * 2 * math.pi / n + wobble * 0.4;
-      final reach = travel * (0.55 + 0.45 * _scatter(i + 97).abs());
-
-      _fill.color = color.withValues(alpha: color.a * fade);
-      canvas.drawCircle(
-        Offset(
-          at.dx + math.cos(angle) * reach,
-          at.dy + math.sin(angle) * reach,
-        ),
-        size * (0.7 + 0.5 * _scatter(i + 31).abs()),
-        _fill,
-      );
-    }
-  }
-
-  /// A repeatable number in (-1, 1) for [i]. Not random — the same bit must
-  /// fly the same way on every phone, and on this one every frame.
-  static double _scatter(int i) {
-    final v = math.sin(i * 12.9898) * 43758.5453;
-    return (v - v.floorToDouble()) * 2 - 1;
-  }
+  }) => drawParticleBurst(
+    canvas,
+    _fill,
+    at,
+    color,
+    t,
+    count: count,
+    speed: speed,
+    seconds: seconds,
+    particleRadius: ArenaConfig.characterRadius * ArenaConfig.deathParticleScale,
+  );
 
   /// The blade: a grey rectangle from the hilt outwards, at whatever angle the
   /// sim has it pointing this instant.

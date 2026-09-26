@@ -460,6 +460,166 @@ class Layouts {
     );
   }
 
+  /// Two rows laid like bricks: the top row one phone longer than the bottom,
+  /// both centred, so every phone below sits across a join above it.
+  ///
+  /// ```
+  ///   three phones            five phones
+  ///  ┌────┬────┐            ┌────┬────┬────┐
+  ///  │ 1  │ 2  │            │ 1  │ 2  │ 3  │
+  ///  └─┬──┴──┬─┘            └─┬──┴─┬──┴─┬──┘
+  ///    │  3  │                │ 4  │ 5  │
+  ///    └─────┘                └────┴────┘
+  /// ```
+  ///
+  /// What an odd table does instead of a grid: it stays a block of phones
+  /// facing each other across one seam rather than stretching into a line.
+  /// Filled row by row in [sort] order, so the first `(n + 1) ~/ 2` phones are
+  /// the top row. With an even count the rows come out equal and centred.
+  ///
+  /// The rows meet the way a grid's do — the top row sits on its bottom edge,
+  /// the bottom row hangs from its top — so screens are flush at the seam
+  /// whatever their depth.
+  ///
+  /// The box around the rows is not all screen: beyond the ends of the
+  /// shorter row there is open table. No bounds are declared, so the board
+  /// is that whole box, and a game that keeps things on the screens (see
+  /// `PlayArea`) walls those corners off on its own.
+  static BoardPlan brick(
+    List<PhoneSpec> phones, {
+    PhoneSort sort = PhoneSort.joinOrder,
+    Gaps gap = Gaps.casingsTouching,
+    PhoneOrientation orientation = PhoneOrientation.sideways,
+    String? instruction,
+  }) {
+    if (phones.length < 2) {
+      throw BoardPlanError(
+        'a brick layout needs at least two phones, not ${phones.length}',
+      );
+    }
+
+    final ordered = List.of(phones)..sort(sort.compare);
+    final topCount = (ordered.length + 1) ~/ 2;
+    final rows = [ordered.sublist(0, topCount), ordered.sublist(topCount)];
+    final turn = orientation.turnDeg;
+    final sideways = orientation == PhoneOrientation.sideways;
+
+    double widthOf(PhoneSpec p) => sideways ? p.heightMm : p.widthMm;
+    double heightOf(PhoneSpec p) => sideways ? p.widthMm : p.heightMm;
+
+    double rowWidth(List<PhoneSpec> row) {
+      var w = 0.0;
+      for (var i = 0; i < row.length; i++) {
+        w += widthOf(row[i]);
+        if (i < row.length - 1) w += gap.between(row[i], row[i + 1]);
+      }
+      return w;
+    }
+
+    final widths = [for (final row in rows) rowWidth(row)];
+    final widest = math.max(widths[0], widths[1]);
+    final topDepth = rows[0].map(heightOf).reduce(math.max);
+
+    // Every phone above that has a phone below it somewhere along its length
+    // is touching across the seam, so the widest such bezel pair sets it.
+    final lefts = <List<double>>[];
+    for (var r = 0; r < 2; r++) {
+      final row = <double>[];
+      var x = (widest - widths[r]) / 2;
+      for (var c = 0; c < rows[r].length; c++) {
+        row.add(x);
+        x += widthOf(rows[r][c]);
+        if (c < rows[r].length - 1) x += gap.between(rows[r][c], rows[r][c + 1]);
+      }
+      lefts.add(row);
+    }
+    var seam = 0.0;
+    for (var a = 0; a < rows[0].length; a++) {
+      for (var b = 0; b < rows[1].length; b++) {
+        final aLeft = lefts[0][a];
+        final bLeft = lefts[1][b];
+        final overlap = math.min(aLeft + widthOf(rows[0][a]),
+                bLeft + widthOf(rows[1][b])) -
+            math.max(aLeft, bLeft);
+        if (overlap > 0) {
+          seam = math.max(seam, gap.between(rows[0][a], rows[1][b]));
+        }
+      }
+    }
+
+    final placements = <PhonePlacement>[];
+    for (var r = 0; r < 2; r++) {
+      for (var c = 0; c < rows[r].length; c++) {
+        final spec = rows[r][c];
+        final w = widthOf(spec);
+        final h = heightOf(spec);
+        // Toward the seam: the top row on its bottom edge, the bottom row on
+        // its top.
+        final top = r == 0 ? topDepth - h : topDepth + seam;
+        placements.add(PhonePlacement(
+          spec.phoneId,
+          xMm: lefts[r][c] + w / 2,
+          yMm: top + h / 2,
+          turnDeg: turn,
+          hint: _brickHint(r, c, rows[0].length, rows[1].length),
+        ));
+      }
+    }
+
+    return BoardPlan(
+      placements,
+      instruction: instruction ??
+          _brickInstruction(rows[0].length, rows[1].length, orientation),
+    );
+  }
+
+  /// [phones] with the one whose long edge is shortest moved to the end, the
+  /// rest left in the order they came.
+  ///
+  /// For a three-phone [brick]: the phone below lies across the join of the
+  /// two above, so giving it the shortest long edge is what lets all of it
+  /// rest against them. Not a [PhoneSort] because only one phone moves, and a
+  /// comparator cannot say that without leaning on a stable sort.
+  static List<PhoneSpec> shortestLast(List<PhoneSpec> phones) {
+    if (phones.isEmpty) return const [];
+    var shortest = 0;
+    for (var i = 1; i < phones.length; i++) {
+      if (phones[i].heightMm < phones[shortest].heightMm) shortest = i;
+    }
+    return [
+      for (var i = 0; i < phones.length; i++)
+        if (i != shortest) phones[i],
+      phones[shortest],
+    ];
+  }
+
+  static String _brickHint(int row, int column, int top, int bottom) {
+    if (row == 0) {
+      if (top == 1) return 'top row';
+      return 'top row, ${column + 1} of $top from the left';
+    }
+    // Numbered in reading order, so the phones above this one are the
+    // column'th and the one after it.
+    if (top == bottom + 1) {
+      return 'bottom row, centred across the join of phones '
+          '${column + 1} and ${column + 2}';
+    }
+    if (bottom == 1) return 'bottom row, centred';
+    return 'bottom row, ${column + 1} of $bottom from the left';
+  }
+
+  static String _brickInstruction(
+    int top,
+    int bottom,
+    PhoneOrientation orientation,
+  ) {
+    final pose = orientation == PhoneOrientation.sideways
+        ? 'on their sides'
+        : 'upright';
+    return 'Two rows $pose, $top on top and $bottom below, long edges '
+        'touching — each phone below centred across a join above.';
+  }
+
   static String _gridHint(int row, int column, int rows, int columns) {
     final rowWord = rows == 2
         ? (row == 0 ? 'top row' : 'bottom row')

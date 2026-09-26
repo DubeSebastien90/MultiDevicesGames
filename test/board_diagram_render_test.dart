@@ -57,8 +57,9 @@ void main() {
     final board =
         const BoardCompiler().compile(const DodgeballGame().planBoard(lobby), lobby);
 
-    // Two joins in a three-phone stack, so two colours.
-    expect(board.links.map((l) => l.colorIndex).toSet(), {0, 1});
+    // Three joins in a three-phone brick — the two above meet each other,
+    // and each meets the one below — so three colours.
+    expect(board.links.map((l) => l.colorIndex).toSet(), {0, 1, 2});
 
     final key = GlobalKey();
     await tester.pumpWidget(

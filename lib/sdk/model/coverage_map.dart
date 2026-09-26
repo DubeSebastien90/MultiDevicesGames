@@ -83,6 +83,14 @@ class CoverageMap {
   /// Axis-aligned extents, for culling and diagrams.
   List<WorldRect> get liveRects => [for (final s in screens) s.bounds];
 
+  /// The widest gap that still counts as a seam, in world units.
+  ///
+  /// A seam is a gap you could close by pushing two phones together — a
+  /// bezel, a few millimetres. Open table between two screens in a ring is
+  /// not a seam, and a four-phone ring happens to be turned in exact quarter
+  /// turns, so the angle check alone would not have caught it.
+  static const double maxSeamWorld = 3.0;
+
   bool isCovered(double x, double y) {
     for (final s in screens) {
       if (s.contains(x, y)) return true;
@@ -100,11 +108,6 @@ class CoverageMap {
   /// rather than inventing bands across open table.
   List<WorldRect> seamRects() {
     const epsilon = 1e-6;
-    // A seam is a gap you could close by pushing two phones together — a
-    // bezel, a few millimetres. Open table between two screens in a ring is
-    // not a seam, and a four-phone ring happens to be turned in exact quarter
-    // turns, so the angle check alone would not have caught it.
-    const maxSeamWorld = 3.0;
     final seams = <WorldRect>[];
     if (screens.any((s) => s.isTurned && !_isQuarterTurn(s.turnRadians))) {
       return seams;
