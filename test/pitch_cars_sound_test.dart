@@ -252,9 +252,9 @@ void main() {
     expect(car.angularVelocity, 0);
   });
 
-  test('crossing the line cheers on the winner\'s phone', () {
-    final h = heard(3);
-    final sim = h.sim;
+  /// Flick the car whose turn it is and hold it on the finish until its turn
+  /// ends and it counts. Returns who it was.
+  String finishCurrent(PitchCarsSim sim) {
     final me = sim.currentTurn;
     final car = sim.carOf(me);
 
@@ -272,23 +272,50 @@ void main() {
     );
     final ticks =
         (PitchCarsConfig.restDelay.inMicroseconds / 1e6 / _dt).ceil() + 10;
-    for (var i = 0; i < ticks && sim.sharedState['winner'] == null; i++) {
+    for (var i = 0; i < ticks && sim.sharedState['finished_$me'] != true; i++) {
       car
         ..setTransform(inCap, 0)
         ..linearVelocity = Vector2.zero()
         ..angularVelocity = 0;
       sim.step(_dt);
     }
-    expect(sim.sharedState['winner'], me);
+    expect(sim.sharedState['finished_$me'], isTrue);
+    return me;
+  }
 
-    final seat = int.parse(me.substring(1)) - 1;
+  List<String> cheersFor(_HeardAudio audio, String id) {
+    final seat = int.parse(id.substring(1)) - 1;
     final happy = Player(
-      phoneId: me,
+      phoneId: id,
       color: PlayerPalette.all[seat],
     ).soundHappy;
-    final cheers = h.audio.plays.where((p) => p.cue == happy).toList();
-    expect(cheers, hasLength(1));
-    expect(cheers.single.phoneId, me);
+    return [
+      for (final p in audio.plays)
+        if (p.cue == happy) p.phoneId,
+    ];
+  }
+
+  test("crossing the line cheers on the winner's phone", () {
+    final h = heard(3);
+    final me = finishCurrent(h.sim);
+    expect(h.sim.sharedState['winner'], me);
+    expect(cheersFor(h.audio, me), [me]);
+  });
+
+  test('the finish that ends the race leaves the cheer to the results', () {
+    // Two cars: the first across ends it.
+    final two = heard(2);
+    final winner = finishCurrent(two.sim);
+    expect(two.sim.outcome, isNull, reason: 'decided on the next step');
+    expect(cheersFor(two.audio, winner), isEmpty);
+
+    // Three: the first across cheers, the second ends it and does not.
+    final three = heard(3);
+    final first = finishCurrent(three.sim);
+    final second = finishCurrent(three.sim);
+    expect(cheersFor(three.audio, first), [first]);
+    expect(cheersFor(three.audio, second), isEmpty);
+    expect(three.sim.sharedState['currentTurn'], isNull, reason: 'race over');
   });
 }
 

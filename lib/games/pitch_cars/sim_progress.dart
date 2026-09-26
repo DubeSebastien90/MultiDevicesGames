@@ -190,10 +190,16 @@ extension _Progress on PitchCarsSim {
     _finished.add(id);
     _finishOrder.add(id);
     _fixtureOf[id]?.setSensor(true);
-    // Across the line, in their own voice. Not for the last car below, which
-    // is placed by elimination rather than by getting there.
+    // Across the line, in their own voice — unless this is the finish that
+    // ends the race. The results screen cheers every winner itself a moment
+    // later, and a second cheer on top of it is one too many. Never for the
+    // last car below either, which is placed by elimination rather than by
+    // getting there.
+    final endsTheRace = _order.length - _finished.length <= 1;
     final player = context.roster.byPhone(id);
-    if (player != null) context.audio.playOnPhone(player, player.soundHappy);
+    if (player != null && !endsTheRace) {
+      context.audio.playOnPhone(player, player.soundHappy);
+    }
     if (_order.length - _finished.length == 1) {
       final last = _order.firstWhere((o) => !_finished.contains(o));
       _finished.add(last);
