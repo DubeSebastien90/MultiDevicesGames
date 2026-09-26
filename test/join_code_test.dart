@@ -9,6 +9,7 @@ import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/contract/game.dart';
+import 'package:multiscreen_slingshot/sdk/contract/entity.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/client/client_session.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
@@ -63,6 +64,51 @@ List<String> beaconSeats(HostSession host) => [
 ///
 /// The tests that are genuinely about the paywall build their own free host —
 /// see 'every game starts ticked'.
+/// A sim that has asked to be told when somebody leaves, and carries on.
+///
+/// No shipped game does any more, and the platform's side of it — a round that
+/// keeps going, a seat kept warm, a phone let back in mid-round — still has to
+/// work for the first one that does. So the host runs this behind a real game
+/// (see [HostSession.simFactory]): the phones still draw that game, and nothing
+/// happens here except the line of who is present.
+class _StaysOpenSim implements GameSim, PlayerPresence {
+  _StaysOpenSim(BoardContext context) : _present = [...context.phoneIds];
+
+  final List<String> _present;
+
+  @override
+  void onPlayerLeft(String phoneId) => _present.remove(phoneId);
+
+  @override
+  void onPlayerReturned(String phoneId) {
+    if (!_present.contains(phoneId)) _present.add(phoneId);
+  }
+
+  @override
+  void step(double dt) {}
+
+  @override
+  void onTouch(TouchEvent touch) {}
+
+  @override
+  Iterable<Entity> get entities => const [];
+
+  @override
+  Map<String, Object?> get sharedState => {'order': _present.join(',')};
+
+  @override
+  GameOutcome? get outcome => null;
+
+  @override
+  void reset() {}
+
+  @override
+  void dispose() {}
+}
+
+/// The game [_StaysOpenSim] runs behind.
+const _staysOpen = SubwaySkaterGame();
+
 class _UnlockedPremiumStatus extends PremiumStatus {
   @override
   bool get isPremium => true;
@@ -77,6 +123,9 @@ void main() {
       name: 'kitchen table',
       advertise: false,
       premium: _UnlockedPremiumStatus(),
+      simFactory: (game, context) => game.manifest.id == _staysOpen.manifest.id
+          ? _StaysOpenSim(context)
+          : game.createSim(context),
     );
     final address = await host.start();
     local = address.replace(host: '127.0.0.1');
@@ -672,11 +721,11 @@ void main() {
       await waitFor('calibrated',
           () => host.phones.length == 2 && host.phones.every((p) => p.calibrated));
 
-      // Subway Skater, and played rather than left on the placement screen: a
-      // phone leaving *during* placement re-lays the board, and a game that has
-      // not asked to hear about it ends the round. Neither leaves a round to
-      // walk back into.
-      host.startGame(const SubwaySkaterGame());
+      // A game that has asked to hear about departures, and played rather than
+      // left on the placement screen: a phone leaving *during* placement
+      // re-lays the board, and a game that has not asked ends the round.
+      // Neither leaves a round to walk back into.
+      host.startGame(_staysOpen);
       await waitFor('placing', () => host.phase == HostPhase.placing);
       ada.confirmPlacement();
       bob.confirmPlacement();
@@ -948,9 +997,9 @@ void main() {
     });
 
     test('a game that has asked is told, and keeps playing', () async {
-      // Subway Skater implements PlayerPresence, so it decides what a missing
-      // player means — the line closes up around them and the round carries on.
-      final table = await aRoundOf(const SubwaySkaterGame());
+      // This one implements PlayerPresence, so it decides what a missing
+      // player means — they drop out of its line and the round carries on.
+      final table = await aRoundOf(_staysOpen);
       final bobsSeat = host.phones[1].phoneId;
 
       table.bob.dispose();

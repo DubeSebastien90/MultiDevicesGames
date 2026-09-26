@@ -18,19 +18,16 @@ import 'subway_skater_config.dart';
 /// whole length of the corridor to the back and moves everybody behind you up
 /// one, so the order churns and nobody holds the front for a whole minute.
 ///
-/// **A phone steers the circle standing on it, not the circle that belongs to
-/// it.** Place in the line is place at the table: climb a place and the circle
-/// you are steering is on the next phone along, so you move to it. That is what
-/// makes the rotation something the room does rather than something the screens
-/// do — everybody shuffles down the table as the order churns, and a phone is a
-/// position rather than a seat. The circle keeps its owner's colour and its
-/// owner's score all the way round; only the hands on it change.
+/// **Your phone steers your runner, wherever they are in the line.** The one
+/// you joined on is yours for the whole round: climb a place or tumble to the
+/// back and it is still your colour your swipes move, on whichever screen it
+/// happens to be standing.
 ///
 /// One other thing worth stating, because it looks like a bug otherwise: a
 /// skater is only hittable while standing still at its post. Tumbling and
 /// closing up the line are both invulnerable, or the shuffle after a hit would
 /// be a second punishment for the people it rewards.
-class SubwaySkaterSim implements GameSim, PlayerPresence {
+class SubwaySkaterSim implements GameSim {
   SubwaySkaterSim(this.context, {math.Random? random})
     : _random = random ?? math.Random() {
     _build();
@@ -472,30 +469,14 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
   /// Phones whose current drag has already moved its lane.
   final _dragSpent = <String>{};
 
-  /// Which place in the line this phone drives, or null if it drives nothing.
-  ///
-  /// A phone's board index *is* its place in the line: the leftmost phone is
-  /// always the front, whoever happens to be standing there. Null once the line
-  /// is shorter than the table — somebody left, so the phones past the end of
-  /// the queue have no circle on them to steer.
-  int? slotOfPhone(String phoneId) {
-    for (var i = 0; i < context.slices.length; i++) {
-      if (context.slices[i].phoneId != phoneId) continue;
-      return i < _order.length ? i : null;
-    }
-    return null;
-  }
-
   @override
   void onTouch(TouchEvent touch) {
     if (_over) return;
 
-    // By place, not by owner. The person who has just climbed a place has moved
-    // to the next phone along, and it is the circle standing there that their
-    // finger is on.
-    final slot = slotOfPhone(touch.phoneId);
-    if (slot == null) return;
-    final s = _skaters[_order[slot]]!;
+    // By owner, not by place: your phone steers your runner wherever in the
+    // line they have got to.
+    final s = _skaters[touch.phoneId];
+    if (s == null) return;
 
     if (touch.phase == TouchPhase.down) {
       _dragFrom[touch.phoneId] = touch.worldY;
@@ -530,37 +511,6 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
       _dragFrom.remove(touch.phoneId);
       _dragSpent.remove(touch.phoneId);
     }
-  }
-
-  // --------------------------------------------------------------- presence
-
-  /// The line closes up around them, exactly as it does for a tumble.
-  @override
-  void onPlayerLeft(String phoneId) {
-    final s = _skaters[phoneId];
-    if (s == null) return;
-    s.present = false;
-    s.riding = null;
-    s.chargeFor = 0;
-    // A place is a place however it opens up: the people behind are moving up
-    // the corridor either way, and they get the same second for it.
-    final slot = _order.indexOf(phoneId);
-    if (slot >= 0) _promoteBehind(slot);
-    _order.remove(phoneId);
-    _dragFrom.remove(phoneId);
-    _dragSpent.remove(phoneId);
-  }
-
-  /// Back at the end of the queue, which is the only place there is room.
-  @override
-  void onPlayerReturned(String phoneId) {
-    final s = _skaters[phoneId];
-    if (s == null || s.present) return;
-    s.present = true;
-    _order.add(phoneId);
-    s.x = _anchorX(_order.length - 1);
-    s.y = SubwaySkaterConfig.laneCenter(context.board, s.lane);
-    s.graceFor = SubwaySkaterConfig.graceSeconds;
   }
 
   // -------------------------------------------------------------- snapshots
@@ -704,7 +654,6 @@ class _Skater {
   /// except the seconds they are being carried backwards.
   double spin = SubwaySkaterConfig.facingAngle;
 
-  bool present = true;
   double raw = 0;
   int hits = 0;
   int smashed = 0;

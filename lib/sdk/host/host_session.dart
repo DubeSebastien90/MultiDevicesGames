@@ -151,6 +151,7 @@ class HostSession extends ChangeNotifier {
     bool advertise = true,
     PremiumStatus? premium,
     Random? random,
+    @visibleForTesting this.simFactory,
   }) : _transport = transport ?? WebSocketHostTransport(),
        _name = name,
        _joinCode = joinCode ?? generateJoinCode(),
@@ -166,6 +167,14 @@ class HostSession extends ChangeNotifier {
   // static const Duration _lockout = Duration(seconds: 30);
 
   static const Duration _joinDeadline = Duration(seconds: 15);
+
+  /// Builds the round's sim in place of the game's own `createSim`, for a test
+  /// that needs a behaviour no shipped game has. Games are resolved from the
+  /// catalogue by id on every phone, so a test cannot bring a game of its own;
+  /// it can only change what the host runs behind one.
+  @visibleForTesting
+  final GameSim Function(MultiscreenGame game, BoardContext context)?
+  simFactory;
 
   final HostTransport _transport;
   final String _name;
@@ -1464,9 +1473,12 @@ class HostSession extends ChangeNotifier {
     final audio = RoundAudio();
     final GameSim sim;
     try {
-      sim = game.createSim(
-        solved.contextFor(scores, audio: audio, hostPhoneId: hostPhoneId),
+      final context = solved.contextFor(
+        scores,
+        audio: audio,
+        hostPhoneId: hostPhoneId,
       );
+      sim = simFactory?.call(game, context) ?? game.createSim(context);
     } catch (e) {
       _planError = '${game.manifest.title}: $e';
       _phase = HostPhase.lobby;

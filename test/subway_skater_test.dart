@@ -94,8 +94,7 @@ double anchorOf(BoardLayout board, int slot) {
 Entity skaterAtSlot(SubwaySkaterSim sim, int slot) =>
     skaterOf(sim, orderOf(sim)[slot]);
 
-/// Steer whoever is standing in [slot] into [lane], from the phone that place
-/// in the line is driven by.
+/// Steer whoever is standing in [slot] into [lane], from their own phone.
 ///
 /// Does not step the sim, so a whole table can be aimed in one instant — the
 /// lane is committed the moment the swipe lands, and the slide that follows is
@@ -105,7 +104,7 @@ void steerSlotTo(SubwaySkaterSim sim, BoardLayout board, int slot, int lane) {
   if (now == lane) return;
   swipe(
     sim,
-    board.slices[slot].phoneId,
+    orderOf(sim)[slot],
     lane > now ? 1 : -1,
     times: (lane - now).abs(),
   );
@@ -286,7 +285,7 @@ void main() {
       expect(skaterOf(sim, 'p1').y, closeTo(before, 1e-9));
     });
 
-    test('a phone steers the circle standing in its place in the line', () {
+    test('a phone steers its own runner and nobody else', () {
       final started = start(3);
       final sim = started.sim;
       final board = started.board.board;
@@ -294,34 +293,14 @@ void main() {
       swipe(sim, 'p3', -1);
       run(sim, 0.5);
 
-      expect(SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, 2).y), 0);
-      expect(
-        SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, 0).y),
-        1,
-        reason: 'a swipe on the back phone moved the front of the line',
-      );
-    });
-
-    test('a phone with nobody standing on it steers nothing', () {
-      final started = start(3);
-      final sim = started.sim;
-      final board = started.board.board;
-
-      // The line is two long now, so the third phone is past the end of it.
-      sim.onPlayerLeft('p2');
-      expect(sim.slotOfPhone('p3'), isNull);
-
-      final before = [
-        for (var slot = 0; slot < 2; slot++)
-          SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, slot).y),
-      ];
-      swipe(sim, 'p3', -1);
-      run(sim, 0.5);
-
-      expect([
-        for (var slot = 0; slot < 2; slot++)
-          SubwaySkaterConfig.laneAt(board, skaterAtSlot(sim, slot).y),
-      ], before);
+      expect(SubwaySkaterConfig.laneAt(board, skaterOf(sim, 'p3').y), 0);
+      for (final other in ['p1', 'p2']) {
+        expect(
+          SubwaySkaterConfig.laneAt(board, skaterOf(sim, other).y),
+          SubwaySkaterConfig.lanes ~/ 2,
+          reason: 'a swipe on p3 moved $other',
+        );
+      }
     });
   });
 
@@ -518,49 +497,16 @@ void main() {
         reason: 'a promotion is a second, not the rest of the round',
       );
     });
-
-    test('a place opening up because somebody left counts too', () {
-      final started = start(4);
-      final sim = started.sim;
-      run(sim, 2);
-
-      sim.onPlayerLeft('p2');
-      final charging = (sim.sharedState['charging']! as String).split(',');
-      expect(
-        charging,
-        containsAll(<String>['p3', 'p4']),
-        reason: 'they moved up the corridor the same way',
-      );
-      expect(
-        charging,
-        isNot(contains('p1')),
-        reason: 'the front did not move anywhere',
-      );
-    });
   });
 
-  group('handing the controls on', () {
-    test('climbing a place moves you to the next phone along', () {
-      // The whole point of the rotation: your place in the line is your place at
-      // the table, so the phone that steers you changes when the order does.
+  group('the controls stay with their owner', () {
+    test('tumbling to the back does not hand your runner to another phone', () {
       final started = start(3);
       final sim = started.sim;
       final board = started.board;
 
-      expect(sim.slotOfPhone('p1'), 0);
-      expect(orderOf(sim)[0], 'p1');
-
-      // Knock the front out and the line closes up over them.
-      run(sim, SubwaySkaterConfig.leadInSeconds + 0.05);
-      final blocked = wavesOf(sim, board.board).values.single;
-      final safe = [
-        for (var lane = 0; lane < SubwaySkaterConfig.lanes; lane++)
-          if (!blocked.contains(lane)) lane,
-      ].first;
-      steerSlotTo(sim, board, 1, safe);
-      steerSlotTo(sim, board, 2, safe);
-      steerSlotTo(sim, board, 0, blocked.first);
-
+      // Knock the front out: p1 goes to the back, standing on p3's phone.
+      aimFirstWaveAtTheFront(sim, board);
       var steps = 0;
       while (sim.hitsOf('p1') == 0 && steps < PlatformConfig.simHz * 5) {
         sim.step(_tick);
@@ -568,19 +514,40 @@ void main() {
       }
       expect(orderOf(sim), ['p2', 'p3', 'p1']);
 
-      // p2 has climbed to the front, so the front phone is now the one that
-      // steers p2 — and p2's own phone steers whoever is standing there.
-      run(sim, 0.5);
-      final was = SubwaySkaterConfig.laneAt(board.board, skaterOf(sim, 'p2').y);
-      swipe(sim, 'p1', was == 0 ? 1 : -1);
-      run(sim, 0.5);
+      // Let the tumble finish so p1 is on their feet again.
+      run(sim, SubwaySkaterConfig.maxTumbleSeconds + 0.5);
 
+      // p1's own phone still steers p1.
+      final p1Was = SubwaySkaterConfig.laneAt(
+        board.board,
+        skaterOf(sim, 'p1').y,
+      );
+      swipe(sim, 'p1', p1Was == 0 ? 1 : -1);
+      run(sim, 0.5);
       expect(
-        SubwaySkaterConfig.laneAt(board.board, skaterOf(sim, 'p2').y),
-        isNot(was),
-        reason:
-            'the front phone did not steer the player who had climbed to '
-            'the front',
+        SubwaySkaterConfig.laneAt(board.board, skaterOf(sim, 'p1').y),
+        isNot(p1Was),
+      );
+
+      // And the phone p1 is now standing on steers its own owner, not p1.
+      final p1Now = SubwaySkaterConfig.laneAt(
+        board.board,
+        skaterOf(sim, 'p1').y,
+      );
+      final p3Was = SubwaySkaterConfig.laneAt(
+        board.board,
+        skaterOf(sim, 'p3').y,
+      );
+      swipe(sim, 'p3', p3Was == 0 ? 1 : -1);
+      run(sim, 0.5);
+      expect(
+        SubwaySkaterConfig.laneAt(board.board, skaterOf(sim, 'p1').y),
+        p1Now,
+        reason: 'the phone under p1 steered them',
+      );
+      expect(
+        SubwaySkaterConfig.laneAt(board.board, skaterOf(sim, 'p3').y),
+        isNot(p3Was),
       );
     });
   });
@@ -761,53 +728,6 @@ void main() {
       final paid = started.scores.view.ranked.first.total;
       run(started.sim, 2);
       expect(started.scores.view.ranked.first.total, paid);
-    });
-  });
-
-  group('the table changing under it', () {
-    test(
-      'somebody leaving closes the line up rather than ending the round',
-      () {
-        final started = start(4);
-        final sim = started.sim;
-        run(sim, 2);
-
-        sim.onPlayerLeft('p2');
-        expect(orderOf(sim), isNot(contains('p2')));
-        expect(orderOf(sim), hasLength(3));
-        expect(sim.entities.where((e) => e.id == 'skater-p2'), isEmpty);
-
-        run(sim, 1);
-        expect(sim.outcome, isNull, reason: 'the round should carry on');
-      },
-    );
-
-    test('somebody coming back joins at the end of the queue', () {
-      final started = start(4);
-      final sim = started.sim;
-      run(sim, 2);
-
-      sim.onPlayerLeft('p1');
-      run(sim, 1);
-      sim.onPlayerReturned('p1');
-
-      expect(orderOf(sim).last, 'p1');
-      expect(orderOf(sim), hasLength(4));
-    });
-
-    test('a line of one stops paying rather than dividing by nothing', () {
-      final started = start(2);
-      final sim = started.sim;
-
-      sim.onPlayerLeft('p2');
-      run(sim, 5);
-
-      // Nobody has a place to be ahead of, so there is no position-time to
-      // share out and no best possible score to measure against.
-      expect(sim.pointsOf('p1'), 0);
-      run(sim, SubwaySkaterConfig.roundSeconds);
-      expect(sim.outcome, isNotNull);
-      expect(started.scores.isUsed, isFalse);
     });
   });
 
