@@ -90,6 +90,7 @@ flutter:
     # have no business in the bundle.
     - assets/icons/LightSaber.riv
     - assets/icons/subwaySkater/
+    - assets/icons/hotPotato/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

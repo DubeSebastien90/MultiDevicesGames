@@ -91,6 +91,10 @@ class HotPotatoConfig {
   /// Puffs per second with the fuse at zero.
   static const double smokeMaxPerSecond = 45;
 
+  /// How much of the fuse is gone when the potato stops looking calm and
+  /// starts looking alarmed — the second drawing takes over from here.
+  static const double excitedFrom = 0.5;
+
   static const int colorPotato = 0xFFD98A34;
   static const int colorHot = 0xFFFF2A12;
   static const int colorBlast = 0xFFFF4D4D;

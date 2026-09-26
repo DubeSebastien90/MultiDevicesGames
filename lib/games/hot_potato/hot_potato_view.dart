@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
@@ -9,6 +10,7 @@ import '../../sdk/model/player.dart';
 import '../../sdk/model/player_color.dart';
 import '../../sdk/render/player_hand.dart';
 import '../../sdk/render/shape_view.dart';
+import 'hot_potato_art.dart';
 import 'hot_potato_config.dart';
 
 /// Hot Potato's look: everybody's arms, in their colours, juggling a potato that gets redder, spins
@@ -22,6 +24,7 @@ class HotPotatoView extends ShapeView {
   HotPotatoView({this.phoneId = '', super.roster = Roster.empty})
     : super(grid: false, playfield: const Color(0xFF141C33)) {
     PlayerHand.preload([for (final p in roster.players) p.color]);
+    HotPotatoArt.preload();
   }
 
   /// This screen's phone, so the holder's screen can be the one that burns.
@@ -226,6 +229,13 @@ class HotPotatoView extends ShapeView {
       ..translate(centre.dx, centre.dy)
       ..rotate(potato.angle);
 
+    final art = HotPotatoArt.of(excited: heat >= HotPotatoConfig.excitedFrom);
+    if (art != null) {
+      _drawPotatoArt(canvas, art, r, heat);
+      canvas.restore();
+      return;
+    }
+
     // Lumpy, not round — a circle spinning looks like it is standing still.
     final shape = Rect.fromCenter(
       center: Offset.zero,
@@ -265,6 +275,36 @@ class HotPotatoView extends ShapeView {
       );
     }
     canvas.restore();
+  }
+
+  /// The drawn potato, centred on the origin, as long as the oval it replaced
+  /// is wide.
+  ///
+  /// Reddened the way the oval was: multiplied towards the hot colour as the
+  /// fuse burns, so the drawing's own shading and face stay readable through
+  /// it rather than being painted over. Never all the way: at full red the
+  /// white of the face would go red with the rest, and the face is the point.
+  void _drawPotatoArt(Canvas canvas, PictureInfo art, double r, double heat) {
+    final scale = r * 2.4 / HotPotatoArt.length;
+    final tint = Color.lerp(
+      const Color(0xFFFFFFFF),
+      Color(HotPotatoConfig.colorHot),
+      0.85 * math.pow(heat, 1.2),
+    )!;
+    final tinted = heat > 0;
+    if (tinted) {
+      canvas.saveLayer(
+        Rect.fromCircle(center: Offset.zero, radius: r * 2),
+        Paint()..colorFilter = ColorFilter.mode(tint, BlendMode.modulate),
+      );
+    }
+    canvas
+      ..save()
+      ..scale(scale)
+      ..translate(-HotPotatoArt.centre.dx, -HotPotatoArt.centre.dy)
+      ..drawPicture(art.picture)
+      ..restore();
+    if (tinted) canvas.restore();
   }
 
   double _radius(double heat) =>
