@@ -175,6 +175,10 @@ extension _Progress on PitchCarsSim {
     _finished.add(id);
     _finishOrder.add(id);
     _fixtureOf[id]?.setSensor(true);
+    // Across the line, in their own voice. Not for the last car below, which
+    // is placed by elimination rather than by getting there.
+    final player = context.roster.byPhone(id);
+    if (player != null) context.audio.playOnPhone(player, player.soundHappy);
     if (_order.length - _finished.length == 1) {
       final last = _order.firstWhere((o) => !_finished.contains(o));
       _finished.add(last);

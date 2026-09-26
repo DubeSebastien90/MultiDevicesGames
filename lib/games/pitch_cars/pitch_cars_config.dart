@@ -1,3 +1,5 @@
+import '../../sdk/audio/sound_cue.dart';
+
 /// Tunables for Pitch Cars, kept as plain data next to the game that uses
 /// them — none of this is the platform's business.
 class PitchCarsConfig {
@@ -143,4 +145,26 @@ class PitchCarsConfig {
   /// On a tile past the road's end, the round cap it must stay inside, as
   /// `[x, y, r]` in world coordinates: the tile is drawn clipped to that disc.
   static const String finishClip = 'clip';
+
+  // -- sound ------------------------------------------------------------------
+  //
+  // Each plays on one phone only, the one where it happened. Leveled copies of
+  // audio-src/originals/games/pitch_cars/.
+
+  /// An aim begins, on the phone the finger came down on. Cut short with a
+  /// quick fade if the finger lifts before it has finished.
+  static const hold = SoundCue.asset('assets/games/pitch_cars/hold.wav');
+  static const holdFadeOut = Duration(milliseconds: 120);
+
+  /// A shot fired, on the phone it was aimed from. Not for a release inside
+  /// the cancel zone, which fires nothing.
+  static const shot = SoundCue.asset('assets/games/pitch_cars/shot.wav');
+
+  /// A car hitting a wall or another car, on the phone under the impact.
+  static const crash = SoundCue.asset('assets/games/pitch_cars/crash.wav');
+
+  /// How fast two things must be closing for their touch to be a crash, as a
+  /// multiple of the rest speed. Below it is a car nudging a kerb or settling
+  /// against a neighbour, and a crash sound for that would be constant.
+  static const double crashSpeedFactor = 5.0;
 }

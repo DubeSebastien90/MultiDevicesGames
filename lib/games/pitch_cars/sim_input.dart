@@ -16,9 +16,11 @@ extension _Input on PitchCarsSim {
 
   void _launch() {
     final pullBack = _preTurnPosition - _pull!;
+    final aimedFrom = _draggingPhoneId;
     _draggingPhoneId = null;
     _dragOrigin = null;
     _pull = null;
+    _stopHold();
     final car = carOf(currentTurn);
 
     // A tap, not a shot — see [PitchCarsConfig.cancelPullFraction].
@@ -26,6 +28,8 @@ extension _Input on PitchCarsSim {
       car.setTransform(_preTurnPosition.clone(), car.angle);
       return; // the turn is not consumed
     }
+
+    if (aimedFrom != null) _playOn(aimedFrom, PitchCarsConfig.shot);
 
     car
       ..setTransform(_preTurnPosition.clone(), _headingOf(pullBack))

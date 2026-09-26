@@ -7,6 +7,7 @@ class _CarContactListener extends ContactListener {
 
   @override
   void beginContact(Contact contact) {
+    _crash(contact);
     final a = contact.fixtureA.body.userData;
     final b = contact.fixtureB.body.userData;
     if (a is String &&
@@ -22,6 +23,42 @@ class _CarContactListener extends ContactListener {
       sim._snapshotBeforeHit(a);
       sim._snapshotBeforeHit(b);
     }
+  }
+
+  /// A car meeting a wall or another car hard enough to be heard. One sound
+  /// per impact, even when it is two cars: it is one bang.
+  void _crash(Contact contact) {
+    final bodyA = contact.fixtureA.body;
+    final bodyB = contact.fixtureB.body;
+    final a = bodyA.userData;
+    final b = bodyB.userData;
+    if (a is! String || b is! String) return;
+    final aCar = sim._order.contains(a);
+    final bCar = sim._order.contains(b);
+    if (!aCar && !bCar) return;
+    // A finished car is a sensor, and a falling one is off the road: neither
+    // is touching anything.
+    for (final (id, isCar) in [(a, aCar), (b, bCar)]) {
+      if (isCar &&
+          (sim._finished.contains(id) || sim._fallenFor.containsKey(id))) {
+        return;
+      }
+    }
+    final other = aCar ? b : a;
+    final isWall = other.startsWith('wall') || other.startsWith('cornerWall');
+    if (!(aCar && bCar) && !isWall) return;
+
+    final closing = (bodyA.linearVelocity - bodyB.linearVelocity).length;
+    if (closing < sim.scale.restSpeed * PitchCarsConfig.crashSpeedFactor) {
+      return;
+    }
+
+    // Between the two cars, or at the car that hit the wall.
+    final car = aCar ? bodyA : bodyB;
+    final at = aCar && bCar
+        ? (bodyA.position + bodyB.position) / 2
+        : car.position;
+    sim._crashAt(at.x, at.y);
   }
 
   @override

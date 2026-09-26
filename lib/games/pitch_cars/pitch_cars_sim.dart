@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:forge2d/forge2d.dart';
 
+import '../../sdk/audio/sound_cue.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/model/player_color.dart';
@@ -91,6 +92,9 @@ class PitchCarsSim extends Forge2DGameSim {
 
   String? _draggingPhoneId;
 
+  /// The hold sound of the aim being drawn, so the release can cut it short.
+  SoundHandle? _holdSound;
+
   /// Where an *off-car* aim is being drawn from, in world coordinates: the
   /// pull is the finger's displacement from here, added to [_preTurnPosition],
   /// which is what lets a drag that began nowhere near the car still aim it.
@@ -141,6 +145,7 @@ class PitchCarsSim extends Forge2DGameSim {
         _dragOrigin = p.distanceTo(car.position) <= reach ? null : p.clone();
         _draggingPhoneId = touch.phoneId;
         _pull = _preTurnPosition.clone();
+        _holdSound = _playOn(touch.phoneId, PitchCarsConfig.hold);
 
       case TouchPhase.move:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
@@ -154,6 +159,29 @@ class PitchCarsSim extends Forge2DGameSim {
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
         _launch();
     }
+  }
+
+  // -- sound ------------------------------------------------------------------
+
+  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
+  SoundHandle? _playOn(String phoneId, SoundCue cue) {
+    final player = context.roster.byPhone(phoneId);
+    if (player == null) return null;
+    return context.audio.playOnPhone(player, cue);
+  }
+
+  /// A crash, on the phone under [x], [y] — or the nearest one, since an
+  /// impact at the very edge of the glass can be a hair past it.
+  void _crashAt(double x, double y) {
+    final phone = context.nearestPhone(x, y);
+    if (phone != null) _playOn(phone, PitchCarsConfig.crash);
+  }
+
+  void _stopHold() {
+    final hold = _holdSound;
+    if (hold == null) return;
+    _holdSound = null;
+    context.audio.stopSound(hold, fade: PitchCarsConfig.holdFadeOut);
   }
 
   @override
@@ -293,6 +321,7 @@ class PitchCarsSim extends Forge2DGameSim {
   void reset() {
     _currentIndex = 0;
     _draggingPhoneId = null;
+    _holdSound = null;
     _dragOrigin = null;
     _pull = null;
     _moving = false;
