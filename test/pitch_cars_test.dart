@@ -667,6 +667,64 @@ void main() {
       );
     });
 
+    // The checkerboard runs on over the round cap past the road's end, and a
+    // car can stop there. Everywhere in that cap projects to exactly the
+    // track's length — the finish band's far edge — so whether it counted used
+    // to come down to a rounding error. Tables of an even size happened to
+    // land on the right side of it every time; three and five phones mostly
+    // did not — which is why they are here, over several seeds each.
+    for (final count in [2, 3, 5]) {
+      for (var seed = 1; seed <= 4; seed++) {
+        test(
+            'a car stopped in the round cap past the end wins '
+            '($count phones, seed $seed)', () {
+          final sim = start(count, seed: seed).sim;
+          const dt = 1 / PlatformConfig.simHz;
+          final track = sim.track;
+          final me = sim.currentTurn;
+          final car = sim.carOf(me);
+
+          // A flick to open the turn; where the car goes is set by hand below.
+          final at = car.position.clone();
+          for (final (dx, phase) in [
+            (0.0, TouchPhase.down),
+            (-0.5, TouchPhase.move),
+            (-0.5, TouchPhase.up),
+          ]) {
+            sim.onTouch(TouchEvent(
+              phoneId: me,
+              worldX: at.x + dx,
+              worldY: at.y,
+              phase: phase,
+            ));
+          }
+
+          // Well inside the cap: past the last centerline point, along the
+          // last tangent, and still on the road.
+          final end = track.pointAtArclength(track.length);
+          final tangent = track.tangentAt(track.length);
+          final inCap = Vector2(
+            end.x + tangent.x * track.widthWorld * 0.3,
+            end.y + tangent.y * track.widthWorld * 0.3,
+          );
+          expect(track.isOnTrack(inCap.x, inCap.y), isTrue);
+
+          final ticks =
+              (PitchCarsConfig.restDelay.inMicroseconds / 1e6 / dt).ceil() + 10;
+          for (var i = 0; i < ticks && sim.sharedState['winner'] == null; i++) {
+            car
+              ..setTransform(inCap, 0)
+              ..linearVelocity = Vector2.zero()
+              ..angularVelocity = 0;
+            sim.step(dt);
+          }
+
+          expect(sim.sharedState['finished_$me'], isTrue);
+          expect(sim.sharedState['winner'], me);
+        });
+      }
+    }
+
     test('a fresh race is not already won', () {
       final started = start(2, seed: 9);
       for (var i = 0; i < 60; i++) {

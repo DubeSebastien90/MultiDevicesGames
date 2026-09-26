@@ -188,7 +188,15 @@ extension _TrackBuilding on PitchCarsSim {
 
   /// Whether arclength [s] falls inside the finish band, wrapping around
   /// for a closed track since the band there straddles arclength 0.
+  ///
+  /// On a line, anything from the band's start on is inside: there is no road
+  /// past it to be on. That includes the round cap past the end, which the
+  /// checkerboard is painted over — and which only ever projects to exactly
+  /// `track.length`, the band's far edge. Tested as a distance from the centre,
+  /// that edge was in or out on a rounding error, and a car parked on the
+  /// chequers in the cap failed to finish on roughly half of all tracks.
   bool _inFinishZone(double s) {
+    if (!track.closed) return s >= _finishStart - 1e-6;
     var delta = (s - _finishCenter).abs();
     if (track.closed) delta = math.min(delta, track.length - delta);
     return delta <= _finishBandLen / 2;
