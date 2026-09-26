@@ -119,8 +119,8 @@ void main() {
 
     expect(honks, greaterThan(0), reason: 'not one car honked');
     expect(arrivals, greaterThan(20));
-    // One in four, loosely: well above none and well below every time.
-    expect(honks / arrivals, inInclusiveRange(0.1, 0.45));
+    // One in seven, loosely: well above none and well below every time.
+    expect(honks / arrivals, inInclusiveRange(0.05, 0.3));
   });
 
   test('a runner clipped by a car: crash and explosion, where it happened', () {

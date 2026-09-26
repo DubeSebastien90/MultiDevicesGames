@@ -27,7 +27,10 @@ class SubwaySkaterConfig {
   /// thirds of a second between an obstacle appearing at the top of your screen
   /// and reaching you. From [peakWithSecondsLeft] onward it is nearer a half —
   /// see [endSpeed].
-  static const double obstacleSpeed = 14;
+  ///
+  /// Both ends were then taken down by a tenth (from 14 and 18) after play on
+  /// a real table: the same shape of round, a touch more time to react.
+  static const double obstacleSpeed = 12.6;
 
   /// The fastest the corridor ever runs.
   ///
@@ -55,7 +58,7 @@ class SubwaySkaterConfig {
   /// two-lane waves from rare to better than even. Those keep tightening
   /// through the plateau, and they tighten what a player has to *decide* rather
   /// than how fast they have to twitch.
-  static const double endSpeed = 18;
+  static const double endSpeed = 16.2;
 
   /// The corridor hits [endSpeed] with this long still to run, and holds it
   /// there to the finish.
@@ -224,7 +227,7 @@ class SubwaySkaterConfig {
   static const honk = SoundCue.asset('assets/games/subway_skater/honk.wav');
 
   /// How often a car honks as it drives onto a phone: one in this many.
-  static const int honkOneIn = 4;
+  static const int honkOneIn = 7;
 
   /// A car meeting a runner — or a runner fresh off a promotion flattening
   /// one, which is the same bang from the other side.

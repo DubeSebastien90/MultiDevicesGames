@@ -696,6 +696,11 @@ void main() {
       expect(outcome.winners, isNull);
       expect(outcome.lines!.keys, containsAll(<String>['p1', 'p2', 'p3']));
       expect(outcome.lines!['p1'], contains('You scored'));
+      // Cars, not blocks: nobody is "clipped" or flattens anything any more.
+      for (final line in outcome.lines!.values) {
+        expect(line, contains('run over'));
+        expect(line, isNot(anyOf(contains('clipped'), contains('block'))));
+      }
 
       // Polled several times a tick, so it has to be the same object each time.
       expect(sim.outcome, same(outcome));

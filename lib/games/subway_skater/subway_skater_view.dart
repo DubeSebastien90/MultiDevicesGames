@@ -22,7 +22,9 @@ class SubwaySkaterView extends GameView {
 
   final ViewContext context;
 
-  static const _void = Color(0xFF05070D);
+  /// Beside the road, on a phone wider than the corridor: grass, the same
+  /// mown green as Pitch Cars' infield, rather than a black void.
+  static const _verge = Color(0xFFAEE294);
   static const _floor = Color(0xFF101A2E);
   static const _rail = Color(0xFF3D5A8A);
   static const _laneMark = Color(0xFFF2C230);
@@ -80,7 +82,7 @@ class SubwaySkaterView extends GameView {
     final view = frame.visible.inflate(2);
     final board = frame.board;
 
-    _paint.color = _void;
+    _paint.color = _verge;
     canvas.drawRect(
       Rect.fromLTWH(view.left, view.top, view.width, view.height),
       _paint,

@@ -627,11 +627,12 @@ class SubwaySkaterSim implements GameSim {
     final points = pointsOf(phoneId);
     final hits = hitsOf(phoneId);
     final smashed = smashesOf(phoneId);
+    // Cars now, not blocks: run over by them, and wrecking them when charged.
     final tail = smashed == 0
         ? ''
-        : ', $smashed block${smashed == 1 ? '' : 's'} flattened';
-    if (hits == 0) return 'You scored $points, never clipped$tail';
-    return 'You scored $points, clipped $hits time${hits == 1 ? '' : 's'}$tail';
+        : ', $smashed car${smashed == 1 ? '' : 's'} wrecked';
+    if (hits == 0) return 'You scored $points, never run over$tail';
+    return 'You scored $points, run over $hits time${hits == 1 ? '' : 's'}$tail';
   }
 
   String _summary() {
