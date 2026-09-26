@@ -44,7 +44,14 @@ extension _Progress on PitchCarsSim {
       if (falling != null) {
         final elapsed = falling + dt;
         _fallenFor[id] = elapsed;
-        if (elapsed >= PitchCarsConfig.fallSeconds) _land(id);
+        if (elapsed >= PitchCarsConfig.fallSeconds) {
+          _land(id);
+        } else {
+          // Held at a steady tumble rather than set once, which angular
+          // damping would wind down long before the car hits the bottom.
+          carOf(id).angularVelocity =
+              PitchCarsConfig.fallSpinTurnsPerSecond * 2 * math.pi;
+        }
         continue;
       }
 
@@ -84,6 +91,7 @@ extension _Progress on PitchCarsSim {
 
     _fallenFor[id] = 0;
     _fallTarget[id] = target;
+    _fallAngle[id] = carOf(id).angle;
     _fallVisualFor[id] = 0;
     // Through everything on the way down. A car tumbling into the void should
     // not clip a rival still on the road, and should not be stopped by the
@@ -105,7 +113,7 @@ extension _Progress on PitchCarsSim {
     );
 
     car
-      ..setTransform(resetTo, car.angle)
+      ..setTransform(resetTo, _fallAngle[id] ?? car.angle)
       ..linearVelocity = Vector2.zero()
       ..angularVelocity = 0;
 
@@ -123,6 +131,7 @@ extension _Progress on PitchCarsSim {
     _lastHitBy[id] = null;
     _fallenFor.remove(id);
     _fallTarget.remove(id);
+    _fallAngle.remove(id);
     _fixtureOf[id]?.setSensor(false);
   }
 

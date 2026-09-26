@@ -46,9 +46,16 @@ class PitchCarsConfig {
   ///
   /// The reset used to be instant — off the edge and back on it in the same
   /// tick — which read as the car *stopping* at the edge rather than going
-  /// over it. Nobody could see they had knocked anybody anywhere. Long enough
-  /// to register as a fall, short enough that the table is not waiting on it.
-  static const double fallSeconds = 0.45;
+  /// over it. Nobody could see they had knocked anybody anywhere.
+  ///
+  /// As long as the [falling] sound, so the car comes back as the sound ends
+  /// rather than reappearing on the road while it is still whistling down.
+  /// Nothing waits on the sound itself — this is only the same length.
+  static const double fallSeconds = 2.0;
+
+  /// How fast a falling car spins, in turns per second: tumbling, not just
+  /// shrinking.
+  static const double fallSpinTurnsPerSecond = 1.2;
 
   /// How far behind the sim the fall's shrink-and-fade is played, to match
   /// the phones' own lag: they draw positions `SnapshotBuffer.interpDelayMs`

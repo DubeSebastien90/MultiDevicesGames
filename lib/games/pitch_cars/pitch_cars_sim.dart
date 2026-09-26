@@ -82,6 +82,10 @@ class PitchCarsSim extends Forge2DGameSim {
   /// than when it lands — by then the turn may have moved on.
   final _fallTarget = <String, Vector2>{};
 
+  /// Which way each falling car was pointing when it went over, so it comes
+  /// back the way it was going rather than wherever the tumble left it.
+  final _fallAngle = <String, double>{};
+
   /// The fall as the phones should see it: a clock started with the fall that
   /// outlives the landing by [PitchCarsConfig.fallVisualLagSeconds], since
   /// that is how far behind the sim they draw the car.
@@ -214,9 +218,9 @@ class PitchCarsSim extends Forge2DGameSim {
       var maxSpeed = 0.0;
       for (final id in _order) {
         if (_finished.contains(id)) continue;
-        // A car tumbling into the void must not hold the turn open. It is off
-        // the board and on a timer of its own; waiting for it to slow down
-        // would stall the table for as long as it took to coast to a stop.
+        // A car tumbling into the void is off the board and on a timer of its
+        // own; its speed says nothing about whether the turn is over. The turn
+        // waits for it to land (below), not for it to coast to a stop.
         if (_fallenFor.containsKey(id)) continue;
         final speed = carOf(id).linearVelocity.length;
         if (speed > maxSpeed) maxSpeed = speed;
@@ -235,9 +239,13 @@ class PitchCarsSim extends Forge2DGameSim {
         _sinceStallAnchor += elapsed;
       }
 
-      if (_atRest >= PitchCarsConfig.restDelay ||
-          _sinceLaunch >= PitchCarsConfig.maxFlightTime ||
-          _sinceStallAnchor >= PitchCarsConfig.stallTimeout) {
+      // Never with a car still in the air: the next driver would be aiming
+      // at a road with a car missing from it, and the one falling would land
+      // back in the middle of their shot.
+      if (_fallenFor.isEmpty &&
+          (_atRest >= PitchCarsConfig.restDelay ||
+              _sinceLaunch >= PitchCarsConfig.maxFlightTime ||
+              _sinceStallAnchor >= PitchCarsConfig.stallTimeout)) {
         _endTurn();
       }
     }
@@ -351,6 +359,7 @@ class PitchCarsSim extends Forge2DGameSim {
     // update and by the rest check, and never put back.
     _fallenFor.clear();
     _fallTarget.clear();
+    _fallAngle.clear();
     _fallVisualFor.clear();
 
     for (var i = 0; i < _order.length; i++) {

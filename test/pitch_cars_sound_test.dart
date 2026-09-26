@@ -213,6 +213,45 @@ void main() {
     );
   });
 
+  test('a fall lasts as long as its sound, tumbling, and lands facing the '
+      'way it went over', () {
+    final h = heard(3);
+    final sim = h.sim;
+    final id = sim.currentTurn;
+    final car = sim.carOf(id);
+
+    final arc = sim.track.length / 2;
+    final on = sim.track.pointAtArclength(arc);
+    final t = sim.track.tangentAt(arc);
+    final off = Vector2(
+      on.x - t.y * sim.track.widthWorld * 1.2,
+      on.y + t.x * sim.track.widthWorld * 1.2,
+    );
+    const heading = 0.7;
+    car
+      ..setTransform(off, heading)
+      ..linearVelocity = Vector2.zero()
+      ..angularVelocity = 0;
+    sim.step(_dt);
+    expect(sim.sharedState.containsKey('fall_$id'), isTrue);
+
+    // Halfway down: still in the air, and turning.
+    for (var i = 0; i < PitchCarsConfig.fallSeconds / 2 / _dt; i++) {
+      sim.step(_dt);
+    }
+    expect(sim.track.isOnTrack(car.position.x, car.position.y), isFalse);
+    expect(car.angularVelocity, greaterThan(0));
+    expect((car.angle - heading).abs(), greaterThan(1));
+
+    // And back once the sound has run out.
+    for (var i = 0; i < PitchCarsConfig.fallSeconds / 2 / _dt + 2; i++) {
+      sim.step(_dt);
+    }
+    expect(sim.track.isOnTrack(car.position.x, car.position.y), isTrue);
+    expect(car.angle, closeTo(heading, 1e-6));
+    expect(car.angularVelocity, 0);
+  });
+
   test('crossing the line cheers on the winner\'s phone', () {
     final h = heard(3);
     final sim = h.sim;
