@@ -1,3 +1,4 @@
+import '../../sdk/audio/sound_cue.dart';
 import '../../sdk/score/scoreboard.dart';
 
 /// Tunables for Hot Potato.
@@ -90,6 +91,41 @@ class HotPotatoConfig {
 
   /// Puffs per second with the fuse at zero.
   static const double smokeMaxPerSecond = 45;
+
+  // ---------------------------------------------------------------- sound
+  //
+  // Every one of these plays on the phone the potato is over, and nowhere
+  // else: the sound is where the potato is, so it moves round the table with
+  // it. Leveled copies of audio-src/originals/games/hotpotato/.
+
+  /// Landed in a hand and stays with this player.
+  static const boing = SoundCue.asset('assets/games/hotpotato/boing.wav');
+
+  /// Landed in a hand and went straight out to a neighbour.
+  static const woosh = SoundCue.asset('assets/games/hotpotato/woosh.wav');
+
+  static const explosion = SoundCue.asset(
+    'assets/games/hotpotato/potato_explosion.wav',
+  );
+
+  /// The kettle: a pure synthesised tone, gliding from [kettleLowHz] with the
+  /// fuse just lit to [kettleHighHz] at the bang — one octave, smoothly, with
+  /// no steps. A tone rather than a recording because only a tone's pitch can
+  /// be moved while it plays.
+  static const double kettleLowHz = 900;
+  static const double kettleHighHz = 1800;
+
+  /// Its loudness at the start and at the bang: it gets louder as it gets
+  /// higher. A tone is a full-scale sine, so these are low — 0.25 puts the
+  /// loudest moment about 4 dB under the character voices (see
+  /// audio-src/README.md, "Levels"), which is right for a sound that never
+  /// stops.
+  static const double kettleVolumeCalm = 0.125;
+  static const double kettleVolumeFrantic = 0.25;
+
+  /// How long the kettle takes to hand over to the next phone. Long enough not
+  /// to click, short enough not to be heard as a fade.
+  static const Duration kettleHandover = Duration(milliseconds: 60);
 
   /// How much of the fuse is gone when the potato stops looking calm and
   /// starts looking alarmed — the second drawing takes over from here.

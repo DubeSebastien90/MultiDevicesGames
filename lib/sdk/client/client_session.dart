@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import '../audio/audio_engine.dart';
 import '../audio/audio_output.dart';
+import '../audio/tone_output.dart';
+import '../audio/sounds.dart';
 import '../layout/board_links.dart';
 import '../model/name_drop_status.dart';
 import '../model/table_change.dart';
@@ -202,12 +204,13 @@ class ClientSession extends ChangeNotifier {
     PlayerColor? preferredColor,
     this.onColorChosen,
     AudioOutput? audioOutput,
+    ToneOutput? toneOutput,
   }) : _transport = transport,
        _metrics = metrics,
        _joinCode = joinCode,
        _deviceId = deviceId,
        _preferredColor = preferredColor,
-       audio = AudioEngine(output: audioOutput);
+       audio = AudioEngine(output: audioOutput, tones: toneOutput);
 
   final Transport _transport;
   DeviceMetrics _metrics;
@@ -503,7 +506,13 @@ class ClientSession extends ChangeNotifier {
   };
 
   /// Ask to be [color]. The host decides; watch [myColor] for the answer.
+  ///
+  /// Answered in that character's happy voice, on this phone, straight away —
+  /// the same local feedback as [confirmPlacement], and the way a player
+  /// hears who they are picking before they have picked. Trying characters in
+  /// a quick run lets the voices overlap, like every other sound.
   void pickColor(PlayerColor color) {
+    audio.play(PlayerSounds.happy(color));
     _requestedColorId = color.id;
     _transport.send({
       'type': ClientMsg.pickColor,

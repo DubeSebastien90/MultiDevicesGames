@@ -173,9 +173,14 @@ class BonjourGameAdvertiser implements GameAdvertiser {
     _disposed = true;
     _debounce?.cancel();
     _debounce = null;
-    final broadcast = _broadcast;
-    _broadcast = null;
+    // Read inside the chain, not here: a publish still in flight — leaving the
+    // lobby a moment after creating it — sets [_broadcast] only once it has
+    // started, after this line would have looked. Read here, that broadcast
+    // was never stopped and the game stayed announced for as long as the app
+    // ran.
     _work = _work.then((_) async {
+      final broadcast = _broadcast;
+      _broadcast = null;
       try {
         await broadcast?.stop();
       } on Object {
@@ -219,27 +224,50 @@ class BonjourGameFinder extends GameFinder {
     return List.unmodifiable(list);
   }
 
+  bool _disposed = false;
+
   @override
   Future<void> start() async {
     try {
       final discovery = BonsoirDiscovery(type: kBonjourServiceType);
       await discovery.initialize();
+      // The join sheet was closed while this was starting. Nothing else holds
+      // this browse, so nothing else would ever stop it.
+      if (_disposed) {
+        await _stopQuietly(discovery);
+        return;
+      }
       _discovery = discovery;
       _sub = discovery.eventStream?.listen(
         _onEvent,
         // Same reasoning as the UDP finder: a fault on the stream must not take
         // down the sheet that is listening to it.
-        onError: (Object e) => _failure = '$e',
+        onError: (Object e) {
+          _failure = '$e';
+          if (!_disposed) notifyListeners();
+        },
         cancelOnError: false,
       );
       await discovery.start();
+      // Closed during the start itself: dispose's stop may have landed before
+      // the browse was running and done nothing, so stop it again.
+      if (_disposed) await _stopQuietly(discovery);
     } on Object catch (e) {
       _failure = '$e';
-      notifyListeners();
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  static Future<void> _stopQuietly(BonsoirDiscovery discovery) async {
+    try {
+      await discovery.stop();
+    } on Object {
+      // Tearing down; there is nobody left to tell.
     }
   }
 
   void _onEvent(BonsoirDiscoveryEvent event) {
+    if (_disposed) return;
     switch (event) {
       case BonsoirDiscoveryServiceFoundEvent():
         // A found service carries a name and not much else. Attributes — which
@@ -300,9 +328,11 @@ class BonjourGameFinder extends GameFinder {
 
   @override
   void dispose() {
+    _disposed = true;
     _sub?.cancel();
     _sub = null;
-    _discovery?.stop();
+    final discovery = _discovery;
+    if (discovery != null) unawaited(_stopQuietly(discovery));
     _discovery = null;
     super.dispose();
   }

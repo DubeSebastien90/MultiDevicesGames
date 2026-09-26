@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'sdk/app_controller.dart';
+import 'sdk/audio/audio_engine.dart';
+import 'sdk/audio/soloud_output.dart';
+import 'sdk/audio/sounds.dart';
+import 'sdk/audio/ui_audio.dart';
 import 'sdk/ui/age_gate_screen.dart';
 import 'sdk/ui/ball_wipe.dart';
 import 'sdk/ui/intro_animation.dart';
@@ -12,6 +17,24 @@ import 'sdk/ui/session_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The menus' speaker. Here and not in a widget, so tests that pump screens
+  // directly keep the silent default.
+  UiAudio.speaker = AudioEngine(output: SoLoudOutput());
+
+  // Decode the sounds that play in quick runs before anyone can press
+  // anything, so none of them waits on its first decode mid-sequence. Not
+  // awaited: a launch should not wait on audio either.
+  unawaited(
+    SoLoudOutput.preload([
+      for (final cue in [
+        ...Sounds.holdSteps,
+        ...Sounds.buttonPress,
+        Sounds.pop,
+      ])
+        cue.asset!,
+    ]),
+  );
 
   // Landscape, because the v1 arrangement is a left-to-right strip: phones on
   // their sides make a wide board, and the bird's flight crosses the seam
@@ -65,9 +88,19 @@ class MultiscreenApp extends StatefulWidget {
 class _MultiscreenAppState extends State<MultiscreenApp> {
   final _controller = AppController();
 
+  /// Shuts the audio engine down when the window is closed. Without it the
+  /// process outlives its window on Windows — see [shutdownSoLoud].
+  late final _exitListener = AppLifecycleListener(
+    onExitRequested: () async {
+      shutdownSoLoud();
+      return AppExitResponse.exit;
+    },
+  );
+
   @override
   void initState() {
     super.initState();
+    _exitListener;
     // Read this device's own name off storage now rather than when somebody
     // taps Join, so rejoining a game never waits on a disk read.
     _controller.warmUp();
@@ -79,6 +112,7 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
 
   @override
   void dispose() {
+    _exitListener.dispose();
     _controller.dispose();
     super.dispose();
   }

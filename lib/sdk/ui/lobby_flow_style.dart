@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../audio/ui_audio.dart';
+
 /// Visual tokens for the pre-game flow (entry, create-lobby, join-lobby,
 /// settings). Local to those screens — the app's global [ThemeData] is
 /// untouched.
@@ -190,7 +192,7 @@ class _PressablePlateState extends State<_PressablePlate> {
         onTapDown: (_) => _down(),
         onTapUp: (_) => _up(),
         onTapCancel: _up,
-        onTap: widget.onPressed,
+        onTap: withButtonSound(widget.onPressed),
         child: AnimatedContainer(
           duration: LobbyMetrics.pressDuration,
           curve: Curves.easeOut,
@@ -448,7 +450,7 @@ class LobbyIconButton extends StatelessWidget {
     final fill = background;
     if (fill == null) {
       return IconButton(
-        onPressed: onPressed,
+        onPressed: withButtonSound(onPressed),
         tooltip: tooltip,
         icon: Icon(icon, size: size, color: LobbyFlowColors.ink),
       );

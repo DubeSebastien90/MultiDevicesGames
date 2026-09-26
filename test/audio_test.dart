@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/audio/audio_engine.dart';
 import 'package:multiscreen_slingshot/sdk/audio/audio_output.dart';
@@ -13,6 +15,8 @@ import 'package:multiscreen_slingshot/sdk/model/phone_layout.dart';
 import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/net/loopback_transport.dart';
 import 'package:multiscreen_slingshot/sdk/net/protocol.dart';
+import 'package:multiscreen_slingshot/sdk/audio/tone.dart';
+import 'package:multiscreen_slingshot/sdk/audio/tone_output.dart';
 
 /// Audio is the one part of player identity that adds anything to the wire, and
 /// almost everything worth testing about it is *timing* and *lifetime* — when a
@@ -464,6 +468,20 @@ void main() {
       expect(out.log, isEmpty);
     });
 
+    test('picking a character plays its happy voice, on this phone', () {
+      client.pickColor(PlayerPalette.green);
+      expect(out.log, ['play -2 assets/sdk/players/green-happy.wav']);
+    });
+
+    test('trying characters in a row lets the voices overlap', () {
+      client.pickColor(PlayerPalette.green);
+      client.pickColor(PlayerPalette.red);
+      expect(out.log, [
+        'play -2 assets/sdk/players/green-happy.wav',
+        'play -3 assets/sdk/players/red-happy.wav',
+      ]);
+    });
+
     test('winning sounds happy and losing sounds sad, per phone', () async {
       seat(PlayerPalette.red);
       await pumpEvents();
@@ -534,4 +552,103 @@ void main() {
       expect(out.playing, isEmpty);
     });
   });
+
+  group('a tone', () {
+    late SilentToneOutput tones;
+    late AudioEngine engine;
+
+    setUp(() {
+      tones = SilentToneOutput(keepLog: true);
+      engine = AudioEngine(tones: tones);
+    });
+
+    const kettle = Tone(
+      fromHz: 900,
+      toHz: 1800,
+      glide: Duration(seconds: 10),
+      volume: 0.1,
+      toVolume: 0.3,
+    );
+
+    void deliver(RoundAudio audio, double atMs) {
+      for (final msg in wire(audio, atMs)) {
+        // Through JSON and back, as it really travels.
+        engine.receive(jsonRoundTrip(msg));
+      }
+    }
+
+    test('glides exponentially: half way in time is half way in octaves', () {
+      expect(kettle.hzAt(0), 900);
+      expect(kettle.hzAt(5000), closeTo(900 * 1.41421356, 0.01));
+      expect(kettle.hzAt(10000), 1800);
+      expect(kettle.hzAt(60000), 1800, reason: 'holds at the top');
+      expect(kettle.volumeAt(5000), closeTo(0.2, 1e-9));
+    });
+
+    test('survives the wire', () {
+      final back = Tone.fromJson(jsonRoundTrip(kettle.toJson()));
+      expect(back.fromHz, kettle.fromHz);
+      expect(back.toHz, kettle.toHz);
+      expect(back.glide, kettle.glide);
+      expect(back.volume, kettle.volume);
+      expect(back.toVolume, kettle.toVolume);
+    });
+
+    test('starts at its instant on the timeline, then glides every frame, '
+        'with nothing more from the host', () {
+      final audio = RoundAudio();
+      final handle = audio.playToneOnPhone(green, kettle);
+      deliver(audio, 1000);
+
+      engine.pump(900);
+      expect(tones.log, isEmpty, reason: 'not before its instant');
+
+      engine.pump(1000);
+      expect(tones.log, ['tone ${handle.id} 900Hz']);
+
+      engine.pump(6000);
+      expect(tones.hzOf(handle.id), closeTo(900 * 1.41421356, 0.01));
+      engine.pump(11000);
+      expect(tones.hzOf(handle.id), 1800);
+    });
+
+    test('a phone that arrives late joins the glide where it has got to', () {
+      // A cue this late would be dropped. A tone is a state, not an event.
+      final audio = RoundAudio();
+      final handle = audio.playToneOnPhone(green, kettle);
+      deliver(audio, 1000);
+
+      engine.pump(1000 + 5000);
+      expect(tones.hzOf(handle.id), closeTo(900 * 1.41421356, 0.01));
+    });
+
+    test('stops when told, and at the end of the round', () {
+      final audio = RoundAudio();
+      final first = audio.playToneOnPhone(green, kettle);
+      deliver(audio, 0);
+      engine.pump(0);
+
+      audio.stopSound(first);
+      deliver(audio, 100);
+      expect(tones.hzOf(first.id), isNull);
+
+      final second = audio.playToneOnPhone(green, kettle);
+      deliver(audio, 200);
+      engine.pump(200);
+      audio.stopRoundSounds();
+      deliver(audio, 300);
+      expect(tones.hzOf(second.id), isNull);
+    });
+
+    test('a muted phone makes no tone', () {
+      engine.muted = true;
+      final audio = RoundAudio()..playToneOnPhone(green, kettle);
+      deliver(audio, 0);
+      engine.pump(0);
+      expect(tones.log, isEmpty);
+    });
+  });
 }
+
+Map<String, dynamic> jsonRoundTrip(Map<String, dynamic> m) =>
+    jsonDecode(jsonEncode(m)) as Map<String, dynamic>;

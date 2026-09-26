@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../app_controller.dart';
+import '../audio/ui_audio.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
 import '../score/scoreboard.dart';
@@ -316,7 +317,7 @@ class _PlanErrorBanner extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: onDismiss,
+            onPressed: withButtonSound(onDismiss),
             icon: Icon(Icons.close, color: scheme.onErrorContainer, size: 18),
           ),
         ],
@@ -457,7 +458,7 @@ class _CodeStamp extends StatelessWidget {
       button: true,
       label: 'Show the join code full screen',
       child: GestureDetector(
-        onTap: onTap,
+        onTap: withButtonSound(onTap),
         // The mark hangs off the plate's corner, so the taps it catches are
         // the ones aimed just outside it.
         behavior: HitTestBehavior.opaque,
@@ -855,6 +856,8 @@ class _Swatch extends StatelessWidget {
       selected: selected,
       button: !taken,
       child: GestureDetector(
+        // No button sound: picking plays the character's own voice instead
+        // (see [ClientSession.pickColor]).
         onTap: taken ? null : onTap,
         child: SizedBox(
           width: _width,

@@ -62,7 +62,15 @@ class UdpGameAdvertiser implements GameAdvertiser {
   int _players = 0;
   bool _open = true;
   List<String> _rejoinable = const [];
+  bool _disposed = false;
+
+  /// Beacons in a row on which every send was refused.
   int _consecutiveFailures = 0;
+
+  /// The last beacon's bookkeeping: how many of its sends the OS accepted at
+  /// the call site, and how many of those it then refused on the stream.
+  int _sentLastBeacon = 0;
+  int _refusedLastBeacon = 0;
 
   /// Non-null when discovery could not start. Hosting is unaffected.
   @override
@@ -71,15 +79,24 @@ class UdpGameAdvertiser implements GameAdvertiser {
 
   bool get running => _socket != null;
 
-  /// Give up after this many refusals in a row. A flapping interface deserves
-  /// another go; an OS that will never allow broadcast deserves silence rather
-  /// than an error every second for the rest of the session.
+  /// Give up after this many beacons in a row went nowhere at all. A flapping
+  /// interface deserves another go; an OS that will never allow broadcast
+  /// deserves silence rather than an error every second for the rest of the
+  /// session.
   static const int _maxConsecutiveFailures = 3;
 
   @override
   Future<void> start() async {
     try {
       final socket = await _bind(port);
+      // Disposed while the bind was in flight — leaving a lobby a moment after
+      // creating it. Nothing will ever close this socket if we keep it, and a
+      // beacon started now would announce a game that no longer exists for as
+      // long as the app runs.
+      if (_disposed) {
+        socket.close();
+        return;
+      }
       socket.broadcastEnabled = true;
       _socket = socket;
       // Learn the subnet broadcast addresses; the first datagram goes out on
@@ -102,21 +119,45 @@ class UdpGameAdvertiser implements GameAdvertiser {
         onError: _handleSocketError,
         cancelOnError: false,
       );
-      _timer = Timer.periodic(kBeaconInterval, (_) => _send());
+      _timer = Timer.periodic(kBeaconInterval, (_) {
+        if (_judgeLastBeacon()) _send();
+      });
       _send();
     } on Object catch (e) {
       _failure = '$e';
     }
   }
 
+  /// One refused send, reported here long after `send` returned.
+  ///
+  /// Only counted, not judged: a beacon goes to several addresses, and one
+  /// interface refusing its subnet broadcast — the cellular one, say — while
+  /// the WiFi carries the rest is a working beacon. [_send] decides, once the
+  /// beacon's refusals have had a second to come back.
   void _handleSocketError(Object error) {
-    _consecutiveFailures++;
-    if (_consecutiveFailures < _maxConsecutiveFailures) return;
-    _failure = '$error';
-    // Stop beaconing, keep the socket: hosting carries on, the lobby says the
-    // game could not be announced, and the QR does the job instead.
+    _refusedLastBeacon++;
+    _lastError = error;
+  }
+
+  Object? _lastError;
+
+  /// Was the previous beacon refused on every route? Counted in a row, and
+  /// reset by any beacon that got out, so a few bad seconds spread over an
+  /// evening never add up to silence.
+  ///
+  /// Returns false once enough have failed in a row: beaconing then stops and
+  /// keeps the socket — hosting carries on, the lobby says the game could not
+  /// be announced, and the QR does the job instead.
+  bool _judgeLastBeacon() {
+    final wentNowhere = _refusedLastBeacon >= _sentLastBeacon;
+    _consecutiveFailures = wentNowhere ? _consecutiveFailures + 1 : 0;
+    _sentLastBeacon = 0;
+    _refusedLastBeacon = 0;
+    if (_consecutiveFailures < _maxConsecutiveFailures) return true;
+    _failure = '${_lastError ?? 'every broadcast was refused'}';
     _timer?.cancel();
     _timer = null;
+    return false;
   }
 
   /// Keeps the advertised player count and joinability current.
@@ -140,11 +181,12 @@ class UdpGameAdvertiser implements GameAdvertiser {
       seenAt: DateTime.now(),
     );
     final bytes = utf8.encode(jsonEncode(beacon.toJson()));
-    _sendToBroadcastTargets(socket, bytes, port);
+    _sentLastBeacon += _sendToBroadcastTargets(socket, bytes, port);
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     _timer = null;
     _socket?.close();
@@ -164,6 +206,7 @@ class UdpGameFinder extends GameFinder {
   RawDatagramSocket? _socket;
   Timer? _prune;
   final _byId = <String, GameBeacon>{};
+  bool _disposed = false;
 
   /// Non-null when we could not listen at all — the UI should then point at
   /// the QR and typed-address fallbacks rather than spinning forever.
@@ -193,6 +236,13 @@ class UdpGameFinder extends GameFinder {
   Future<void> start() async {
     try {
       final socket = await _bind(port);
+      // The join sheet was closed while the bind was in flight. Keeping the
+      // socket would hold the discovery port and run a prune timer for nobody,
+      // and its first datagram would notify a notifier already disposed.
+      if (_disposed) {
+        socket.close();
+        return;
+      }
       socket.broadcastEnabled = true;
       _socket = socket;
       // Learn the subnet broadcast addresses; the first datagram goes out on
@@ -200,7 +250,7 @@ class UdpGameFinder extends GameFinder {
       unawaited(_refreshLocalIPs());
       socket.listen(
         (event) {
-          if (event != RawSocketEvent.read) return;
+          if (event != RawSocketEvent.read || _disposed) return;
           final dg = socket.receive();
           if (dg == null) return;
           final beacon = GameBeacon.tryParse(dg.data);
@@ -226,7 +276,7 @@ class UdpGameFinder extends GameFinder {
       _prune = Timer.periodic(kBeaconInterval, (_) => _pruneStale());
     } on Object catch (e) {
       _failure = '$e';
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -261,6 +311,7 @@ class UdpGameFinder extends GameFinder {
 
   @override
   void dispose() {
+    _disposed = true;
     _prune?.cancel();
     _socket?.close();
     _socket = null;
@@ -277,16 +328,21 @@ class UdpGameFinder extends GameFinder {
 /// datagram simply goes nowhere), and right on essentially every home network.
 ///
 /// Failures are not reported here at all. A refused send surfaces asynchronously
-/// on the socket's own stream, which is where both sides handle it.
-void _sendToBroadcastTargets(RawDatagramSocket socket, List<int> bytes,
+/// on the socket's own stream, which is where both sides handle it. Returns how
+/// many sends got that far, so the advertiser can tell one refused route from
+/// all of them.
+int _sendToBroadcastTargets(RawDatagramSocket socket, List<int> bytes,
     int port) {
+  var sent = 0;
   for (final target in _broadcastTargets) {
     try {
       socket.send(bytes, target, port);
+      sent++;
     } on Object {
       // Keep going: one dead interface must not stop the others.
     }
   }
+  return sent;
 }
 
 /// Cached because it hits the interface list, and it changes rarely.

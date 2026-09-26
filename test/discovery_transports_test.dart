@@ -204,24 +204,23 @@ void main() {
   group('which transports run where', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    test('Apple platforms get Bonjour, because broadcast is refused there', () {
-      for (final platform in [TargetPlatform.iOS, TargetPlatform.macOS]) {
+    test('phones get Bonjour, so an iPhone and an Android can meet', () {
+      // iOS because broadcast is refused there; Android because Bonjour is the
+      // only thing an iPhone can hear, so without it a mixed table never finds
+      // itself.
+      for (final platform in [
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+      ]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(bonjourWorthRunning, isTrue, reason: '$platform');
         expect(createGameFinder(), isA<CompositeGameFinder>());
       }
     });
 
-    test('everywhere else stays on UDP alone', () {
-      // Android's broadcast path works with permissions the app already holds,
-      // and bonsoir documents that attributes — where the whole beacon lives —
-      // do not work on Android 6.0 and below. A second transport there would
-      // add a failure mode and no capability.
-      for (final platform in [
-        TargetPlatform.android,
-        TargetPlatform.windows,
-        TargetPlatform.linux,
-      ]) {
+    test('desktop stays on UDP alone', () {
+      for (final platform in [TargetPlatform.windows, TargetPlatform.linux]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(bonjourWorthRunning, isFalse, reason: '$platform');
         expect(createGameFinder(), isA<UdpGameFinder>());

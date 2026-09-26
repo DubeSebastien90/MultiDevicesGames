@@ -250,7 +250,15 @@ abstract class FloodView extends GameView {
     // axis-aligned *bounding box* of a turned phone and so wider than the
     // glass — wrapping text to it would run the message off both edges. The
     // centre is the same either way; the width is not.
-    final screen = me.halfWidth * 2;
+    //
+    // Measured in logical pixels, not world units, and the canvas is scaled
+    // down to match below. A world unit is a centimetre, so laid out in world
+    // units the message was a 0.6-point font magnified ~170x by the camera.
+    // Skia on desktop redraws glyphs at the final size; Impeller on iOS
+    // rasterises them near the laid-out size and stretches the result, which is
+    // what made the text blurry and badly spaced on an iPhone only.
+    final pxPerUnit = me.logicalPxPerWorldUnit;
+    final screen = me.halfWidth * 2 * pxPerUnit;
     final maxWidth = screen * _briefingWidthFraction;
 
     // White, like the count. It used to carry the player's team colour, which
@@ -305,7 +313,8 @@ abstract class FloodView extends GameView {
     // wants to be upright on the glass, not square to the table.
     canvas
       ..translate(me.worldCenterX, me.worldCenterY)
-      ..rotate(me.turnRadians);
+      ..rotate(me.turnRadians)
+      ..scale(1 / pxPerUnit);
 
     final top = -blockHeight / 2;
     if (count != null) {

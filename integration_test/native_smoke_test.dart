@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:multiscreen_slingshot/sdk/audio/audioplayers_output.dart';
+import 'package:multiscreen_slingshot/sdk/audio/soloud_output.dart';
 import 'package:multiscreen_slingshot/sdk/ui/intro_animation.dart';
 
 /// Runs on the real device, with the real native libraries.
 ///
 /// `flutter test` cannot reach either of these: it runs on the Dart VM with no
-/// plugins, so a crash inside Rive's or audioplayers' native code is invisible
+/// plugins, so a crash inside Rive's or SoLoud's native code is invisible
 /// to the whole unit suite. This is the only place that class of failure can
 /// be caught.
 void main() {
@@ -44,7 +44,7 @@ void main() {
   }, skip: !IntroAnimation.platformSupportsRive);
 
   testWidgets('a player voice plays through the real output', (tester) async {
-    final out = AudioPlayersOutput();
+    final out = SoLoudOutput();
     await out.play(1, 'assets/sdk/players/green-happy.wav');
     await tester.pump(const Duration(milliseconds: 600));
     await out.stop(1);

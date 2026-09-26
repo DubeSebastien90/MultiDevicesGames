@@ -8,6 +8,7 @@ import '../model/age_band.dart';
 import '../model/player_name.dart';
 
 import '../app_controller.dart';
+import '../audio/ui_audio.dart';
 import '../model/device_metrics.dart';
 import '../model/name_drop_status.dart';
 import '../platform/native_dpi_channel.dart';
@@ -442,7 +443,7 @@ class _IssuedNameField extends StatelessWidget {
           Expanded(child: Text(name, style: LobbyText.field)),
           IconButton(
             tooltip: 'Roll another name',
-            onPressed: onRoll,
+            onPressed: withButtonSound(onRoll),
             icon: const Icon(
               Icons.casino_outlined,
               color: LobbyFlowColors.ink,
@@ -618,7 +619,7 @@ class _ErrorBanner extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: onDismiss,
+            onPressed: withButtonSound(onDismiss),
             icon: Icon(Icons.close, color: scheme.onErrorContainer, size: 18),
           ),
         ],

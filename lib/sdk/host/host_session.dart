@@ -217,6 +217,7 @@ class HostSession extends ChangeNotifier {
   final scores = Scoreboard();
 
   GameAdvertiser? _beacon;
+  bool _disposed = false;
 
   HostPhase _phase = HostPhase.idle;
   Uri? _address;
@@ -524,21 +525,28 @@ class HostSession extends ChangeNotifier {
   Future<Uri> start() async {
     _clock.start();
     final uri = await _transport.start();
+    // Left before the socket was even up. Nothing below should outlive that —
+    // above all not a beacon, which nobody would be left to stop.
+    if (_disposed) return uri;
     _address = uri;
     _phase = HostPhase.lobby;
     _subs.add(_transport.onPeer.listen(_attachPeer));
 
     if (_advertise) {
-      final beacon = createGameAdvertiser(
+      // Held before it is started, not after: [dispose] can land during the
+      // start — leaving a lobby a moment after creating it — and it can only
+      // stop a beacon it can see. Each advertiser copes with being disposed
+      // mid-start; this is what makes sure it is told.
+      final beacon = _beacon = createGameAdvertiser(
         id:
             '${DateTime.now().microsecondsSinceEpoch}-'
             '${Random().nextInt(1 << 32)}',
         name: _name,
         address: uri,
       );
-      await beacon.start();
-      _beacon = beacon;
       _updateBeacon();
+      await beacon.start();
+      if (_disposed) return uri;
     }
 
     notifyListeners();
@@ -1945,6 +1953,7 @@ class HostSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _loop?.cancel();
     for (final t in _pending.values) {
       t.cancel();

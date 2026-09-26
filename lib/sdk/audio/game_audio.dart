@@ -27,6 +27,7 @@ library;
 
 import '../model/player.dart';
 import 'sound_cue.dart';
+import 'tone.dart';
 
 /// The audio a [GameSim] can make.
 abstract class GameAudio {
@@ -58,6 +59,15 @@ abstract class GameAudio {
     double volume = 1.0,
     bool persist = false,
   });
+
+  /// A synthesised [Tone] on one player's phone: a pitch the game can glide,
+  /// which no recording can do. Plays until stopped, like a loop, and is
+  /// stopped with [stopSound] like anything else.
+  ///
+  /// The glide runs on the phone, off the tone's own description — nothing is
+  /// sent per frame. To follow something across the table, stop it here and
+  /// start a new one there, from wherever the old one had got to.
+  SoundHandle playToneOnPhone(Player player, Tone tone, {bool persist = false});
 
   /// Stop something that is playing, or cancel something that has not started.
   ///
@@ -120,6 +130,13 @@ class SilentGameAudio implements GameAudio {
   }) => SoundHandle.none;
 
   @override
+  SoundHandle playToneOnPhone(
+    Player player,
+    Tone tone, {
+    bool persist = false,
+  }) => SoundHandle.none;
+
+  @override
   void stopSound(SoundHandle handle, {Duration fade = Duration.zero}) {}
 
   @override
@@ -152,6 +169,18 @@ class AudioCommand {
     required this.volume,
     required this.persist,
   }) : op = AudioOp.play,
+       tone = null,
+       fadeMs = 0;
+
+  AudioCommand.tone({
+    required this.handleId,
+    required Tone this.tone,
+    required this.phoneId,
+    required this.persist,
+  }) : op = AudioOp.tone,
+       cue = null,
+       loop = true,
+       volume = 1.0,
        fadeMs = 0;
 
   /// [phoneId] is where the sound was *started*, not where the stop was
@@ -163,6 +192,7 @@ class AudioCommand {
     required this.phoneId,
   }) : op = AudioOp.stop,
        cue = null,
+       tone = null,
        loop = false,
        volume = 1.0,
        persist = false;
@@ -171,6 +201,7 @@ class AudioCommand {
     : op = AudioOp.stopRound,
       handleId = -1,
       cue = null,
+      tone = null,
       phoneId = null,
       loop = false,
       volume = 1.0,
@@ -180,6 +211,9 @@ class AudioCommand {
   final String op;
   final int handleId;
   final SoundCue? cue;
+
+  /// For [AudioOp.tone]: what to synthesise.
+  final Tone? tone;
 
   /// Which phone, or null for the table's speaker.
   final String? phoneId;
@@ -209,6 +243,7 @@ class AudioCommand {
     'at': atMs,
     if (cue != null) 'cue': cue!.id,
     if (cue?.asset != null) 'asset': cue!.asset,
+    if (tone != null) 'tone': tone!.toJson(),
     if (phoneId != null) 'phoneId': phoneId,
     if (loop) 'loop': true,
     if (volume != 1.0) 'vol': volume,
@@ -217,9 +252,12 @@ class AudioCommand {
   };
 }
 
-/// The three things a phone can be told about sound.
+/// The things a phone can be told about sound.
 class AudioOp {
   static const play = 'play';
+
+  /// Start a synthesised [Tone].
+  static const tone = 'tone';
   static const stop = 'stop';
 
   /// End of round: drop everything that was not marked `persist`.
@@ -275,6 +313,25 @@ class RoundAudio implements GameAudio {
     double volume = 1.0,
     bool persist = false,
   }) => _play(cue, player.phoneId, loop, volume, persist);
+
+  @override
+  SoundHandle playToneOnPhone(
+    Player player,
+    Tone tone, {
+    bool persist = false,
+  }) {
+    final id = _nextHandle++;
+    _target[id] = player.phoneId;
+    _pending.add(
+      AudioCommand.tone(
+        handleId: id,
+        tone: tone,
+        phoneId: player.phoneId,
+        persist: persist,
+      ),
+    );
+    return SoundHandle(id);
+  }
 
   SoundHandle _play(
     SoundCue cue,

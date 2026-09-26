@@ -39,7 +39,6 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.0
   shared_preferences: ^2.3.0
-  audioplayers: ^6.7.1
   rive: ^0.14.11
   flutter_svg: ^2.3.0
   purchases_flutter: ^10.9.0
@@ -51,6 +50,7 @@ dependencies:
   # project is on 3.11.5. Raise it after the SDK moves, not before.
   bonsoir: ^7.1.4
   url_launcher: ^6.3.2
+  flutter_soloud: ^5.1.2
 
 dev_dependencies:
   flutter_test:
@@ -86,6 +86,16 @@ flutter:
     - assets/sdk/sfx/
     - assets/sdk/animations/
     - assets/sdk/screenshots/
+    # Each game's own sounds and art, one folder per game id. Leveled copies —
+    # the originals live in audio-src/originals/games/ (see audio-src/README.md).
+    - assets/games/arena/
+    - assets/games/dodgeball/
+    - assets/games/flood/
+    - assets/games/guacamole/
+    - assets/games/hotpotato/
+    - assets/games/hungryhippos/
+    - assets/games/pitch_cars/
+    - assets/games/subway_skater/
     # One file rather than the folder: the rest of it is app icons, which
     # have no business in the bundle.
     - assets/icons/LightSaber.riv

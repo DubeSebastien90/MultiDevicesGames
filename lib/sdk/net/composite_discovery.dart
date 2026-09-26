@@ -69,11 +69,13 @@ class CompositeGameFinder extends GameFinder {
   }
 
   final List<GameFinder> sources;
+  bool _disposed = false;
 
   @override
   Future<void> start() async {
     await Future.wait(sources.map((s) => s.start()));
-    notifyListeners();
+    // The sheet can close before every source has finished starting.
+    if (!_disposed) notifyListeners();
   }
 
   /// The union, keyed by [GameBeacon.id], most recently heard wins.
@@ -124,6 +126,7 @@ class CompositeGameFinder extends GameFinder {
 
   @override
   void dispose() {
+    _disposed = true;
     for (final source in sources) {
       source.removeListener(notifyListeners);
       source.dispose();

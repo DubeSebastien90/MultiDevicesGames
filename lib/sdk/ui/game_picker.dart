@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../audio/ui_audio.dart';
 import '../contract/game.dart';
 import '../host/host_session.dart';
 import '../monetization/paywall_view.dart';
@@ -377,17 +378,19 @@ class _Row extends StatelessWidget {
         : LobbyFlowColors.muted;
 
     return GestureDetector(
-      onTap: pending
-          ? null
-          : locked
-          ? (onLockedTap == null ? null : () => onLockedTap!(offer))
-          : () {
-              if (selectionLocked) {
-                onSelectionLockedTap?.call();
-                return;
-              }
-              onChoose(offer.game, !offer.chosen);
-            },
+      onTap: withButtonSound(
+        pending
+            ? null
+            : locked
+            ? (onLockedTap == null ? null : () => onLockedTap!(offer))
+            : () {
+                if (selectionLocked) {
+                  onSelectionLockedTap?.call();
+                  return;
+                }
+                onChoose(offer.game, !offer.chosen);
+              },
+      ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
