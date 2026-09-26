@@ -139,6 +139,26 @@ class ArenaView extends GameView {
           (frame.sharedState['lives_$key'] as num?)?.toInt() ??
           ArenaConfig.maxLives;
 
+      // The guard coming back, as a ring closing round the fighter — drawn
+      // only while it fills, so a fighter who can block has nothing extra
+      // round their feet. Full circle is the moment the blade hums back on.
+      final guard = _guardCharge(frame, key);
+      if (guard < 1 && frame.sharedState['blocking_$key'] != true) {
+        _stroke
+          ..color = _colorOf(frame, key).withValues(alpha: 0.85)
+          ..strokeWidth = radius * ArenaConfig.guardRingWidth;
+        canvas.drawArc(
+          Rect.fromCircle(
+            center: Offset(e.x, e.y),
+            radius: radius * ArenaConfig.guardRingRadius,
+          ),
+          -math.pi / 2,
+          2 * math.pi * guard,
+          false,
+          _stroke,
+        );
+      }
+
       // Invincibility pulse.
       if (isInvincible) {
         final pulse = 0.5 + 0.5 * math.sin(frame.timeMs / 100);
@@ -227,7 +247,7 @@ class ArenaView extends GameView {
     for (final e in frame.ofKind('sword')) {
       final key = 'p${e.propInt('index')}';
       if (frame.sharedState['alive_$key'] != true) continue;
-      _drawSword(canvas, e, _guardCharge(frame, key), _colorOf(frame, key));
+      _drawSword(canvas, e, _colorOf(frame, key));
     }
 
     // The player's own stick, drawn last so a fighter walking over their own
@@ -403,8 +423,7 @@ class ArenaView extends GameView {
   /// How ready this fighter's guard is, 0 to 1.
   ///
   /// Spent while they are actually blocking, then climbing back over
-  /// [ArenaConfig.blockCooldown]. This is the whole of the old BLK readout,
-  /// moved onto the thing it is about.
+  /// [ArenaConfig.blockCooldown]. Drawn as the ring round the fighter.
   double _guardCharge(Frame frame, String key) {
     if (frame.sharedState['blocking_$key'] == true) return 0;
     final left = (frame.sharedState['blkCd_$key'] as num?)?.toDouble() ?? 0;
@@ -429,9 +448,9 @@ class ArenaView extends GameView {
     canvas.restore();
   }
 
-  /// [charged] is the owner's colour: the light on a guard coming back says
-  /// both *ready* and *whose*.
-  void _drawSword(Canvas canvas, RenderEntity e, double charge, Color charged) {
+  /// Always fully lit, in the owner's colour: the guard's recharge is the
+  /// ring round the fighter, and the blade only has to say *whose*.
+  void _drawSword(Canvas canvas, RenderEntity e, Color color) {
     final length = e.propDouble('length', ArenaConfig.swordLength);
     final width = e.propDouble('width', ArenaConfig.swordWidth);
 
@@ -441,92 +460,37 @@ class ArenaView extends GameView {
     canvas.translate(e.x, e.y);
     canvas.rotate(e.angle);
 
-    // The lightsaber when it has loaded: the same fill from the hilt, as the
-    // blade lit in the owner's colour up to the charge and nothing past it.
-    if (_drawSaber(canvas, length, width, charge, charged)) {
-      canvas.restore();
-      return;
-    }
-
-    // A guard across the hilt, so the thing reads as a sword rather than a
-    // stick, and so which end is the dangerous one is obvious.
-    _fill.color = const Color(0xFF6B7280);
-    canvas.drawRect(
-      Rect.fromLTWH(-width * 0.6, -width * 1.8, width * 1.2, width * 3.6),
-      _fill,
-    );
-
     final blade = RRect.fromRectAndRadius(
       Rect.fromLTWH(0, -width / 2, length, width),
       Radius.circular(width / 2),
     );
 
-    // Grey steel, always. The guard's charge is drawn *along* it rather than
-    // tinting the whole thing: a blade filling from the hilt is a bar, and a
-    // bar is read without being explained, while a colour warming up asks the
-    // player to remember which shade meant ready.
-    _fill.color = const Color(ArenaConfig.swordColor);
+    // The glow, under whichever blade is drawn over it.
+    _fill
+      ..color = color.withValues(alpha: 0.55)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, width * 1.6);
+    canvas.drawRRect(blade, _fill);
+    _fill.maskFilter = null;
+
+    // The lightsaber when it has loaded. The grip is drawn on its own, under
+    // the body.
+    if (LightsaberArt.isLoaded(color)) {
+      LightsaberArt.draw(canvas, color, length: length, from: 0, to: length);
+      canvas.restore();
+      return;
+    }
+
+    // Until then, a plain sword: a guard across the hilt, so the thing reads
+    // as a sword rather than a stick, and which end is dangerous is obvious.
+    _fill.color = const Color(0xFF6B7280);
+    canvas.drawRect(
+      Rect.fromLTWH(-width * 0.6, -width * 1.8, width * 1.2, width * 3.6),
+      _fill,
+    );
+    _fill.color = color;
     canvas.drawRRect(blade, _fill);
 
-    if (charge > 0) {
-      final lit = RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, -width / 2, length * charge, width),
-        Radius.circular(width / 2),
-      );
-
-      // The glow rides the filled part, and only near the top of the charge:
-      // it is what says *ready*, so it must not be halfway on for half the
-      // cooldown.
-      if (charge > ArenaConfig.swordGlowFrom) {
-        final strength =
-            (charge - ArenaConfig.swordGlowFrom) /
-            (1 - ArenaConfig.swordGlowFrom);
-        _fill
-          ..color = charged.withValues(alpha: 0.55 * strength)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, width * 1.6);
-        canvas.drawRRect(lit, _fill);
-        _fill.maskFilter = null;
-      }
-
-      _fill.color = charged;
-      canvas.drawRRect(lit, _fill);
-    }
-
     canvas.restore();
-  }
-
-  bool _drawSaber(
-    Canvas canvas,
-    double length,
-    double width,
-    double charge,
-    Color charged,
-  ) {
-    // Only the charged part: a spent guard is a blade that has gone out, and
-    // it comes back out of the hilt as the guard does. The grip is drawn on
-    // its own, under the body.
-    if (!LightsaberArt.isLoaded(charged)) return false;
-    final lit = length * charge;
-
-    if (charge > ArenaConfig.swordGlowFrom) {
-      final strength =
-          (charge - ArenaConfig.swordGlowFrom) /
-          (1 - ArenaConfig.swordGlowFrom);
-      _fill
-        ..color = charged.withValues(alpha: 0.55 * strength)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, width * 1.6);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(0, -width / 2, lit, width),
-          Radius.circular(width / 2),
-        ),
-        _fill,
-      );
-      _fill.maskFilter = null;
-    }
-
-    LightsaberArt.draw(canvas, charged, length: length, from: 0, to: lit);
-    return true;
   }
 
   /// The three dots. Only the ones still in hand are drawn — a spent life is

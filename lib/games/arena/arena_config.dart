@@ -104,21 +104,16 @@ class ArenaConfig {
   /// Grace after losing a life, so one exchange cannot take two.
   static const double hitInvincibility = 0.9; // seconds
 
-  /// The blade's colour with its guard spent: plain grey.
+  /// The hilt's colour, and the grey the saber art is loaded in for it.
   static const int swordColor = 0xFFA8ACB6;
 
-  /// The block cooldown is read off the blade rather than off a number in the
-  /// corner. It is the one cooldown worth showing — an attack that is not
-  /// ready simply does not come out, while a guard that is not ready gets
-  /// somebody hit — and the sword is where a player is already looking.
-  ///
-  /// The charged part is in the player's colour rather than one fixed blue,
-  /// because on a table of six swords the glow is also *whose* sword: a green
-  /// fighter's guard coming back lights green, and nobody has to work out
-  /// which blade they were watching.
-  /// How much of the charge is spent before the blade starts to glow. Below
-  /// this it only changes colour; the glow is the part that says *ready*.
-  static const double swordGlowFrom = 0.55;
+  /// The block cooldown, as a ring closing round the fighter — the same ring
+  /// Dodgeball draws for its dash. It is the one cooldown worth showing: an
+  /// attack that is not ready simply does not come out, while a guard that is
+  /// not ready gets somebody hit. The blade itself stays fully lit throughout,
+  /// in the player's colour, so on a table of six swords it always says whose.
+  static const double guardRingRadius = 1.45; // x characterRadius
+  static const double guardRingWidth = 0.16; // x characterRadius
 
   // -- block ------------------------------------------------------------------
   static const double blockCooldown = 2.0; // seconds
