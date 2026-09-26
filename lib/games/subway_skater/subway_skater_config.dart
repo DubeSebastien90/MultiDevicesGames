@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../sdk/audio/sound_cue.dart';
 import '../../sdk/model/world_rect.dart';
 
 /// Subway Skater's tunables, all in one place.
@@ -210,4 +211,27 @@ class SubwaySkaterConfig {
     final t = (y - board.top) / board.height * lanes;
     return t.floor().clamp(0, lanes - 1);
   }
+
+  // -- sound ------------------------------------------------------------------
+  //
+  // Each plays on one phone only, the one where it happened. Leveled copies of
+  // audio-src/originals/games/subway_skater/.
+
+  /// A lane change, on the phone that was swiped.
+  static const woosh = SoundCue.asset('assets/games/subway_skater/woosh.wav');
+
+  /// Now and then, a car arriving on a phone.
+  static const honk = SoundCue.asset('assets/games/subway_skater/honk.wav');
+
+  /// How often a car honks as it drives onto a phone: one in this many.
+  static const int honkOneIn = 4;
+
+  /// A car meeting a runner — or a runner fresh off a promotion flattening
+  /// one, which is the same bang from the other side.
+  static const crash = SoundCue.asset('assets/games/subway_skater/crash.wav');
+
+  /// On top of the crash when it is the runner who comes off worse.
+  static const knockedDown = SoundCue.asset(
+    'assets/games/subway_skater/potato_explosion.wav',
+  );
 }

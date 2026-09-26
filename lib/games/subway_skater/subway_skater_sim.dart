@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../sdk/audio/sound_cue.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/score/scoreboard.dart';
@@ -35,6 +36,10 @@ class SubwaySkaterSim implements GameSim {
 
   final BoardContext context;
   final math.Random _random;
+
+  /// Whether a car honks. Its own generator rather than [_random], so the
+  /// sounds cannot change which waves a seeded round deals.
+  final _honkDice = math.Random(4);
 
   final _skaters = <String, _Skater>{};
 
@@ -223,7 +228,34 @@ class SubwaySkaterSim implements GameSim {
       if (!o.active) continue;
       o.x += speed * dt;
       if (o.x > limit) o.active = false;
+      if (o.active) _honkOnArrival(o);
     }
+  }
+
+  /// When a car's bonnet crosses onto a new phone, one time in
+  /// [SubwaySkaterConfig.honkOneIn] it honks there. The gap between two
+  /// screens is no phone at all, so it does not count as arriving anywhere.
+  void _honkOnArrival(_Obstacle o) {
+    final front = o.x + SubwaySkaterConfig.obstacleLength / 2;
+    final y = SubwaySkaterConfig.laneCenter(context.board, o.lane);
+    final phone = context.phoneAt(front, y);
+    if (phone == null || phone == o.onPhone) return;
+    o.onPhone = phone;
+    if (_honkDice.nextInt(SubwaySkaterConfig.honkOneIn) == 0) {
+      _playOn(phone, SubwaySkaterConfig.honk);
+    }
+  }
+
+  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
+  void _playOn(String phoneId, SoundCue cue) {
+    final player = context.roster.byPhone(phoneId);
+    if (player != null) context.audio.playOnPhone(player, cue);
+  }
+
+  /// [cue] on the phone under ([x], [y]), or the nearest one to it.
+  void _playAt(double x, double y, SoundCue cue) {
+    final phone = context.nearestPhone(x, y);
+    if (phone != null) _playOn(phone, cue);
   }
 
   void _moveSkaters(double dt) {
@@ -336,6 +368,7 @@ class SubwaySkaterSim implements GameSim {
           o.active = false;
           s.smashed++;
           _shatter(o);
+          _playAt(s.x, s.y, SubwaySkaterConfig.crash);
           break;
         }
 
@@ -361,6 +394,10 @@ class SubwaySkaterSim implements GameSim {
     s.tumbleFor = 0;
     s.chargeFor = 0;
     s.hits++;
+
+    // Where it happened, before the car carries them off down the corridor.
+    _playAt(s.x, s.y, SubwaySkaterConfig.crash);
+    _playAt(s.x, s.y, SubwaySkaterConfig.knockedDown);
   }
 
   /// Leave a shatter where a block was flattened.
@@ -502,7 +539,13 @@ class SubwaySkaterSim implements GameSim {
         // Not while being carried: you are not on your feet.
         if (s.riding == null) {
           final dir = delta.isNegative ? -1 : 1;
-          s.lane = (s.lane + dir).clamp(0, SubwaySkaterConfig.lanes - 1);
+          final lane = (s.lane + dir).clamp(0, SubwaySkaterConfig.lanes - 1);
+          // Only a real change: a swipe into the wall of the corridor goes
+          // nowhere and says nothing.
+          if (lane != s.lane) {
+            s.lane = lane;
+            _playOn(touch.phoneId, SubwaySkaterConfig.woosh);
+          }
         }
       }
     }
@@ -676,9 +719,13 @@ class _Obstacle {
   double x = 0;
   int lane = 0;
 
+  /// The phone its bonnet is on, for telling when it arrives on the next.
+  String? onPhone;
+
   void launch({required int lane, required double x, required int car}) {
     this.lane = lane;
     this.x = x;
+    onPhone = null;
     active = true;
     descriptor = EntityDescriptor(
       id: id,

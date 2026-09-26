@@ -21,7 +21,7 @@ class SubwaySkaterGame implements MultiscreenGame {
   @override
   GameManifest get manifest => const GameManifest(
     id: 'subway_skater',
-    title: 'Roar Runner',
+    title: 'Road Runner',
     tagline:
         'Swipe to dodge. The front of the line scores most and gets hit '
         'first.',
