@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
+import 'subway_skater_art.dart';
 import 'subway_skater_config.dart';
 
 /// The corridor, drawn the same on every phone because every phone is drawing
@@ -14,14 +16,16 @@ import 'subway_skater_config.dart';
 /// scroll on the shared clock, so the corridor runs unbroken across the seams
 /// rather than restarting at each phone.
 class SubwaySkaterView extends GameView {
-  SubwaySkaterView(this.context);
+  SubwaySkaterView(this.context) {
+    SubwaySkaterArt.preload();
+  }
 
   final ViewContext context;
 
   static const _void = Color(0xFF05070D);
   static const _floor = Color(0xFF101A2E);
   static const _rail = Color(0xFF3D5A8A);
-  static const _laneMark = Color(0x40C7E0FF);
+  static const _laneMark = Color(0xFFF2C230);
   static const _hazard = Color(0xFFFF6B3D);
   static const _hazardCore = Color(0xFF7A2410);
   static const _charge = Color(0xFFFFD166);
@@ -86,27 +90,71 @@ class SubwaySkaterView extends GameView {
     final right = math.min(view.right, board.right);
     if (right <= left) return;
 
-    _paint.color = _floor;
-    canvas.drawRect(
-      Rect.fromLTRB(left, board.top, right, board.bottom),
-      _paint,
-    );
+    final street = SubwaySkaterArt.street;
+    if (street != null) {
+      _drawStreet(canvas, frame, street, left, right);
+    } else {
+      _paint.color = _floor;
+      canvas.drawRect(
+        Rect.fromLTRB(left, board.top, right, board.bottom),
+        _paint,
+      );
 
-    _stroke
-      ..color = _rail
-      ..strokeWidth = frame.onePixel * 2;
-    canvas.drawLine(Offset(left, board.top), Offset(right, board.top), _stroke);
-    canvas.drawLine(
-      Offset(left, board.bottom),
-      Offset(right, board.bottom),
-      _stroke,
-    );
+      _stroke
+        ..color = _rail
+        ..strokeWidth = frame.onePixel * 2;
+      canvas.drawLine(
+        Offset(left, board.top),
+        Offset(right, board.top),
+        _stroke,
+      );
+      canvas.drawLine(
+        Offset(left, board.bottom),
+        Offset(right, board.bottom),
+        _stroke,
+      );
+    }
 
     _drawLaneDashes(canvas, frame, left, right);
   }
 
-  /// Dashes between the lanes, sliding down the corridor at the speed the
-  /// obstacles travel — so the floor visibly winds up as the round does.
+  /// The road, one tile after another for as long as the corridor runs,
+  /// sliding at the speed the cars travel.
+  ///
+  /// A tile is the full height of the corridor and as long as its own aspect
+  /// makes it. Phased on the shared clock like the dashes, and laid from world
+  /// position rather than from this screen's edge, so the road runs unbroken
+  /// across the seams between phones.
+  void _drawStreet(
+    Canvas canvas,
+    Frame frame,
+    PictureInfo street,
+    double left,
+    double right,
+  ) {
+    final board = frame.board;
+    final tile = board.height * SubwaySkaterArt.aspect(street);
+    if (tile <= 0) return;
+    final phase = SubwaySkaterConfig.travelAt(frame.timeMs / 1000) % tile;
+
+    canvas
+      ..save()
+      ..clipRect(Rect.fromLTRB(left, board.top, right, board.bottom));
+    var x = ((left - phase) / tile).floorToDouble() * tile + phase;
+    while (x < right) {
+      SubwaySkaterArt.paint(
+        canvas,
+        street,
+        Rect.fromLTWH(x, board.top, tile, board.height),
+      );
+      x += tile;
+    }
+    canvas.restore();
+  }
+
+  /// Yellow dashes between the lanes, as on a real road, sliding down the
+  /// corridor at the speed the cars travel — so the road visibly winds up as
+  /// the round does.
   ///
   /// Phased on `frame.timeMs`, which is the host's clock and identical on every
   /// phone: a local clock here would have the dashes step across each seam. And
@@ -120,9 +168,11 @@ class SubwaySkaterView extends GameView {
     final phase = SubwaySkaterConfig.travelAt(frame.timeMs / 1000) % period;
     final board = frame.board;
 
+    // In world units rather than pixels: road paint, the same width on every
+    // phone whatever its density.
     _stroke
       ..color = _laneMark
-      ..strokeWidth = frame.onePixel * 1.5;
+      ..strokeWidth = 0.12;
 
     for (var lane = 1; lane < SubwaySkaterConfig.lanes; lane++) {
       final y = board.top + board.height * lane / SubwaySkaterConfig.lanes;
@@ -142,6 +192,20 @@ class SubwaySkaterView extends GameView {
     final w = o.propDouble('w', SubwaySkaterConfig.obstacleLength);
     final h = o.propDouble('h', 1);
     final rect = Rect.fromCenter(center: Offset(o.x, o.y), width: w, height: h);
+
+    // The car, as long as the obstacle and as wide as its own shape makes it:
+    // the length is what a skater collides with, so the drawn nose and tail
+    // are exactly where the hit starts and ends.
+    final car = SubwaySkaterArt.car(o.propInt('car'));
+    if (car != null) {
+      final width = math.min(h, w / SubwaySkaterArt.aspect(car));
+      SubwaySkaterArt.paint(
+        canvas,
+        car,
+        Rect.fromCenter(center: rect.center, width: w, height: width),
+      );
+      return;
+    }
     final rounded = RRect.fromRectXY(rect, h * 0.25, h * 0.25);
 
     _paint.color = _hazard;
