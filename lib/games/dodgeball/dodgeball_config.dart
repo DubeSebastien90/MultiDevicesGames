@@ -53,6 +53,10 @@ class DodgeballConfig {
   static const woosh = SoundCue.asset('assets/games/dodgeball/woosh.wav');
   static const boing = SoundCue.asset('assets/games/dodgeball/boing.wav');
 
+  /// Under the rest: with a table full of balls the bounces are constant, and
+  /// at full level they bury the dash and the knock-outs.
+  static const double boingVolume = 0.6;
+
   // -- getting started --------------------------------------------------------
   /// The three lines of the briefing, and how long each one holds the screen.
   ///

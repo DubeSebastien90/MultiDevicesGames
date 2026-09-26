@@ -329,7 +329,13 @@ class DodgeballSim implements GameSim {
         // Nearest rather than exact: a ball against a wall can have its middle
         // a hair past the edge of the glass it is bouncing on.
         final phone = context.nearestPhone(hit.x, hit.y);
-        if (phone != null) _playOn(phone, DodgeballConfig.boing);
+        if (phone != null) {
+          _playOn(
+            phone,
+            DodgeballConfig.boing,
+            volume: DodgeballConfig.boingVolume,
+          );
+        }
       }
       ball
         ..x = hit.x
@@ -416,9 +422,11 @@ class DodgeballSim implements GameSim {
   }
 
   /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
-  void _playOn(String phoneId, SoundCue cue) {
+  void _playOn(String phoneId, SoundCue cue, {double volume = 1.0}) {
     final player = context.roster.byPhone(phoneId);
-    if (player != null) context.audio.playOnPhone(player, cue);
+    if (player != null) {
+      context.audio.playOnPhone(player, cue, volume: volume);
+    }
   }
 
   void _tryDash(_Player p) {
