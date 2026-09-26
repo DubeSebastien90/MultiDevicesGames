@@ -722,6 +722,31 @@ void main() {
       expect(arms, hasLength(10));
     });
 
+    test(
+      "each seat's arms are one left and one right, on the correct sides",
+      () {
+        final started = start(5);
+        final board = started.board.coverage.board;
+        final arms = started.sim.entities
+            .where((e) => e.kind == 'arm')
+            .toList();
+        for (final phone in started.board.phones) {
+          final mine = arms.where((e) => e.props['seat'] == phone.phoneId);
+          final left = mine.singleWhere((e) => e.props['left'] == true);
+          final right = mine.singleWhere((e) => e.props['left'] == false);
+          // The player sits outside the ring facing in. Their right is a
+          // clockwise quarter turn from that, in y-down world space.
+          final inX = board.centerX - phone.worldCenterX;
+          final inY = board.centerY - phone.worldCenterY;
+          final rightX = -inY;
+          final rightY = inX;
+          final side =
+              (right.x - left.x) * rightX + (right.y - left.y) * rightY;
+          expect(side, greaterThan(0), reason: phone.phoneId);
+        }
+      },
+    );
+
     test('goes off as a blast of its own', () {
       final started = start(3);
       final sim = started.sim;

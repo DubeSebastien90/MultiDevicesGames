@@ -620,7 +620,9 @@ void main() {
 
       // It really travels: dragged downstream, and still short of the back —
       // the circle rides the corridor rather than teleporting to the end of it.
-      run(sim, 0.3);
+      // Long enough to be past where the hit was, which is half a car behind
+      // the post: the rider sits on the car's middle.
+      run(sim, 0.4);
       final travelling = skaterOf(sim, 'p1').x;
       expect(
         travelling,
@@ -636,6 +638,10 @@ void main() {
       // Long enough for the block carrying them to clear the far end.
       run(sim, started.board.board.width / SubwaySkaterConfig.obstacleSpeed);
       expect(sim.sharedState['tumbling'], isNot(contains('p1')));
+
+      // And the time to walk to their post: a later wave can move the line on
+      // after they land, and they then climb to the new one.
+      run(sim, started.board.board.width / SubwaySkaterConfig.climbSpeed);
 
       // Landed at whichever post is theirs now — the back, unless the line has
       // churned on without them since.

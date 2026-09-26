@@ -27,7 +27,17 @@ class DodgeballView extends GameView {
   /// is the one the lobby gave them.
   final Roster roster;
 
-  static const _floorColor = Color(0xFF161B22);
+  /// A gym floor: light wood, so every player's colour and the red ball stand
+  /// out against it — and the controls and words drawn over it are in [_ink],
+  /// the lobby's own dark, rather than white.
+  static const _floorColor = Color(0xFFF3DDB0);
+  static const _plankLine = Color(0xFFE2C48F);
+  static const _courtLine = Color(0xFFF08A80);
+  static const _ink = Color(0xFF191510);
+
+  /// One floorboard's width, and how long a board runs before its joint.
+  static const _plankWidth = 0.9;
+  static const _plankLength = 7.0;
   static const _ballColor = Color(0xFFFF4444);
   static const _ballGlowColor = Color(0x44FF4444);
 
@@ -55,12 +65,7 @@ class DodgeballView extends GameView {
     // differently coloured band that players were fenced out of; the sim keeps
     // them inside the screens themselves now, so every point this phone can
     // draw is playable.
-    _fill.color = _floorColor;
-    final view = frame.visible;
-    canvas.drawRect(
-      Rect.fromLTWH(view.left, view.top, view.width, view.height),
-      _fill,
-    );
+    _drawFloor(canvas, frame);
 
     // Draw balls. During the briefing the only ball on the board is the one
     // being thrown to explain the dash, and it fades at both ends — it has to
@@ -133,7 +138,7 @@ class DodgeballView extends GameView {
       if (isInvincible) {
         final pulse = 0.5 + 0.5 * math.sin(frame.timeMs / 60);
         _stroke
-          ..color = Color.fromARGB((pulse * 220).toInt(), 255, 255, 255)
+          ..color = _ink.withAlpha((pulse * 160).toInt())
           ..strokeWidth = radius * 0.18;
         canvas.drawCircle(Offset(e.x, e.y), radius * 1.4, _stroke);
       }
@@ -261,13 +266,11 @@ class DodgeballView extends GameView {
         : pushed;
     final knob = anchor + tilt;
 
-    const white = Color(0xFFFFFFFF);
-
-    _fill.color = white.withAlpha(DodgeballConfig.joystickWellAlpha);
+    _fill.color = _ink.withAlpha(DodgeballConfig.joystickWellAlpha);
     canvas.drawCircle(anchor, reach, _fill);
 
     _stroke
-      ..color = white.withAlpha(DodgeballConfig.joystickRingAlpha)
+      ..color = _ink.withAlpha(DodgeballConfig.joystickRingAlpha)
       ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.04);
     canvas.drawCircle(anchor, reach, _stroke);
 
@@ -275,13 +278,13 @@ class DodgeballView extends GameView {
     // from — a knob sitting just outside this circle is a crawl, and out at
     // the ring it is a run.
     _stroke
-      ..color = white.withAlpha(DodgeballConfig.joystickDeadZoneAlpha)
+      ..color = _ink.withAlpha(DodgeballConfig.joystickDeadZoneAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
     canvas.drawCircle(anchor, DodgeballConfig.minMoveDistance, _stroke);
 
     if (tilt.distance > 0) {
       _stroke
-        ..color = white.withAlpha(DodgeballConfig.joystickDeadZoneAlpha)
+        ..color = _ink.withAlpha(DodgeballConfig.joystickDeadZoneAlpha)
         ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.03);
       canvas.drawLine(anchor, knob, _stroke);
     }
@@ -289,12 +292,12 @@ class DodgeballView extends GameView {
     // The knob in the player's own colour — the one their body is wearing, so
     // at a glance the ring belongs to somebody.
     final me = roster.byPhone(phoneId);
-    _fill.color = (me?.color.value ?? white).withAlpha(
+    _fill.color = (me?.color.value ?? _ink).withAlpha(
       DodgeballConfig.joystickKnobAlpha,
     );
     canvas.drawCircle(knob, DodgeballConfig.joystickKnobRadius, _fill);
     _stroke
-      ..color = white.withAlpha(DodgeballConfig.joystickRingAlpha)
+      ..color = _ink.withAlpha(DodgeballConfig.joystickRingAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
     canvas.drawCircle(knob, DodgeballConfig.joystickKnobRadius, _stroke);
   }
@@ -331,6 +334,66 @@ class DodgeballView extends GameView {
     return fadingIn < fadingOut ? fadingIn : fadingOut;
   }
 
+  /// Floorboards, and the court painted on them.
+  ///
+  /// Laid from the world origin rather than from this screen's edge, so the
+  /// boards and the lines run unbroken from one phone to the next. The joints
+  /// are staggered row by row, the way boards are actually laid.
+  void _drawFloor(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    _fill.color = _floorColor;
+    canvas.drawRect(
+      Rect.fromLTWH(view.left, view.top, view.width, view.height),
+      _fill,
+    );
+
+    _stroke
+      ..color = _plankLine
+      ..strokeWidth = 0.05;
+    final firstRow = (view.top / _plankWidth).floor();
+    final lastRow = (view.bottom / _plankWidth).ceil();
+    for (var row = firstRow; row <= lastRow; row++) {
+      final y = row * _plankWidth;
+      canvas.drawLine(Offset(view.left, y), Offset(view.right, y), _stroke);
+      final stagger = (row % 3) * _plankLength / 3;
+      for (
+        var x =
+            ((view.left - stagger) / _plankLength).floorToDouble() *
+                _plankLength +
+            stagger;
+        x <= view.right;
+        x += _plankLength
+      ) {
+        canvas.drawLine(Offset(x, y), Offset(x, y + _plankWidth), _stroke);
+      }
+    }
+
+    // Halfway line and centre circle, across the long side of the table.
+    final board = frame.board;
+    final centre = Offset(board.centerX, board.centerY);
+    _stroke
+      ..color = _courtLine
+      ..strokeWidth = 0.2;
+    if (board.width >= board.height) {
+      canvas.drawLine(
+        Offset(centre.dx, board.top),
+        Offset(centre.dx, board.bottom),
+        _stroke,
+      );
+    } else {
+      canvas.drawLine(
+        Offset(board.left, centre.dy),
+        Offset(board.right, centre.dy),
+        _stroke,
+      );
+    }
+    canvas.drawCircle(
+      centre,
+      math.min(board.width, board.height) * 0.22,
+      _stroke,
+    );
+  }
+
   /// One line across this phone's own glass, under the player standing on it.
   ///
   /// [Frame.me] rather than [Frame.visible]: a phone laid at an angle has a
@@ -351,12 +414,7 @@ class DodgeballView extends GameView {
         ui.ParagraphBuilder(
             ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size),
           )
-          ..pushStyle(
-            ui.TextStyle(
-              color: const Color(0xFFFFFFFF),
-              fontWeight: FontWeight.w900,
-            ),
-          )
+          ..pushStyle(ui.TextStyle(color: _ink, fontWeight: FontWeight.w900))
           ..addText(text);
     final paragraph = builder.build()
       ..layout(ui.ParagraphConstraints(width: width));

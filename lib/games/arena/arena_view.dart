@@ -8,6 +8,7 @@ import '../../sdk/contract/view.dart';
 import '../../sdk/model/player.dart';
 import '../../sdk/render/player_animation.dart';
 import 'arena_config.dart';
+import 'lightsaber_art.dart';
 
 /// Renders the arena: fighters, their swords, lives, stun stars, invincibility
 /// pulses, and the countdown overlay.
@@ -32,7 +33,12 @@ class ArenaView extends GameView {
     required this.phoneId,
     this.characters = PlayerAnimations.none,
     this.roster = Roster.empty,
-  });
+  }) {
+    LightsaberArt.preload([
+      const Color(ArenaConfig.swordColor),
+      for (final p in roster.players) p.color.value,
+    ]);
+  }
 
   final String phoneId;
 
@@ -43,7 +49,23 @@ class ArenaView extends GameView {
   /// shown in the lobby, rather than the sim's own palette.
   final Roster roster;
 
-  static const _floorColor = Color(0xFF16213E);
+  /// Packed earth, as in a real arena: warm sand, raked round the middle and
+  /// scattered with grit. Light, so every fighter's colour and every blade's
+  /// glow stands out against it — and the controls and words drawn over it
+  /// are in [_ink], the lobby's own dark, rather than white.
+  static const _floorColor = Color(0xFFEBD0A2);
+  static const _rake = Color(0x33B98A4E);
+  static const _ring = Color(0xFFD2A76C);
+  static const _gritDark = Color(0x55976A36);
+  static const _gritLight = Color(0x66FFF3DC);
+  static const _ink = Color(0xFF191510);
+
+  /// How far apart the rake's lines are, in world units.
+  static const _rakeGap = 0.45;
+
+  /// The grit is laid one speck per cell of this size, each nudged about
+  /// inside its own cell so the floor does not read as a grid.
+  static const _gritCell = 0.7;
 
   /// The air kept between the message and the bottom edge of the glass, as a
   /// fraction of the screen's half-height.
@@ -90,12 +112,15 @@ class ArenaView extends GameView {
     // the screens themselves (see [PlayArea]), which means every point this
     // phone can draw is a point somebody can stand on, and the floor can
     // simply cover it.
-    _fill.color = _floorColor;
-    final view = frame.visible;
-    canvas.drawRect(
-      Rect.fromLTWH(view.left, view.top, view.width, view.height),
-      _fill,
-    );
+    _drawFloor(canvas, frame);
+
+    // Grips under the bodies, blades over them: the hilt sits in the hand
+    // that holds it, and whatever of it would show through the body is the
+    // part the fist is closed round.
+    for (final e in frame.ofKind('sword')) {
+      if (frame.sharedState['alive_p${e.propInt('index')}'] != true) continue;
+      _drawGrip(canvas, e);
+    }
 
     final fighters = frame.ofKind('fighter').toList();
 
@@ -201,7 +226,7 @@ class ArenaView extends GameView {
     for (final e in frame.ofKind('sword')) {
       final key = 'p${e.propInt('index')}';
       if (frame.sharedState['alive_$key'] != true) continue;
-      _drawSword(canvas, e, _guardCharge(frame, key), _chargeTint(frame, key));
+      _drawSword(canvas, e, _guardCharge(frame, key), _colorOf(frame, key));
     }
 
     // The player's own stick, drawn last so a fighter walking over their own
@@ -417,16 +442,24 @@ class ArenaView extends GameView {
     return charge < 0 ? 0 : (charge > 1 ? 1 : charge);
   }
 
-  /// The colour a charged blade takes: steel pulled most of the way towards
-  /// its owner's, so the light on it says both *ready* and *whose*.
-  Color _chargeTint(Frame frame, String key) =>
-      Color.lerp(
-        const Color(ArenaConfig.swordColor),
-        _colorOf(frame, key),
-        ArenaConfig.swordChargeTint,
-      ) ??
-      _colorOf(frame, key);
+  /// The saber's grip, behind the blade. Nothing to draw without the art:
+  /// the plain sword's guard goes over the body with its blade.
+  void _drawGrip(Canvas canvas, RenderEntity e) {
+    canvas
+      ..save()
+      ..translate(e.x, e.y)
+      ..rotate(e.angle);
+    LightsaberArt.draw(
+      canvas,
+      const Color(ArenaConfig.swordColor),
+      length: e.propDouble('length', ArenaConfig.swordLength),
+      to: 0,
+    );
+    canvas.restore();
+  }
 
+  /// [charged] is the owner's colour: the light on a guard coming back says
+  /// both *ready* and *whose*.
   void _drawSword(Canvas canvas, RenderEntity e, double charge, Color charged) {
     final length = e.propDouble('length', ArenaConfig.swordLength);
     final width = e.propDouble('width', ArenaConfig.swordWidth);
@@ -436,6 +469,13 @@ class ArenaView extends GameView {
     canvas.save();
     canvas.translate(e.x, e.y);
     canvas.rotate(e.angle);
+
+    // The lightsaber when it has loaded: the same fill from the hilt, as the
+    // blade lit in the owner's colour up to the charge and nothing past it.
+    if (_drawSaber(canvas, length, width, charge, charged)) {
+      canvas.restore();
+      return;
+    }
 
     // A guard across the hilt, so the thing reads as a sword rather than a
     // stick, and so which end is the dangerous one is obvious.
@@ -482,6 +522,40 @@ class ArenaView extends GameView {
     }
 
     canvas.restore();
+  }
+
+  bool _drawSaber(
+    Canvas canvas,
+    double length,
+    double width,
+    double charge,
+    Color charged,
+  ) {
+    // Only the charged part: a spent guard is a blade that has gone out, and
+    // it comes back out of the hilt as the guard does. The grip is drawn on
+    // its own, under the body.
+    if (!LightsaberArt.isLoaded(charged)) return false;
+    final lit = length * charge;
+
+    if (charge > ArenaConfig.swordGlowFrom) {
+      final strength =
+          (charge - ArenaConfig.swordGlowFrom) /
+          (1 - ArenaConfig.swordGlowFrom);
+      _fill
+        ..color = charged.withValues(alpha: 0.55 * strength)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, width * 1.6);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, -width / 2, lit, width),
+          Radius.circular(width / 2),
+        ),
+        _fill,
+      );
+      _fill.maskFilter = null;
+    }
+
+    LightsaberArt.draw(canvas, charged, length: length, from: 0, to: lit);
+    return true;
   }
 
   /// The three dots. Only the ones still in hand are drawn — a spent life is
@@ -540,13 +614,9 @@ class ArenaView extends GameView {
     // Held still long enough to be blocking: the stick says so in the shield's
     // own colour, because a player holding a block is doing it by *not*
     // moving, and an unlit ring looks identical to a dead one.
-    final ringColor = blocking
-        ? const Color(0xFF4488FF)
-        : const Color(0xFFFFFFFF);
+    final ringColor = blocking ? const Color(0xFF4488FF) : _ink;
 
-    _fill.color = const Color(
-      0xFFFFFFFF,
-    ).withAlpha(ArenaConfig.joystickWellAlpha);
+    _fill.color = _ink.withAlpha(ArenaConfig.joystickWellAlpha);
     canvas.drawCircle(anchor, reach, _fill);
 
     _stroke
@@ -576,9 +646,96 @@ class ArenaView extends GameView {
     _fill.color = knobColor.withAlpha(ArenaConfig.joystickKnobAlpha);
     canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _fill);
     _stroke
-      ..color = const Color(0xFFFFFFFF).withAlpha(ArenaConfig.joystickRingAlpha)
+      ..color = _ink.withAlpha(ArenaConfig.joystickRingAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
     canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _stroke);
+  }
+
+  /// The arena floor: sand, the rake's rings round the middle of the table,
+  /// the fighting circle trodden into it, and grit.
+  ///
+  /// All of it laid from the world, never from this screen's edge — the rings
+  /// share the board's centre, and each speck of grit is placed by its cell's
+  /// own coordinates — so the floor runs unbroken from one phone to the next.
+  void _drawFloor(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    final area = Rect.fromLTWH(view.left, view.top, view.width, view.height);
+    _fill.color = _floorColor;
+    canvas.drawRect(area, _fill);
+
+    final board = frame.board;
+    final centre = Offset(board.centerX, board.centerY);
+
+    // The rake, in rings round the middle. Only the rings this screen reaches.
+    final near =
+        (Offset(
+                  centre.dx.clamp(area.left, area.right),
+                  centre.dy.clamp(area.top, area.bottom),
+                ) -
+                centre)
+            .distance;
+    var far = 0.0;
+    for (final corner in [
+      area.topLeft,
+      area.topRight,
+      area.bottomLeft,
+      area.bottomRight,
+    ]) {
+      far = math.max(far, (corner - centre).distance);
+    }
+    _stroke
+      ..color = _rake
+      ..strokeWidth = 0.05;
+    for (
+      var r = math.max(_rakeGap, (near / _rakeGap).floorToDouble() * _rakeGap);
+      r <= far;
+      r += _rakeGap
+    ) {
+      canvas.drawCircle(centre, r, _stroke);
+    }
+
+    // The fighting circle, trodden darker into the sand.
+    final ring = math.min(board.width, board.height) * 0.42;
+    _stroke
+      ..color = _ring
+      ..strokeWidth = 0.3;
+    canvas.drawCircle(centre, ring, _stroke);
+
+    _drawGrit(canvas, area);
+  }
+
+  /// A speck of grit in every cell, dark or light, placed and sized by the
+  /// cell's own coordinates — the same speck on every phone that can see it.
+  ///
+  /// Hashed with small integer arithmetic on purpose: it has to come out the
+  /// same on a phone running compiled Dart and one running it as JavaScript,
+  /// where big products lose their low bits.
+  void _drawGrit(Canvas canvas, Rect area) {
+    final x0 = (area.left / _gritCell).floor();
+    final x1 = (area.right / _gritCell).ceil();
+    final y0 = (area.top / _gritCell).floor();
+    final y1 = (area.bottom / _gritCell).ceil();
+    for (var ix = x0; ix <= x1; ix++) {
+      for (var iy = y0; iy <= y1; iy++) {
+        final h = _hash(ix, iy);
+        final dx = (h % 97) / 97;
+        final dy = (h ~/ 97 % 89) / 89;
+        final size = 0.03 + (h ~/ 8633 % 5) * 0.012;
+        _fill.color = h % 3 == 0 ? _gritLight : _gritDark;
+        canvas.drawCircle(
+          Offset((ix + dx) * _gritCell, (iy + dy) * _gritCell),
+          size,
+          _fill,
+        );
+      }
+    }
+  }
+
+  static int _hash(int x, int y) {
+    const m = 1000003;
+    var h = ((x * 7919 + y * 104729) % m + m) % m;
+    h = (h * h + 12345) % m;
+    return (h * 31 + x % 17) % m;
   }
 
   /// Which fighter is this phone's, as `p0`..`p7`. Null before the sim has
@@ -634,12 +791,7 @@ class ArenaView extends GameView {
         ui.ParagraphBuilder(
             ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size),
           )
-          ..pushStyle(
-            ui.TextStyle(
-              color: const Color(0xFFFFFFFF),
-              fontWeight: FontWeight.w900,
-            ),
-          )
+          ..pushStyle(ui.TextStyle(color: _ink, fontWeight: FontWeight.w900))
           ..addText(text);
     final paragraph = builder.build()
       ..layout(ui.ParagraphConstraints(width: width));

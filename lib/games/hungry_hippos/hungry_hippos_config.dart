@@ -99,6 +99,12 @@ class HungryHipposConfig {
   // ------------------------------------------------------------- colours
 
   static const int colorMarble = 0xFFF4F6FB;
-  static const int colorBowl = 0x22FFFFFF;
+  static const int colorBowl = 0x99FFFFFF;
+
+  /// The pond the hippos stand round: water in the lobby's cyan, deep enough
+  /// that the white marbles still stand out on it.
+  static const int colorWater = 0xFF7DDAD0;
+  static const int colorWaterEdge = 0xFF62C9BE;
+  static const int colorRipple = 0xFF92E3DA;
   static const int colorHippoFallback = 0xFF9AA6C8;
 }
