@@ -51,21 +51,33 @@ import 'arena_sword_test.dart' as sword;
           ArenaConfig.spawnInvincibility +
           0.1,
     );
+    // What the briefing played is its own test's business.
+    audio.plays.clear();
   }
   return (sim: sim, audio: audio);
 }
 
 void main() {
-  test('the briefing and the count are silent', () {
+  test('the briefing swings and blocks out loud, and the count relights', () {
     final h = heard(2, skipIntro: false);
-    sword.run(
-      h.sim,
-      ArenaConfig.briefingSeconds + ArenaConfig.countdownSeconds + 0.1,
-    );
+    sword.run(h.sim, ArenaConfig.briefingSeconds + 0.05);
+
+    // Each fighter swings once and raises a guard once, on their own phone.
+    for (final phone in ['p1', 'p2']) {
+      final mine = h.audio.plays.where((p) => p.phoneId == phone).toList();
+      expect(mine, hasLength(2), reason: phone);
+      expect(mine.every((p) => ArenaConfig.saberVoid.contains(p.cue)), isTrue);
+    }
+
+    // The guard the briefing spent comes back during the count.
+    h.audio.plays.clear();
+    sword.run(h.sim, ArenaConfig.countdownSeconds + 0.1);
     expect(
-      h.audio.plays,
-      isEmpty,
-      reason: 'the demonstration swings on every phone at once',
+      [for (final p in h.audio.plays) (p.phoneId, p.cue)],
+      unorderedEquals([
+        ('p1', ArenaConfig.saberOn),
+        ('p2', ArenaConfig.saberOn),
+      ]),
     );
   });
 
@@ -94,7 +106,7 @@ void main() {
     expect(cues.toSet().length, greaterThan(1));
   });
 
-  test('a blow that lands plays a hit on the attacker\'s phone', () {
+  test('a blow that lands plays a hit on both fighters\' phones', () {
     final h = heard(2);
     sword.placeSecond(h.sim, 0, ArenaConfig.attackRange * 0.6);
     final them = sword.positionOf(h.sim, 1);
@@ -107,8 +119,7 @@ void main() {
     final hits = h.audio.plays
         .where((p) => ArenaConfig.saberHit.contains(p.cue))
         .toList();
-    expect(hits, hasLength(1));
-    expect(hits.single.phoneId, 'p1');
+    expect([for (final p in hits) p.phoneId], unorderedEquals(['p1', 'p2']));
   });
 
   test('raising a guard whooshes, and the blade relighting hums', () {
@@ -159,6 +170,12 @@ void main() {
       expect(dazes, hasLength(1));
       expect(dazes.single.phoneId, 'p1', reason: 'the one who is stunned');
       expect(dazes.single.fadeIn, ArenaConfig.knockedOutFadeIn);
+
+      // And the blade meeting the guard is heard at both ends, like any blow.
+      final hits = h.audio.plays
+          .where((p) => ArenaConfig.saberHit.contains(p.cue))
+          .toList();
+      expect([for (final p in hits) p.phoneId], unorderedEquals(['p1', 'p2']));
       expect(h.audio.stopped, isEmpty, reason: 'still stunned');
 
       sword.run(h.sim, ArenaConfig.stunDuration);

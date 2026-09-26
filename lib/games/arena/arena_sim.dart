@@ -73,11 +73,10 @@ class ArenaSim implements GameSim {
   /// like a sample.
   final _lastTake = <List<SoundCue>, int>{};
 
-  /// One of [takes], on [fighter]'s phone. Only in the round itself: the
-  /// briefing's demonstration swings on every phone at once, and eight of the
-  /// same whoosh together is a noise, not an instruction.
+  /// One of [takes], on [fighter]'s phone. The briefing too: a swing that is
+  /// heard as well as seen is half the lesson.
   void _playFor(_Fighter fighter, List<SoundCue> takes) {
-    if (_phase != 'playing' || takes.isEmpty) return;
+    if (takes.isEmpty) return;
     final last = _lastTake[takes];
     var pick = _soundPick.nextInt(takes.length);
     if (takes.length > 1 && pick == last) {
@@ -86,6 +85,16 @@ class ArenaSim implements GameSim {
     _lastTake[takes] = pick;
     final player = context.roster.byPhone(fighter.phoneId);
     if (player != null) context.audio.playOnPhone(player, takes[pick]);
+  }
+
+  /// The guard filling back up, and the hum of the blade relighting the
+  /// instant it is full.
+  void _rechargeGuard(_Fighter f, double dt) {
+    final recharging = f.blockCooldownLeft > 0;
+    f.blockCooldownLeft = math.max(0, f.blockCooldownLeft - dt);
+    if (recharging && f.blockCooldownLeft <= 0) {
+      _playFor(f, const [ArenaConfig.saberOn]);
+    }
   }
 
   /// The daze, on [fighter]'s phone for as long as they are stunned.
@@ -128,7 +137,7 @@ class ArenaSim implements GameSim {
         // count is three seconds with nothing else to look at, which is the
         // best place in the round to be shown what a recharge looks like.
         for (final f in _fighters) {
-          f.blockCooldownLeft = math.max(0, f.blockCooldownLeft - dt);
+          _rechargeGuard(f, dt);
           _moveSword(f, dt);
         }
       case 'playing':
@@ -176,6 +185,7 @@ class ArenaSim implements GameSim {
         } else if (step == 2) {
           f.blocking = true;
           f.blockDuration = 0;
+          _playFor(f, ArenaConfig.saberVoid);
         }
       }
 
@@ -198,11 +208,7 @@ class ArenaSim implements GameSim {
 
       // Decrement timers.
       f.attackCooldownLeft = math.max(0, f.attackCooldownLeft - dt);
-      final recharging = f.blockCooldownLeft > 0;
-      f.blockCooldownLeft = math.max(0, f.blockCooldownLeft - dt);
-      if (recharging && f.blockCooldownLeft <= 0) {
-        _playFor(f, const [ArenaConfig.saberOn]);
-      }
+      _rechargeGuard(f, dt);
       f.stunLeft = math.max(0, f.stunLeft - dt);
       if (!f.isStunned) _stopDaze(f);
       f.invincibleLeft = math.max(0, f.invincibleLeft - dt);
@@ -347,6 +353,10 @@ class ArenaSim implements GameSim {
         attacker.moveAngle = null;
         attacker.moveScale = 0;
         attacker.swingStage = _Swing.none;
+        // Blade on guard is still blade on something: both of them hear it
+        // land, and the one who threw it is left dazed.
+        _playFor(attacker, ArenaConfig.saberHit);
+        _playFor(target, ArenaConfig.saberHit);
         _startDaze(attacker);
         target.recordImpact(_Impact.parry);
         return;
@@ -354,7 +364,9 @@ class ArenaSim implements GameSim {
 
       if (target.invincibleLeft > 0) continue;
 
+      // Both ends of the blow: the one who landed it and the one it landed on.
       _playFor(attacker, ArenaConfig.saberHit);
+      _playFor(target, ArenaConfig.saberHit);
       target.lives -= 1;
       target.invincibleLeft = ArenaConfig.hitInvincibility;
       if (target.lives <= 0) {
