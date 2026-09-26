@@ -2,7 +2,10 @@ package com.reallifecorp.bubblegames
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Bundle
 import android.util.DisplayMetrics
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,6 +21,23 @@ import io.flutter.plugin.common.MethodChannel
  */
 class MainActivity : FlutterActivity() {
     private var multicastLock: WifiManager.MulticastLock? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Draw under the notch too. The app hides the status bar, and with the
+        // default cutout mode Android 14 and below then shifts the whole window
+        // down below the notch rather than letting it cover the panel. Every
+        // layout here is measured against the full panel (getRealMetrics
+        // below), so a window 53px short put the bottom edge stripe off the
+        // glass and moved every seam by the notch's height. Android 15+ does
+        // this by default for apps targeting it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

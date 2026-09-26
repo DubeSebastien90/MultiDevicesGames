@@ -32,15 +32,15 @@ class NativeDpiChannel {
         if (info['trusted'] == true) {
           final xdpi = (info['xdpi'] as num).toDouble();
           final ydpi = (info['ydpi'] as num).toDouble();
-          // Use portrait-normalised pixel dimensions.
-          final wPx = math.min(
-            (info['widthPx'] as num).toDouble(),
-            (info['heightPx'] as num).toDouble(),
-          );
-          final hPx = math.max(
-            (info['widthPx'] as num).toDouble(),
-            (info['heightPx'] as num).toDouble(),
-          );
+          // Only the density comes from native. The pixel dimensions are the
+          // surface Flutter actually draws on, never the panel's: every layout
+          // is placed in these pixels, so the moment they disagree with the
+          // canvas — a window kept off the notch, split screen, a system bar
+          // that would not hide — anything at the far edge is drawn off the
+          // glass. That was the bottom edge stripe vanishing on a Galaxy A20,
+          // measuring 1560px tall and drawing in 1507.
+          final wPx = px.width;
+          final hPx = px.height;
           return DeviceMetrics(
             activePxWidth: wPx,
             activePxHeight: hPx,
