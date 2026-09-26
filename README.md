@@ -54,7 +54,7 @@ re-resolve unless `pubspec.yaml` actually changed.
 
 **Name the suite you are working on.** `flutter test` compiles every test entry
 point separately, and there are nearly forty of them over a heavy dependency
-graph — Flame, forge2d, rive, audioplayers, purchases_flutter, bonsoir. Almost
+graph — Flame, forge2d, rive, flutter_soloud, purchases_flutter, bonsoir. Almost
 every suite imports something under `lib/sdk/`, so **one edit there invalidates
 the cached build of nearly all of them**. Iterating on `host_session.dart` and
 re-running the full suite each time means paying for that recompile on every

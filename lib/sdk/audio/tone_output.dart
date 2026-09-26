@@ -2,8 +2,8 @@
 ///
 /// Kept apart from [AudioOutput] because it is a different kind of thing: that
 /// one plays files, this one runs oscillators whose pitch is set every frame.
-/// The two can sit on different engines — recordings on `audioplayers`, tones
-/// on SoLoud — without either knowing about the other.
+/// Both happen to run on SoLoud today, but either could move to another engine
+/// without the other knowing.
 library;
 
 import 'package:flutter/foundation.dart';
