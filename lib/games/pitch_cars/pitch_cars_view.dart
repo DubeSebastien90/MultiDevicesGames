@@ -5,13 +5,40 @@ import 'package:flutter/widgets.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/render/shape_view.dart';
+import 'pitch_cars_art.dart';
 import 'pitch_cars_config.dart';
 
 /// Pitch Cars' look: the default shapes for cars and track segments, with the
 /// aiming ring drawn over whichever car is being pulled back.
 class PitchCarsView extends ShapeView {
   PitchCarsView({super.roster})
-    : super(grid: false, playfield: const Color(0xFF141C33));
+    : super(
+        grid: false,
+        background: const Color(_grassEdge),
+        playfield: const Color(_grass),
+      ) {
+    PitchCarsArt.preload([for (final p in roster.players) p.color]);
+  }
+
+  /// How long the car is drawn, against the disc it stands in for. The driver
+  /// is three discs across (see `ShapeView`), and sits in a car a good deal
+  /// longer than they are.
+  static const double _carLength = 7;
+
+  /// The driver, smaller than a character standing on their own: they sit in
+  /// the cockpit, and at full size they would hide the car they are driving.
+  @override
+  double get characterScale => 2.2;
+
+  final _carLayer = Paint();
+
+  /// The infield: mown grass, so the grey road and every car on it stand out.
+  static const _grass = 0xFFAEE294;
+  static const _grassEdge = 0xFF8FCF79;
+  static const _grassStripe = Color(0xFFA2D988);
+
+  /// The width of one mown stripe, in world units.
+  static const _stripe = 2.5;
 
   final _aim = Paint()..style = PaintingStyle.stroke;
   final _finishedFill = Paint();
@@ -59,12 +86,38 @@ class PitchCarsView extends ShapeView {
   @override
   void renderBackground(Canvas canvas, Frame frame) {
     super.renderBackground(canvas, frame);
+    _mowStripes(canvas, frame);
     _strokePolylines(canvas, frame, PitchCarsConfig.ribbonKind);
     _fillFinishTiles(canvas, frame);
     _strokePolylines(canvas, frame, PitchCarsConfig.wallKind);
   }
 
   final _tileFill = Paint();
+
+  /// Mown stripes across the grass, laid from the world origin rather than
+  /// from this screen's edge so they run unbroken from one phone to the next.
+  void _mowStripes(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    final board = frame.board;
+    final left = math.max(view.left, board.left);
+    final right = math.min(view.right, board.right);
+    _tileFill.color = _grassStripe;
+    for (
+      var x = (left / (_stripe * 2)).floorToDouble() * _stripe * 2;
+      x < right;
+      x += _stripe * 2
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(
+          math.max(x, board.left),
+          board.top,
+          math.min(x + _stripe, board.right),
+          board.bottom,
+        ),
+        _tileFill,
+      );
+    }
+  }
 
   /// Each finish tile is a closed quad bent along the road — see
   /// `_buildFinishLineEntities` — so it is filled, not stroked.
@@ -158,6 +211,56 @@ class PitchCarsView extends ShapeView {
       path.lineTo(at(i), at(i + 1));
     }
     return path;
+  }
+
+  /// Each driver's car under them, then the drivers.
+  @override
+  void renderEntities(Canvas canvas, Frame frame) {
+    _drawCars(canvas, frame);
+    super.renderEntities(canvas, frame);
+  }
+
+  /// The racing car in its player's colour, cockpit on the entity, turned
+  /// with it — so the driver drawn over it is always sitting in the seat.
+  /// Falling off the edge takes the car with the driver: same shrink, same
+  /// fade.
+  void _drawCars(Canvas canvas, Frame frame) {
+    final view = frame.visible.inflate(2.0);
+    for (final e in frame.entities.values) {
+      final player = roster.byPhone(
+        e.props[ShapeProps.player] as String? ?? '',
+      );
+      if (player == null) continue;
+      final car = PitchCarsArt.car(player.color);
+      if (car == null) continue;
+
+      final length =
+          e.propDouble(ShapeProps.radius) * _carLength * entityScale(frame, e);
+      if (e.x + length < view.left ||
+          e.x - length > view.right ||
+          e.y + length < view.top ||
+          e.y - length > view.bottom) {
+        continue;
+      }
+      final opacity = entityOpacity(frame, e).clamp(0.0, 1.0);
+      if (opacity <= 0) continue;
+
+      final scale = length / PitchCarsArt.length;
+      canvas
+        ..save()
+        ..translate(e.x, e.y)
+        ..rotate(e.angle);
+      if (opacity < 1) {
+        _carLayer.color = Color.fromRGBO(0, 0, 0, opacity);
+        canvas.saveLayer(null, _carLayer);
+      }
+      canvas
+        ..scale(scale)
+        ..translate(-PitchCarsArt.cockpit.dx, -PitchCarsArt.cockpit.dy)
+        ..drawPicture(car.picture);
+      if (opacity < 1) canvas.restore();
+      canvas.restore();
+    }
   }
 
   /// How far through its fall a car is, 0 on the road to 1 about to reappear.

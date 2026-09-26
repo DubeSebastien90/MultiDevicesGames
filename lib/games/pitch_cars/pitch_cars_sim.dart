@@ -148,6 +148,7 @@ class PitchCarsSim extends Forge2DGameSim {
         // from off it carries the same displacement back onto the car.
         final origin = _dragOrigin ?? _preTurnPosition;
         _pull = _clampPull(_preTurnPosition + (p - origin));
+        _faceTheShot(car);
 
       case TouchPhase.up:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;

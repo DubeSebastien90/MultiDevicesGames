@@ -378,6 +378,18 @@ class ArenaSim implements GameSim {
         ArenaConfig.swordLength * ArenaConfig.swordLength / 4,
   );
 
+  /// Where the hilt sits the rest of the time, as an angle off the facing:
+  /// held out in front, a little to the right, where the hand holding it is.
+  static final double _handMountAngle = math.atan2(
+    ArenaConfig.swordHandSide,
+    ArenaConfig.swordGrip,
+  );
+
+  static final double _handMountReach = math.sqrt(
+    ArenaConfig.swordGrip * ArenaConfig.swordGrip +
+        ArenaConfig.swordHandSide * ArenaConfig.swordHandSide,
+  );
+
   /// Move the blade one tick towards where it belongs.
   ///
   /// Everything here is measured *against the fighter's facing*, never in
@@ -436,10 +448,10 @@ class ArenaSim implements GameSim {
 
       case _Swing.none:
         final (mount, reach, tilt) = f.isStunned
-            ? (0.0, ArenaConfig.swordGrip, ArenaConfig.swordStunAngle)
+            ? (_handMountAngle, _handMountReach, ArenaConfig.swordStunAngle)
             : f.blocking
             ? (_blockMountAngle, _blockMountReach, ArenaConfig.swordBlockTilt)
-            : (0.0, ArenaConfig.swordGrip, ArenaConfig.swordIdleAngle);
+            : (_handMountAngle, _handMountReach, ArenaConfig.swordIdleAngle);
 
         f.swordMount = _turnTowards(
           f.swordMount,
@@ -461,10 +473,14 @@ class ArenaSim implements GameSim {
 
     // Raising or slashing, the hand comes back to the fist: a cut is thrown
     // from the shoulder, not from behind a guard.
-    f.swordMount = _turnTowards(f.swordMount, 0, ArenaConfig.swordSlew * dt);
+    f.swordMount = _turnTowards(
+      f.swordMount,
+      _handMountAngle,
+      ArenaConfig.swordSlew * dt,
+    );
     f.swordReach = _moveTowards(
       f.swordReach,
-      ArenaConfig.swordGrip,
+      _handMountReach,
       ArenaConfig.swordReachSlew * dt,
     );
   }
@@ -804,8 +820,8 @@ class ArenaSim implements GameSim {
       f.x = context.slices[i].screen.centerX;
       f.y = context.slices[i].screen.centerY;
       f.facingAngle = 0;
-      f.swordMount = 0;
-      f.swordReach = ArenaConfig.swordGrip;
+      f.swordMount = _handMountAngle;
+      f.swordReach = _handMountReach;
       f.swordTilt = 0;
       f.swingStage = _Swing.none;
       f.slashLeft = 0;

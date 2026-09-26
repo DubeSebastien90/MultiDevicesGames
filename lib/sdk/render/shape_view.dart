@@ -75,7 +75,10 @@ class ShapeView extends GameView {
   /// relative to their own body in every game that draws one. The artboard
   /// carries margins, so filling the disc exactly would draw a character
   /// noticeably smaller than the circle everybody had been aiming at.
-  static const double _characterScale = 3;
+  ///
+  /// Overridable for a game that seats the character in something drawn under
+  /// it — a car, say — where the seat, not the disc, sets how big they can be.
+  double get characterScale => 3;
 
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
@@ -154,7 +157,7 @@ class ShapeView extends GameView {
         PlayerArt.of(player.color, PlayerArtSlot.topdown).draw(
           canvas,
           Offset(e.x, e.y),
-          worldSize: e.propDouble(ShapeProps.radius) * _characterScale * scale,
+          worldSize: e.propDouble(ShapeProps.radius) * characterScale * scale,
           angle: e.angle,
           opacity: opacity,
         );

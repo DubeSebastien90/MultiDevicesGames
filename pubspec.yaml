@@ -96,6 +96,12 @@ flutter:
     - assets/games/hungryhippos/
     - assets/games/pitch_cars/
     - assets/games/subway_skater/
+    # One file rather than the folder: the rest of it is app icons, which
+    # have no business in the bundle.
+    - assets/icons/LightSaber.riv
+    - assets/icons/subwaySkater/
+    - assets/icons/hotPotato/
+    - assets/icons/pitchCars/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

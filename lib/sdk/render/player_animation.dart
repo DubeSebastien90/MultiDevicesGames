@@ -165,7 +165,7 @@ class _ShapeAnimation implements PlayerAnimation {
 class _RiveAnimations implements PlayerAnimations {
   _RiveAnimations(this._file);
 
-  static const asset = 'assets/sdk/animations/bottomDownView.riv';
+  static const asset = 'assets/sdk/animations/running_man.riv';
 
   /// The looping walk. Named rather than default: the file may grow a second
   /// state machine, and picking whichever one happens to be first is how a
@@ -190,7 +190,7 @@ class _RiveAnimations implements PlayerAnimations {
       if (artboard == null) throw StateError('no artboard');
       final machine =
           artboard.stateMachine(stateMachine) ?? artboard.defaultStateMachine();
-      _paint(artboard, machine, color.value);
+      _paint(artboard, machine, color);
       // Once, so the artboard holds the first frame of the walk rather than
       // whatever pose it was exported in.
       machine?.advanceAndApply(0);
@@ -201,13 +201,19 @@ class _RiveAnimations implements PlayerAnimations {
     }
   }
 
-  /// Put a player's colour on their character.
+  /// Put a player's three shades on their character.
   ///
-  /// The property is found by type rather than by name — the file's view model
-  /// carries exactly one colour — so renaming it in the editor costs nothing
-  /// here. Each artboard binds its *own* instance: a shared one would repaint
-  /// every character on the table the colour of whoever was coloured last.
-  void _paint(rive.Artboard artboard, rive.StateMachine? machine, Color color) {
+  /// By name, because there are three of them and position in the list is not
+  /// a contract — the same shades, off the same [PlayerColor], as the still
+  /// character in [PlayerArt]. A property that is not there is said out loud
+  /// and skipped: two shades on a character is worth more than none. Each
+  /// artboard binds its *own* instance: a shared one would repaint every
+  /// character on the table the colour of whoever was coloured last.
+  void _paint(
+    rive.Artboard artboard,
+    rive.StateMachine? machine,
+    PlayerColor color,
+  ) {
     final viewModel = _file.defaultArtboardViewModel(artboard);
     final instance = viewModel?.createDefaultInstance();
     if (viewModel == null || instance == null) {
@@ -217,12 +223,19 @@ class _RiveAnimations implements PlayerAnimations {
     }
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
-    for (final property in viewModel.properties) {
-      if (property.type != rive.DataType.color) continue;
-      instance.color(property.name)?.value = color;
-      return;
+    final shades = {
+      'skinOne': color.value,
+      'SkinLight': color.skinLight,
+      'SkinDark': color.skinDark,
+    };
+    for (final MapEntry(key: name, value: shade) in shades.entries) {
+      final property = instance.color(name);
+      if (property == null) {
+        debugPrint('[player animation] ${viewModel.name} has no $name');
+        continue;
+      }
+      property.value = shade;
     }
-    debugPrint('[player animation] no colour property on ${viewModel.name}');
   }
 
   @override

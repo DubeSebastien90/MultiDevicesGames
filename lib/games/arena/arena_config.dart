@@ -29,6 +29,12 @@ class ArenaConfig {
   /// been given the difference back, and nobody's range has changed.
   static const double swordGrip = 0.85; // cm
 
+  /// How far to the fighter's right the hilt sits: the sword is in the right
+  /// hand, not held out of the middle of the chest. Measured square to the
+  /// facing, so the reach ahead is still [swordGrip] and the range below does
+  /// not move.
+  static const double swordHandSide = 0.3; // cm
+
   /// How far a blade can reach from the body's centre. Derived, never tuned:
   /// it is the geometry above, and it exists so nothing has to recompute it.
   static const double attackRange = swordGrip + swordLength;
@@ -99,20 +105,15 @@ class ArenaConfig {
   /// The blade's colour with its guard spent: plain grey.
   static const int swordColor = 0xFFA8ACB6;
 
-  /// How far the charged part of the blade is pulled towards its owner's own
-  /// colour. The rest of the way it stays steel.
-  ///
   /// The block cooldown is read off the blade rather than off a number in the
   /// corner. It is the one cooldown worth showing — an attack that is not
   /// ready simply does not come out, while a guard that is not ready gets
   /// somebody hit — and the sword is where a player is already looking.
   ///
-  /// In the player's colour rather than one fixed blue, because on a table of
-  /// six swords the glow is also *whose* sword: a green fighter's guard coming
-  /// back lights green, and nobody has to work out which blade they were
-  /// watching. Kept short of the colour itself so it still reads as metal.
-  static const double swordChargeTint = 0.62;
-
+  /// The charged part is in the player's colour rather than one fixed blue,
+  /// because on a table of six swords the glow is also *whose* sword: a green
+  /// fighter's guard coming back lights green, and nobody has to work out
+  /// which blade they were watching.
   /// How much of the charge is spent before the blade starts to glow. Below
   /// this it only changes colour; the glow is the part that says *ready*.
   static const double swordGlowFrom = 0.55;

@@ -111,8 +111,16 @@ class SubwaySkaterConfig {
   static const double skaterRadius = 0.85;
 
   /// The obstacle, along the corridor and across a lane.
-  static const double obstacleLength = 1.8;
+  ///
+  /// The length is the car's: long enough that, drawn in its own proportions,
+  /// the car fills [obstacleLaneFraction] of a lane on a phone-wide corridor.
+  /// It is also the hitbox, so the drawn bumpers are where a hit starts.
+  static const double obstacleLength = 3.2;
   static const double obstacleLaneFraction = 0.7;
+
+  /// How many cars there are to pick from — `car1.svg`, `car2.svg`. Picked by
+  /// the sim, so every phone draws the same one.
+  static const int carModels = 2;
 
   /// Where a skater stands on its own phone, measured from the top of the
   /// corridor — the edge obstacles arrive at — as a fraction of that phone.

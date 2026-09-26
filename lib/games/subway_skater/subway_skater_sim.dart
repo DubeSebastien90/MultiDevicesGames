@@ -104,16 +104,10 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
       ..addAll([
         for (var i = 0; i < SubwaySkaterConfig.obstaclePool; i++)
           _Obstacle(
-            EntityDescriptor(
-              id: 'block$i',
-              kind: 'obstacle',
-              props: {
-                'w': SubwaySkaterConfig.obstacleLength,
-                'h':
-                    SubwaySkaterConfig.laneHeight(board) *
-                    SubwaySkaterConfig.obstacleLaneFraction,
-              },
-            ),
+            'block$i',
+            height:
+                SubwaySkaterConfig.laneHeight(board) *
+                SubwaySkaterConfig.obstacleLaneFraction,
           ),
       ]);
 
@@ -211,10 +205,11 @@ class SubwaySkaterSim implements GameSim, PlayerPresence {
     for (final lane in blocked.take(count)) {
       final free = _obstacles.where((o) => !o.active);
       if (free.isEmpty) return;
-      free.first
-        ..active = true
-        ..lane = lane
-        ..x = startX;
+      free.first.launch(
+        lane: lane,
+        x: startX,
+        car: _random.nextInt(SubwaySkaterConfig.carModels),
+      );
     }
   }
 
@@ -715,15 +710,33 @@ class _Skater {
   int smashed = 0;
 }
 
+/// A car coming down a lane.
+///
+/// The descriptor is rebuilt on every launch, like [_Burst]'s, because which
+/// car it is lives in it: the platform sends props on spawn, and a pooled id
+/// coming back is a spawn, so every phone draws the same car for it.
 class _Obstacle {
-  _Obstacle(this.descriptor);
+  _Obstacle(this.id, {required this.height})
+    : descriptor = EntityDescriptor(id: id, kind: 'obstacle');
 
-  final EntityDescriptor descriptor;
-  String get id => descriptor.id;
+  final String id;
+  final double height;
+  EntityDescriptor descriptor;
 
   bool active = false;
   double x = 0;
   int lane = 0;
+
+  void launch({required int lane, required double x, required int car}) {
+    this.lane = lane;
+    this.x = x;
+    active = true;
+    descriptor = EntityDescriptor(
+      id: id,
+      kind: 'obstacle',
+      props: {'w': SubwaySkaterConfig.obstacleLength, 'h': height, 'car': car},
+    );
+  }
 }
 
 /// What is left of a block somebody ran through.

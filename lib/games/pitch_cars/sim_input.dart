@@ -28,7 +28,7 @@ extension _Input on PitchCarsSim {
     }
 
     car
-      ..setTransform(_preTurnPosition.clone(), car.angle)
+      ..setTransform(_preTurnPosition.clone(), _headingOf(pullBack))
       ..linearVelocity = Vector2.zero()
       ..angularVelocity = 0
       ..setAwake(true)
@@ -43,6 +43,22 @@ extension _Input on PitchCarsSim {
     // clear it too so a stale hit can't misread as freshly recent.
     _clearHitLedger();
   }
+
+  /// Turn the car being aimed to point where it will go, so the driver is
+  /// already looking down the shot before it is fired — and the launch below
+  /// does not snap them round. Only once the pull would really fire: inside
+  /// the dead zone the aim is not drawn, and neither is the turn.
+  void _faceTheShot(Body car) {
+    final pullBack = _preTurnPosition - _pull!;
+    if (pullBack.length < scale.maxPull * PitchCarsConfig.cancelPullFraction) {
+      return;
+    }
+    car.setTransform(car.position.clone(), _headingOf(pullBack));
+  }
+
+  /// The angle a shot along [shot] points at, in the convention the car and
+  /// its driver are drawn in: 0 is nose to +x.
+  double _headingOf(Vector2 shot) => math.atan2(shot.y, shot.x);
 
   void _clearHitLedger() {
     for (final id in _order) {

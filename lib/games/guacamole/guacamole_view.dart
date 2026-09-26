@@ -73,11 +73,35 @@ class GuacamoleView extends GameView {
       Rect.fromLTWH(view.left, view.top, view.width, view.height),
       _fill,
     );
-    _fill.color = const Color(GuacamoleConfig.colorPlayfield);
-    canvas.drawRect(
-      Rect.fromLTWH(board.left, board.top, board.width, board.height),
-      _fill,
+    final lawn = Rect.fromLTWH(
+      board.left,
+      board.top,
+      board.width,
+      board.height,
     );
+    _fill.color = const Color(GuacamoleConfig.colorPlayfield);
+    canvas.drawRect(lawn, _fill);
+
+    // Mown in stripes, laid from the world origin rather than from this
+    // screen's edge so they run unbroken from one phone to the next.
+    const stripe = 2.5;
+    final left = math.max(view.left, board.left);
+    final right = math.min(view.right, board.right);
+    canvas
+      ..save()
+      ..clipRect(lawn);
+    _fill.color = const Color(GuacamoleConfig.colorLawnStripe);
+    for (
+      var x = (left / (stripe * 2)).floorToDouble() * stripe * 2;
+      x < right;
+      x += stripe * 2
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(x, board.top, x + stripe, board.bottom),
+        _fill,
+      );
+    }
+    canvas.restore();
   }
 
   void _drawHole(Canvas canvas, RenderEntity e) {

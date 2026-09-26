@@ -71,9 +71,15 @@ class HotPotatoConfig {
 
   // ----------------------------------------------------------------- arms
 
-  /// Placeholders until the art lands: grey bars.
-  static const double armWidth = 1.5;
-  static const int colorArm = 0xFF8C919B;
+  /// How far past the edge of the screen an arm starts, in world units. The
+  /// arm is scaled to reach from there to the hand, so this also sets how big
+  /// the hands are drawn — and it has to be enough to keep the slanted cut at
+  /// the end of the forearm off the glass.
+  static const double shoulderOffscreen = 0.6;
+
+  /// Arm props: the phone it belongs to, and whether it is that player's left.
+  static const String propSeat = 'seat';
+  static const String propLeft = 'left';
 
   /// How far a hand bobs when it throws or catches.
   static const double handBob = 0.7;
@@ -120,6 +126,10 @@ class HotPotatoConfig {
   /// How long the kettle takes to hand over to the next phone. Long enough not
   /// to click, short enough not to be heard as a fade.
   static const Duration kettleHandover = Duration(milliseconds: 60);
+
+  /// How much of the fuse is gone when the potato stops looking calm and
+  /// starts looking alarmed — the second drawing takes over from here.
+  static const double excitedFrom = 0.5;
 
   static const int colorPotato = 0xFFD98A34;
   static const int colorHot = 0xFFFF2A12;

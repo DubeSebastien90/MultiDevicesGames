@@ -2,13 +2,18 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
+import '../../sdk/model/player.dart';
+import '../../sdk/model/player_color.dart';
+import '../../sdk/render/player_hand.dart';
 import '../../sdk/render/shape_view.dart';
+import 'hot_potato_art.dart';
 import 'hot_potato_config.dart';
 
-/// Hot Potato's look: grey arms juggling a potato that gets redder, spins
+/// Hot Potato's look: everybody's arms, in their colours, juggling a potato that gets redder, spins
 /// faster and smokes harder as the fuse burns down.
 ///
 /// Where the potato is, how high, how fast it spins — all of that arrives as
@@ -16,8 +21,19 @@ import 'hot_potato_config.dart';
 /// entity's props are sent once, so the colour, the swell, the glow and the
 /// smoke are all read here off the fuse in `sharedState`.
 class HotPotatoView extends ShapeView {
-  HotPotatoView({this.phoneId = ''})
-    : super(grid: false, playfield: const Color(0xFF141C33));
+  HotPotatoView({this.phoneId = '', super.roster = Roster.empty})
+    : super(grid: false, playfield: const Color(_cloth)) {
+    PlayerHand.preload([for (final p in roster.players) p.color]);
+    HotPotatoArt.preload();
+  }
+
+  /// A picnic table under a blue gingham cloth: light, and blue, so the
+  /// orange potato and the red of the heat are the warmest things on it.
+  static const _cloth = 0xFFF2F9FF;
+  static const _gingham = Color(0x66A9D6F2);
+
+  /// One square of the check, in world units.
+  static const _check = 1.4;
 
   /// This screen's phone, so the holder's screen can be the one that burns.
   final String phoneId;
@@ -89,6 +105,43 @@ class HotPotatoView extends ShapeView {
     _drawChunks(canvas);
   }
 
+  /// The cloth, with its check laid from the world origin rather than from
+  /// this screen's edge, so it runs unbroken from one phone to the next. Bands
+  /// one way and bands the other, both see-through: where they cross is
+  /// darker, which is what makes it gingham.
+  @override
+  void renderBackground(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    _fill.color = const Color(_cloth);
+    canvas.drawRect(
+      Rect.fromLTWH(view.left, view.top, view.width, view.height),
+      _fill,
+    );
+
+    _fill.color = _gingham;
+    const period = _check * 2;
+    for (
+      var x = (view.left / period).floorToDouble() * period;
+      x < view.right;
+      x += period
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(x, view.top, x + _check, view.bottom),
+        _fill,
+      );
+    }
+    for (
+      var y = (view.top / period).floorToDouble() * period;
+      y < view.bottom;
+      y += period
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(view.left, y, view.right, y + _check),
+        _fill,
+      );
+    }
+  }
+
   /// Fill with a gradient. The colour goes back to opaque first: a paint's
   /// colour still scales a shader's opacity, so whatever alpha the last puff
   /// of smoke left behind would otherwise fade the whole gradient with it.
@@ -143,25 +196,23 @@ class HotPotatoView extends ShapeView {
     _fill.shader = null;
   }
 
-  /// Placeholder arms: grey bars, until the art arrives.
+  /// An arm and hand in its player's colour, the palm on the hand end of the
+  /// entity. Somebody the roster does not know — a view built without one —
+  /// gets the grey the arms used to be.
   void _drawArm(Canvas canvas, RenderEntity arm) {
-    final w = arm.propDouble(ShapeProps.width);
-    final h = arm.propDouble(ShapeProps.height);
-    _fill.color = Color(
-      arm.propInt(ShapeProps.color, HotPotatoConfig.colorArm),
+    final length = arm.propDouble(ShapeProps.width);
+    final seat = arm.props[HotPotatoConfig.propSeat] as String?;
+    final color = roster.byPhone(seat ?? '')?.color ?? PlayerPalette.away;
+    PlayerHand.of(color).draw(
+      canvas,
+      Offset(
+        arm.x + math.cos(arm.angle) * length / 2,
+        arm.y + math.sin(arm.angle) * length / 2,
+      ),
+      angle: arm.angle,
+      length: length,
+      left: arm.props[HotPotatoConfig.propLeft] == true,
     );
-    canvas
-      ..save()
-      ..translate(arm.x, arm.y)
-      ..rotate(arm.angle)
-      ..drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset.zero, width: w, height: h),
-          Radius.circular(h * 0.35),
-        ),
-        _fill,
-      )
-      ..restore();
   }
 
   void _drawShadow(
@@ -223,6 +274,13 @@ class HotPotatoView extends ShapeView {
       ..translate(centre.dx, centre.dy)
       ..rotate(potato.angle);
 
+    final art = HotPotatoArt.of(excited: heat >= HotPotatoConfig.excitedFrom);
+    if (art != null) {
+      _drawPotatoArt(canvas, art, r, heat);
+      canvas.restore();
+      return;
+    }
+
     // Lumpy, not round — a circle spinning looks like it is standing still.
     final shape = Rect.fromCenter(
       center: Offset.zero,
@@ -262,6 +320,36 @@ class HotPotatoView extends ShapeView {
       );
     }
     canvas.restore();
+  }
+
+  /// The drawn potato, centred on the origin, as long as the oval it replaced
+  /// is wide.
+  ///
+  /// Reddened the way the oval was: multiplied towards the hot colour as the
+  /// fuse burns, so the drawing's own shading and face stay readable through
+  /// it rather than being painted over. Never all the way: at full red the
+  /// white of the face would go red with the rest, and the face is the point.
+  void _drawPotatoArt(Canvas canvas, PictureInfo art, double r, double heat) {
+    final scale = r * 2.4 / HotPotatoArt.length;
+    final tint = Color.lerp(
+      const Color(0xFFFFFFFF),
+      Color(HotPotatoConfig.colorHot),
+      0.85 * math.pow(heat, 1.2),
+    )!;
+    final tinted = heat > 0;
+    if (tinted) {
+      canvas.saveLayer(
+        Rect.fromCircle(center: Offset.zero, radius: r * 2),
+        Paint()..colorFilter = ColorFilter.mode(tint, BlendMode.modulate),
+      );
+    }
+    canvas
+      ..save()
+      ..scale(scale)
+      ..translate(-HotPotatoArt.centre.dx, -HotPotatoArt.centre.dy)
+      ..drawPicture(art.picture)
+      ..restore();
+    if (tinted) canvas.restore();
   }
 
   double _radius(double heat) =>
@@ -437,7 +525,7 @@ class HotPotatoView extends ShapeView {
       final t = p.age / p.life;
       // Hotter smoke is thicker and darker, and starts as a glowing ember.
       final smoke = Color.lerp(
-        const Color(0xFFD9D9D9),
+        const Color(0xFF9C9C9C),
         const Color(0xFF2E2A28),
         p.power,
       )!;
