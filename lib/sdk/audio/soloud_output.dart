@@ -39,6 +39,21 @@ Future<bool> ensureSoLoud() => _ready ??= () async {
 }();
 Future<bool>? _ready;
 
+/// Stops SoLoud's mixer before the process goes away.
+///
+/// Not optional on Windows: the mixer runs on its own native thread, and a
+/// window closed with that thread still alive leaves the process running with
+/// no window — holding `flutter_soloud_plugin.dll`, so the next build cannot
+/// overwrite it and fails at the install step.
+void shutdownSoLoud() {
+  final soloud = so.SoLoud.instance;
+  if (soloud.isInitialized) soloud.deinit();
+  _ready = null;
+  SoLoudOutput._loaded.clear();
+  SoLoudOutput._loading.clear();
+  SoLoudOutput._owners.clear();
+}
+
 class SoLoudOutput implements AudioOutput {
   SoLoudOutput();
 

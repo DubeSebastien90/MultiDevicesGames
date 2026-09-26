@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -87,9 +88,19 @@ class MultiscreenApp extends StatefulWidget {
 class _MultiscreenAppState extends State<MultiscreenApp> {
   final _controller = AppController();
 
+  /// Shuts the audio engine down when the window is closed. Without it the
+  /// process outlives its window on Windows — see [shutdownSoLoud].
+  late final _exitListener = AppLifecycleListener(
+    onExitRequested: () async {
+      shutdownSoLoud();
+      return AppExitResponse.exit;
+    },
+  );
+
   @override
   void initState() {
     super.initState();
+    _exitListener;
     // Read this device's own name off storage now rather than when somebody
     // taps Join, so rejoining a game never waits on a disk read.
     _controller.warmUp();
@@ -101,6 +112,7 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
 
   @override
   void dispose() {
+    _exitListener.dispose();
     _controller.dispose();
     super.dispose();
   }
