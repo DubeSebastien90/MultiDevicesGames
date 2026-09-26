@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../sdk/audio/sound_cue.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/physics/play_area.dart';
@@ -139,6 +140,7 @@ class DodgeballSim implements GameSim {
           p.dashAngle = _local(p).up;
           p.dashTimeLeft = DodgeballConfig.dashDuration;
           p.invincibleLeft = DodgeballConfig.dashInvincibility;
+          _playOn(p.phoneId, DodgeballConfig.woosh);
         }
       }
     }
@@ -323,6 +325,12 @@ class DodgeballSim implements GameSim {
       // with its momentum intact.
       final br = DodgeballConfig.ballRadius;
       final hit = _area.bounce(ball.x, ball.y, ball.vx, ball.vy, br);
+      if (hit.vx != ball.vx || hit.vy != ball.vy) {
+        // Nearest rather than exact: a ball against a wall can have its middle
+        // a hair past the edge of the glass it is bouncing on.
+        final phone = context.nearestPhone(hit.x, hit.y);
+        if (phone != null) _playOn(phone, DodgeballConfig.boing);
+      }
       ball
         ..x = hit.x
         ..y = hit.y
@@ -349,6 +357,9 @@ class DodgeballSim implements GameSim {
           p.deadX = p.x;
           p.deadY = p.y;
           fell.add(p.phoneId);
+          // Out, in their own voice, on their own phone.
+          final out = context.roster.byPhone(p.phoneId);
+          if (out != null) context.audio.playOnPhone(out, out.soundSad);
           p.moveAngle = null;
           p.moveScale = 0;
           p.dashTimeLeft = 0;
@@ -404,6 +415,12 @@ class DodgeballSim implements GameSim {
     );
   }
 
+  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
+  void _playOn(String phoneId, SoundCue cue) {
+    final player = context.roster.byPhone(phoneId);
+    if (player != null) context.audio.playOnPhone(player, cue);
+  }
+
   void _tryDash(_Player p) {
     if (!p.alive) return;
     if (p.dashCooldownLeft > 0) return;
@@ -416,6 +433,7 @@ class DodgeballSim implements GameSim {
     // still. Latched here and never read from the finger again — a dash is a
     // committed burst, not a thing you steer.
     p.dashAngle = p.moveAngle ?? p.facingAngle;
+    _playOn(p.phoneId, DodgeballConfig.woosh);
   }
 
   /// Decide the round, but do not end it yet.

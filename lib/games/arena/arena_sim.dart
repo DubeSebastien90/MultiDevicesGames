@@ -385,6 +385,9 @@ class ArenaSim implements GameSim {
         target.touchDown = false;
         target.blocking = false;
         _stopDaze(target);
+        // Out, in their own voice, on their own phone.
+        final fallen = context.roster.byPhone(target.phoneId);
+        if (fallen != null) context.audio.playOnPhone(fallen, fallen.soundSad);
         context.scores.award(attacker.phoneId, ArenaConfig.pointsPerKill);
       } else {
         // Only while they are still standing. A fatal blow has a burst of its

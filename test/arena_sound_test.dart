@@ -184,6 +184,28 @@ void main() {
       ]);
     },
   );
+
+  test('a fighter cut down hears their own sad voice, once', () {
+    final h = heard(2);
+    sword.placeSecond(h.sim, 0, ArenaConfig.attackRange * 0.6);
+    final them = sword.positionOf(h.sim, 1);
+    sword.faceTowards(h.sim, 'p1', 0, them.x, them.y);
+    h.audio.plays.clear();
+
+    for (var i = 0; i < ArenaConfig.maxLives; i++) {
+      sword.slash(h.sim, 'p1', 0);
+      sword.run(
+        h.sim,
+        ArenaConfig.attackCooldown + ArenaConfig.hitInvincibility,
+      );
+    }
+    expect(h.sim.sharedState['alive_p1'], isFalse);
+
+    final sad = Player(phoneId: 'p2', color: PlayerPalette.all[1]).soundSad;
+    final sads = h.audio.plays.where((p) => p.cue == sad).toList();
+    expect(sads, hasLength(1));
+    expect(sads.single.phoneId, 'p2');
+  });
 }
 
 class _Play {

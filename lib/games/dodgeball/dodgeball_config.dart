@@ -1,3 +1,5 @@
+import '../../sdk/audio/sound_cue.dart';
+
 /// Tunables for the Dodgeball game.
 class DodgeballConfig {
   const DodgeballConfig._();
@@ -41,6 +43,15 @@ class DodgeballConfig {
 
   /// The size of a bit, as a fraction of the body it came out of.
   static const double deathParticleScale = 0.22;
+
+  // -- sound ------------------------------------------------------------------
+  //
+  // Each plays on one phone only: the dash on the dasher's, the bounce on the
+  // screen the ball bounced on — so a bounce is heard from where it happened.
+  // Leveled copies of audio-src/originals/games/dodgeball/.
+
+  static const woosh = SoundCue.asset('assets/games/dodgeball/woosh.wav');
+  static const boing = SoundCue.asset('assets/games/dodgeball/boing.wav');
 
   // -- getting started --------------------------------------------------------
   /// The three lines of the briefing, and how long each one holds the screen.
