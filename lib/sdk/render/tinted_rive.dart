@@ -27,6 +27,11 @@ class TintedRive {
   final _started = <int>{};
   final _artboards = <int, rive.Artboard>{};
 
+  /// Everything bound to an artboard in [_artboards], held for as long as it
+  /// is. Each is a native object with a finalizer: left for the GC, it frees
+  /// what the artboard still draws with, and the next draw reads freed memory.
+  final _keepAlive = <Object>[];
+
   /// The artboard in [color], or null until it has loaded — and for good on a
   /// platform without Rive, or if the file will not parse. The first ask
   /// starts the load; nothing awaits it.
@@ -53,8 +58,14 @@ class TintedRive {
     // A fresh renderer each time, so the modulation starts from full and does
     // not accumulate over a fade.
     final renderer = rive.Renderer.make(canvas);
-    if (opacity < 1) renderer.modulateOpacity(opacity);
-    artboard.draw(renderer);
+    try {
+      if (opacity < 1) renderer.modulateOpacity(opacity);
+      artboard.draw(renderer);
+    } finally {
+      // Now, not whenever the GC gets round to it: one of these is made every
+      // frame.
+      renderer.dispose();
+    }
   }
 
   Future<void> _load(Color color, int key) async {
@@ -64,6 +75,7 @@ class TintedRive {
       final artboard = file.defaultArtboard(frameOrigin: true);
       if (artboard == null) throw StateError('no artboard');
       final machine = artboard.defaultStateMachine();
+      if (machine != null) _keepAlive.add(machine);
       _bind(file, artboard, machine, color);
       // Once: these are stills. Advancing by zero applies the binding, and
       // whatever the first state sets.
@@ -89,6 +101,7 @@ class TintedRive {
       );
       return;
     }
+    _keepAlive.addAll([viewModel, instance]);
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
     final colour = instance.color(property);

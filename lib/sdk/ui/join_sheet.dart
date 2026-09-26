@@ -11,6 +11,7 @@ import '../monetization/premium_status.dart';
 import '../net/discovery.dart';
 import '../net/discovery_stack.dart';
 import '../net/host_address.dart';
+import '../platform_config.dart';
 import 'lobby_flow_style.dart';
 import 'scan_sheet.dart';
 import 'settings_screen.dart';
@@ -207,7 +208,7 @@ class _JoinSheetState extends State<JoinSheet> {
                     ],
                   ),
                 ),
-                if (qrScanSupported || kDebugMode)
+                if (qrScanSupported || PlatformConfig.showDebugUi)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                     child: Row(
@@ -225,9 +226,9 @@ class _JoinSheetState extends State<JoinSheet> {
                               ),
                             ),
                           ),
-                        if (qrScanSupported && kDebugMode)
+                        if (qrScanSupported && PlatformConfig.showDebugUi)
                           const SizedBox(width: 14),
-                        if (kDebugMode)
+                        if (PlatformConfig.showDebugUi)
                           Expanded(
                             child: LobbyPillButton.big(
                               label: 'Type Address',

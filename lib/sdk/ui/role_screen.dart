@@ -8,6 +8,7 @@ import '../model/age_band.dart';
 import '../model/player_name.dart';
 
 import '../app_controller.dart';
+import '../platform_config.dart';
 import '../audio/ui_audio.dart';
 import '../model/device_metrics.dart';
 import '../model/name_drop_status.dart';
@@ -313,7 +314,7 @@ class _RoleScreenState extends State<RoleScreen> {
                         ..._banners(),
                         const SizedBox(height: 26),
                         _actions(),
-                        if (kDebugMode) _debugReload(),
+                        if (PlatformConfig.showDebugUi) _debugReload(),
                       ],
                     ),
                   ),

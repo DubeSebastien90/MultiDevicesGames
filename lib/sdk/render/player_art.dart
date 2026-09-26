@@ -302,6 +302,11 @@ class _TopdownArt implements PlayerArt {
   rive.Artboard? _artboard;
   bool _started = false;
 
+  /// Everything bound to an artboard here, held for as long as the artboard
+  /// is. Each is a native object with a finalizer: left for the GC, it frees
+  /// what the artboard still draws with, and the next draw reads freed memory.
+  final _keepAlive = <Object>[];
+
   @override
   bool get isLoaded => _artboard != null || _fallback.isLoaded;
 
@@ -324,6 +329,7 @@ class _TopdownArt implements PlayerArt {
       final artboard = file.defaultArtboard(frameOrigin: true);
       if (artboard == null) throw StateError('no artboard');
       final machine = artboard.defaultStateMachine();
+      if (machine != null) _keepAlive.add(machine);
       _bind(file, artboard, machine);
       // Once, and only ever once: this is a still. Advancing by zero is what
       // applies the binding, and never advancing again is what keeps the
@@ -352,6 +358,7 @@ class _TopdownArt implements PlayerArt {
     }
     // Each artboard binds its *own* instance: a shared one would repaint every
     // character on the table the colour of whoever was coloured last.
+    _keepAlive.addAll([viewModel, instance]);
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
     const skins = {
@@ -418,8 +425,14 @@ class _TopdownArt implements PlayerArt {
     // A fresh renderer each frame, so the modulation starts from full and does
     // not accumulate over a fade.
     final renderer = rive.Renderer.make(canvas);
-    if (opacity < 1) renderer.modulateOpacity(opacity);
-    artboard.draw(renderer);
+    try {
+      if (opacity < 1) renderer.modulateOpacity(opacity);
+      artboard.draw(renderer);
+    } finally {
+      // Now, not whenever the GC gets round to it: one of these is made every
+      // frame.
+      renderer.dispose();
+    }
     canvas.restore();
   }
 

@@ -15,7 +15,19 @@ class PlatformConfig {
   /// Off in a release build. Those controls are for whoever is working on the
   /// platform, and a table of people playing should see the game and nothing
   /// else — a stray tap on Leave mid-round is not a feature.
-  static const bool showDevChrome = !kReleaseMode;
+  static const bool showDevChrome = !kReleaseMode && !screenshotMode;
+
+  /// Whether this build is for App Store screenshots.
+  ///
+  /// `--dart-define=SCREENSHOT_MODE=true` sets this. The simulator only runs
+  /// debug builds, so this is how a debug build gets the release UI: no dev
+  /// chrome, no debug-only buttons or banners. Premium is separate — pair it
+  /// with `LOCK_PREMIUM=true` for the locked look.
+  static const bool screenshotMode = bool.fromEnvironment('SCREENSHOT_MODE');
+
+  /// Whether to show UI that exists only for whoever is developing the app.
+  /// [kDebugMode], minus [screenshotMode].
+  static const bool showDebugUi = kDebugMode && !screenshotMode;
 
   /// World units per millimetre, shared by every phone and every game.
   ///

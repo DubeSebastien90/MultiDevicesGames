@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../app_controller.dart';
+import '../platform_config.dart';
 import '../audio/ui_audio.dart';
 import '../client/client_session.dart';
 import '../host/host_session.dart';
@@ -162,7 +163,7 @@ class LobbyView extends StatelessWidget {
                     // takes the whole screen on every phone. So nothing a
                     // player needs is lost by hiding this, and in release they
                     // simply land back in the lobby.
-                    if (kDebugMode && host.planError != null) ...[
+                    if (PlatformConfig.showDebugUi && host.planError != null) ...[
                       const SizedBox(height: 16),
                       _PlanErrorBanner(
                         message: host.planError!,
@@ -422,7 +423,7 @@ class _HostPanel extends StatelessWidget {
   /// fallback. It is here because the join sheet's own Type Address button is,
   /// and that button needs something to read off.
   List<Widget> _debugAddress() {
-    if (!kDebugMode) return const [];
+    if (!PlatformConfig.showDebugUi) return const [];
     return [
       const SizedBox(height: 4),
       SelectableText(

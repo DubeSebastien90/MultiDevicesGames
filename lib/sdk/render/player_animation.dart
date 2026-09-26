@@ -175,6 +175,11 @@ class _RiveAnimations implements PlayerAnimations {
   final rive.File _file;
   final _characters = <String, PlayerAnimation>{};
 
+  /// Everything bound to an artboard here, held for as long as the artboard
+  /// is. Each is a native object with a finalizer: left for the GC, it frees
+  /// what the artboard still draws with, and the next draw reads freed memory.
+  final _keepAlive = <Object>[];
+
   @override
   PlayerAnimation of(PlayerColor color) =>
       _characters[color.id] ??= _make(color) ?? _ShapeAnimation(color);
@@ -221,6 +226,7 @@ class _RiveAnimations implements PlayerAnimations {
           'characters keep the colour they were drawn');
       return;
     }
+    _keepAlive.addAll([viewModel, instance]);
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
     final shades = {
@@ -241,6 +247,7 @@ class _RiveAnimations implements PlayerAnimations {
   @override
   void dispose() {
     _characters.clear();
+    _keepAlive.clear();
     _file.dispose();
   }
 }
@@ -298,8 +305,14 @@ class _RiveAnimation implements PlayerAnimation {
     // A fresh renderer each frame, so the modulation starts from full and does
     // not accumulate over a fade.
     final renderer = rive.Renderer.make(canvas);
-    if (opacity < 1) renderer.modulateOpacity(opacity);
-    artboard.draw(renderer);
+    try {
+      if (opacity < 1) renderer.modulateOpacity(opacity);
+      artboard.draw(renderer);
+    } finally {
+      // Now, not whenever the GC gets round to it: one of these is made every
+      // frame.
+      renderer.dispose();
+    }
     canvas.restore();
   }
 }
