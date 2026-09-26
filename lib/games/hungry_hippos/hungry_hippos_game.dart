@@ -19,7 +19,7 @@ class HungryHipposGame implements MultiscreenGame {
   @override
   GameManifest get manifest => const GameManifest(
     id: 'hungryhippos',
-    title: 'Hungry Hippos',
+    title: 'Marbles Madness',
     tagline: 'Marbles in the middle. Tap to lunge. No manners required.',
     goal: 'Swallow more marbles than you have any right to.',
     // Two, four or six, and nothing between: each is a different arrangement
