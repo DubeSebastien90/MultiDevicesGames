@@ -160,6 +160,9 @@ class PitchCarsConfig {
   /// the cancel zone, which fires nothing.
   static const shot = SoundCue.asset('assets/games/pitch_cars/shot.wav');
 
+  /// A car going over the edge, on the phone it went over from.
+  static const falling = SoundCue.asset('assets/games/pitch_cars/falling.wav');
+
   /// A car hitting a wall or another car, on the phone under the impact.
   static const crash = SoundCue.asset('assets/games/pitch_cars/crash.wav');
 
@@ -167,4 +170,13 @@ class PitchCarsConfig {
   /// multiple of the rest speed. Below it is a car nudging a kerb or settling
   /// against a neighbour, and a crash sound for that would be constant.
   static const double crashSpeedFactor = 5.0;
+
+  /// Well under the rest: it is the one sound here with a hard attack, and at
+  /// full level it drowns everything else on that phone.
+  static const double crashVolume = 0.35;
+
+  /// After a crash, how long before another can sound. One impact is often a
+  /// few contacts in quick succession — a car glancing off a kerb touches it,
+  /// leaves, and touches again — and each would otherwise be its own bang.
+  static const double crashCooldownSeconds = 0.1;
 }

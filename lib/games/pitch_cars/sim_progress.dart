@@ -89,6 +89,12 @@ extension _Progress on PitchCarsSim {
     // not clip a rival still on the road, and should not be stopped by the
     // kerb it has already cleared.
     _fixtureOf[id]?.setSensor(true);
+
+    // Nearest rather than exact: by the time it counts as off the road, the
+    // car can already be past the edge of the glass.
+    final pos = carOf(id).position;
+    final phone = context.nearestPhone(pos.x, pos.y);
+    if (phone != null) _playOn(phone, PitchCarsConfig.falling);
   }
 
   void _land(String id) {

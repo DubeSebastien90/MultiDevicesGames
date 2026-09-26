@@ -95,6 +95,11 @@ class PitchCarsSim extends Forge2DGameSim {
   /// The hold sound of the aim being drawn, so the release can cut it short.
   SoundHandle? _holdSound;
 
+  /// Seconds since the last crash sounded — see
+  /// [PitchCarsConfig.crashCooldownSeconds]. Starts past it, so the first one
+  /// always plays.
+  double _sinceCrash = PitchCarsConfig.crashCooldownSeconds;
+
   /// Where an *off-car* aim is being drawn from, in world coordinates: the
   /// pull is the finger's displacement from here, added to [_preTurnPosition],
   /// which is what lets a drag that began nowhere near the car still aim it.
@@ -164,17 +169,20 @@ class PitchCarsSim extends Forge2DGameSim {
   // -- sound ------------------------------------------------------------------
 
   /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
-  SoundHandle? _playOn(String phoneId, SoundCue cue) {
+  SoundHandle? _playOn(String phoneId, SoundCue cue, {double volume = 1.0}) {
     final player = context.roster.byPhone(phoneId);
     if (player == null) return null;
-    return context.audio.playOnPhone(player, cue);
+    return context.audio.playOnPhone(player, cue, volume: volume);
   }
 
   /// A crash, on the phone under [x], [y] — or the nearest one, since an
   /// impact at the very edge of the glass can be a hair past it.
   void _crashAt(double x, double y) {
+    if (_sinceCrash < PitchCarsConfig.crashCooldownSeconds) return;
     final phone = context.nearestPhone(x, y);
-    if (phone != null) _playOn(phone, PitchCarsConfig.crash);
+    if (phone == null) return;
+    _sinceCrash = 0;
+    _playOn(phone, PitchCarsConfig.crash, volume: PitchCarsConfig.crashVolume);
   }
 
   void _stopHold() {
@@ -186,6 +194,8 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   void step(double dt) {
+    // Before the physics: that is where contacts, and so crashes, happen.
+    _sinceCrash += dt;
     super.step(dt);
     if (_roundOver) {
       if (!_awarded) {
@@ -322,6 +332,7 @@ class PitchCarsSim extends Forge2DGameSim {
     _currentIndex = 0;
     _draggingPhoneId = null;
     _holdSound = null;
+    _sinceCrash = PitchCarsConfig.crashCooldownSeconds;
     _dragOrigin = null;
     _pull = null;
     _moving = false;
