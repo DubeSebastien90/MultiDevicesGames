@@ -49,6 +49,21 @@ heard constantly. `gen_hold_steps.py` and `gen_boup_variants.py` normalise to
 their target themselves (`TARGET_DB` at the top of each), peak-limited at
 −1 dBFS.
 
+## Game sounds
+
+A game's own sounds go through the same pass, by script:
+
+1. Put the untouched export in `originals/games/<game id>/` (wav, mp3, flac
+   or ogg). The id is the one in the game's `*_game.dart` manifest.
+2. From the repo root: `python audio-src/normalise_game_sounds.py <game id>`
+   (needs `pip install miniaudio`; no argument does every game).
+3. The leveled mono wav lands in `assets/games/<game id>/`, at −11 dBFS on the
+   loudest 50 ms — the voices' band. Change `TARGET_DB` in the script for a
+   sound that should sit elsewhere.
+
+Never drop a file straight into `assets/games/`: it would skip the pass, and
+the next run of the script would not know it exists.
+
 ## Re-exporting
 
 Export from Audacity into `originals/`, then re-run the processing pass — the

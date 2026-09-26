@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../sdk/audio/sound_cue.dart';
+import '../../sdk/audio/tone.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/render/shape_view.dart';
@@ -110,6 +112,10 @@ class HotPotatoSim implements GameSim {
   /// Swipes in progress, by phone. A pass is a down and an up far enough apart.
   final _swipeStart = <String, _Point>{};
 
+  /// The kettle tone playing now, and on which phone.
+  SoundHandle _kettle = SoundHandle.none;
+  String? _kettlePhone;
+
   String get holder => _order[_holderIndex];
 
   /// A throw is queued and goes at the next catch.
@@ -205,19 +211,14 @@ class HotPotatoSim implements GameSim {
       return;
     }
 
-    _fuseLeft -= dt;
-    if (_fuseLeft <= 0) {
-      _fuseLeft = 0;
-      _exploded = true;
-    }
+    _fuseLeft = math.max(0, _fuseLeft - dt);
 
-    // Award once, here rather than in `outcome` — that getter is polled more
-    // than once a tick, and points must not be charged twice.
-    if (_exploded) {
-      if (!_awarded) {
-        _awarded = true;
-        _payOut();
-      }
+    // Out of fuse in somebody's hands: it goes now. Out of fuse mid-throw: it
+    // does not — nobody should lose to a potato that went off in the air
+    // between two phones. It keeps flying, and goes off the instant it lands
+    // in the catcher's hand (see [_landed]).
+    if (_fuseLeft == 0 && !_flying) {
+      _explode();
       return;
     }
 
@@ -231,7 +232,82 @@ class HotPotatoSim implements GameSim {
     } else {
       _stepJuggle(dt, u);
     }
+    _updateKettle(u);
   }
+
+  /// The bang, wherever the potato is sitting — always in a hand.
+  void _explode() {
+    _exploded = true;
+    // The whistle stops dead: that is what makes the bang land.
+    context.audio.stopSound(_kettle);
+    _kettle = SoundHandle.none;
+    _kettlePhone = null;
+    _playHere(HotPotatoConfig.explosion);
+
+    // Award once, here rather than in `outcome` — that getter is polled more
+    // than once a tick, and points must not be charged twice.
+    if (!_awarded) {
+      _awarded = true;
+      _payOut();
+    }
+  }
+
+  // ----------------------------------------------------------------- sound
+
+  /// The phone whose screen the potato is over, for the one-off sounds. In a
+  /// gap between screens it falls back to the holder — though every one-off
+  /// sound happens at a hand, which is always on a screen.
+  String get _phoneUnderPotato {
+    final at = _drawnAt;
+    return context.phoneAt(at.x, at.y) ?? holder;
+  }
+
+  /// [cue], once, on the phone the potato is over. Silence if that phone has
+  /// nobody seated at it.
+  void _playHere(SoundCue cue) {
+    final player = context.roster.byPhone(_phoneUnderPotato);
+    if (player != null) context.audio.playOnPhone(player, cue);
+  }
+
+  /// Keeps the kettle on the holder's phone, and only while they hold it.
+  ///
+  /// It glides on its own — the phone moves the pitch every frame — so the
+  /// only thing to do here is start and stop it: silent from the throw to the
+  /// catch, then picked up on the catcher's phone at the pitch the fuse has
+  /// reached by then.
+  void _updateKettle(double u) {
+    final phone = _flying ? null : holder;
+    if (phone == _kettlePhone) return;
+
+    context.audio.stopSound(_kettle, fade: HotPotatoConfig.kettleHandover);
+    _kettle = SoundHandle.none;
+    _kettlePhone = phone;
+    if (phone == null) return;
+    final player = context.roster.byPhone(phone);
+    if (player == null) return;
+    _kettle = context.audio.playToneOnPhone(player, kettleFrom(u, _fuseLeft));
+  }
+
+  /// The kettle from fuse progress [u] to the bang, [secondsLeft] away.
+  ///
+  /// Exponential in pitch, the same curve [Tone] glides along, so a kettle
+  /// restarted halfway on another phone lands exactly on the one it replaced.
+  static Tone kettleFrom(double u, double secondsLeft) => Tone(
+    fromHz:
+        HotPotatoConfig.kettleLowHz *
+        math.pow(
+          HotPotatoConfig.kettleHighHz / HotPotatoConfig.kettleLowHz,
+          u.clamp(0.0, 1.0),
+        ),
+    toHz: HotPotatoConfig.kettleHighHz,
+    glide: Duration(milliseconds: (secondsLeft * 1000).round()),
+    volume: _lerp(
+      HotPotatoConfig.kettleVolumeCalm,
+      HotPotatoConfig.kettleVolumeFrantic,
+      u,
+    ),
+    toVolume: HotPotatoConfig.kettleVolumeFrantic,
+  );
 
   void _stepJuggle(double dt, double u) {
     final seat = _seats[_holderIndex];
@@ -248,7 +324,7 @@ class HotPotatoSim implements GameSim {
       _hand = 1 - _hand;
       _ground = seat.hands[_hand];
       _height = 0;
-      if (_pendingStep != 0) _throw();
+      _landed();
       return;
     }
 
@@ -258,6 +334,24 @@ class HotPotatoSim implements GameSim {
     _height =
         math.sin(math.pi * _hopT) *
         _lerp(HotPotatoConfig.hopArcCalm, HotPotatoConfig.hopArcFrantic, u);
+  }
+
+  /// It has just touched a hand — a hop, or a catch. Out it goes if a swipe is
+  /// waiting, with a woosh; otherwise it stays, with a boing. Either way the
+  /// sound comes from the phone it landed on, before [_throw] moves the holder.
+  void _landed() {
+    // Caught after the fuse ran out in the air: it goes off in this hand, and
+    // this player is the one holding it.
+    if (_fuseLeft == 0) {
+      _explode();
+      return;
+    }
+    if (_pendingStep != 0) {
+      _playHere(HotPotatoConfig.woosh);
+      _throw();
+    } else {
+      _playHere(HotPotatoConfig.boing);
+    }
   }
 
   /// Off the hand it just landed in, toward the nearer hand of a neighbour.
@@ -287,7 +381,7 @@ class HotPotatoSim implements GameSim {
       _ground = _throwTo;
       _height = 0;
       _hopT = 0;
-      if (_pendingStep != 0) _throw();
+      _landed();
       return;
     }
 
@@ -323,6 +417,10 @@ class HotPotatoSim implements GameSim {
     _caught = const {};
     _sinceBlast = 0;
     _swipeStart.clear();
+    // The platform has already stopped every sound of the last round; only
+    // the bookkeeping is left, so the first step starts the kettle afresh.
+    _kettle = SoundHandle.none;
+    _kettlePhone = null;
     _pendingStep = 0;
     _flying = false;
     _spin = 0;

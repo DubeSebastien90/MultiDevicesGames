@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../audio/audio_engine.dart';
 import '../audio/audio_output.dart';
+import '../audio/tone_output.dart';
 import '../audio/sounds.dart';
 import '../layout/board_links.dart';
 import '../model/name_drop_status.dart';
@@ -203,12 +204,13 @@ class ClientSession extends ChangeNotifier {
     PlayerColor? preferredColor,
     this.onColorChosen,
     AudioOutput? audioOutput,
+    ToneOutput? toneOutput,
   }) : _transport = transport,
        _metrics = metrics,
        _joinCode = joinCode,
        _deviceId = deviceId,
        _preferredColor = preferredColor,
-       audio = AudioEngine(output: audioOutput);
+       audio = AudioEngine(output: audioOutput, tones: toneOutput);
 
   final Transport _transport;
   DeviceMetrics _metrics;

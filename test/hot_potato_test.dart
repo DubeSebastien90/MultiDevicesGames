@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_config.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_sim.dart';
+import 'package:multiscreen_slingshot/sdk/audio/game_audio.dart';
+import 'package:multiscreen_slingshot/sdk/audio/sound_cue.dart';
+import 'package:multiscreen_slingshot/sdk/audio/tone.dart';
 import 'package:multiscreen_slingshot/sdk/contract/entity.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/contract/view.dart';
@@ -14,6 +17,8 @@ import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
 import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
+import 'package:multiscreen_slingshot/sdk/model/player.dart';
+import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
@@ -819,4 +824,256 @@ void main() {
       closeTo(HotPotatoConfig.fuseSeconds, 1e-9),
     );
   });
+
+  group('sound', () {
+    ({HotPotatoSim sim, BoardLayout board, _HeardAudio audio}) heard(
+      int count,
+    ) {
+      final lobby = LobbyInfo([
+        for (var i = 0; i < count; i++) phone('p${i + 1}'),
+      ]);
+      final scores = Scoreboard();
+      for (final p in lobby.phones) {
+        scores.register(p.phoneId, p.label);
+      }
+      const game = HotPotatoGame();
+      final board = const BoardCompiler().compile(game.planBoard(lobby), lobby);
+      final audio = _HeardAudio();
+      final context = BoardContext(
+        board: board.board,
+        coverage: board.coverage,
+        scores: scores,
+        slices: board.slices,
+        roster: Roster([
+          for (var i = 0; i < count; i++)
+            Player(phoneId: 'p${i + 1}', color: PlayerPalette.all[i]),
+        ]),
+        audio: audio,
+      );
+      final sim = HotPotatoSim(context, random: math.Random(4));
+      scores.beginRound();
+      return (sim: sim, board: board, audio: audio);
+    }
+
+    void run(HotPotatoSim sim, double seconds) {
+      for (var i = 0; i < (seconds * PlatformConfig.simHz).round(); i++) {
+        sim.step(1 / PlatformConfig.simHz);
+      }
+    }
+
+    test('the kettle is one tone, gliding low to high over the whole fuse, '
+        'on the holder\'s phone', () {
+      final h = heard(4);
+      run(h.sim, 0.02);
+
+      final kettle = h.audio.tones.single;
+      expect(kettle.phoneId, h.sim.holder);
+      expect(kettle.tone.fromHz, closeTo(HotPotatoConfig.kettleLowHz, 2));
+      expect(kettle.tone.toHz, HotPotatoConfig.kettleHighHz);
+      expect(
+        kettle.tone.glide.inMilliseconds,
+        closeTo(HotPotatoConfig.fuseSeconds * 1000, 50),
+        reason: 'it should reach the top exactly at the bang',
+      );
+      expect(kettle.tone.toVolume, greaterThan(kettle.tone.volume));
+    });
+
+    test('left on one phone, the kettle is never restarted', () {
+      final h = heard(3);
+      run(h.sim, 5);
+      expect(h.audio.tones, hasLength(1), reason: 'the phone glides it');
+    });
+
+    test('left alone, it boings in the holder\'s hands and nowhere else', () {
+      final h = heard(4);
+      run(h.sim, 2);
+
+      final boings = h.audio.plays.where((p) => p.cue == HotPotatoConfig.boing);
+      expect(boings.length, greaterThan(2));
+      expect(boings.every((p) => p.phoneId == h.sim.holder), isTrue);
+      expect(
+        h.audio.plays.where((p) => p.cue == HotPotatoConfig.woosh),
+        isEmpty,
+      );
+    });
+
+    test('a pass wooshes from the thrower, then boings at the catcher', () {
+      final h = heard(4);
+      final from = h.sim.holder;
+      pass(h.sim, h.board, from, up: true);
+      final to = h.sim.holder;
+      run(h.sim, 1);
+
+      final hits = [
+        for (final p in h.audio.plays)
+          if (p.cue == HotPotatoConfig.woosh || p.cue == HotPotatoConfig.boing)
+            p,
+      ];
+      final woosh = hits.indexWhere((p) => p.cue == HotPotatoConfig.woosh);
+      expect(hits[woosh].phoneId, from);
+      expect(hits[woosh + 1].cue, HotPotatoConfig.boing);
+      expect(hits[woosh + 1].phoneId, to, reason: 'the catch is a landing');
+    });
+
+    test('the kettle is the holder\'s alone: silent in the air, back on the '
+        'catcher\'s phone', () {
+      final h = heard(4);
+      final from = h.sim.holder;
+      run(h.sim, 0.02);
+      // [pass] stops on the throw itself: the potato has just left.
+      pass(h.sim, h.board, from, up: true);
+      final to = h.sim.holder;
+
+      final thrower = h.audio.tones.single;
+      expect(thrower.phoneId, from);
+      expect(
+        h.audio.stopped,
+        contains(thrower.handle),
+        reason: 'the throw silences the thrower',
+      );
+
+      run(h.sim, 1); // Well past the catch.
+      final kettles = h.audio.tones;
+      expect(kettles, hasLength(2), reason: 'nothing plays while it flies');
+      expect(kettles.last.phoneId, to);
+      expect(h.audio.stopped, isNot(contains(kettles.last.handle)));
+
+      // The catcher picks the glide up where the fuse has got to: the same
+      // curve, reaching the same top at the same moment.
+      final first = kettles.first.tone;
+      final last = kettles.last.tone;
+      final handoverMs = first.glide.inMilliseconds - last.glide.inMilliseconds;
+      expect(last.fromHz, closeTo(first.hzAt(handoverMs.toDouble()), 1));
+      expect(last.toHz, first.toHz);
+    });
+
+    test('a fuse that runs out mid-throw waits for the catch', () {
+      final h = heard(4);
+      run(h.sim, HotPotatoConfig.fuseSeconds - 1.2);
+
+      // Pass it on and on through the last second: every catcher swipes while
+      // it is still coming, so it goes straight back out, and it is in the air
+      // almost the whole time — including when the fuse runs out.
+      var waitedInTheAir = false;
+      for (var i = 0; i < PlatformConfig.simHz * 3; i++) {
+        if (!h.sim.passPending) {
+          swipeAlongScreen(h.sim, h.board, h.sim.holder, up: true);
+        }
+        h.sim.step(1 / PlatformConfig.simHz);
+        if (h.sim.sharedState['exploded'] == true) break;
+        if (h.sim.sharedState['secondsLeft'] == 0) waitedInTheAir = true;
+      }
+
+      expect(waitedInTheAir, isTrue, reason: 'it went off in the air');
+      expect(h.sim.sharedState['exploded'], isTrue);
+
+      // It went off on landing, in the catcher's hand: on their phone, and
+      // theirs is the loss.
+      final bang = h.audio.plays.last;
+      expect(bang.cue, HotPotatoConfig.explosion);
+      expect(bang.phoneId, h.sim.holder);
+      final landings = h.audio.plays
+          .where(
+            (p) =>
+                p.cue == HotPotatoConfig.woosh || p.cue == HotPotatoConfig.boing,
+          )
+          .toList();
+      expect(
+        landings.last.cue,
+        HotPotatoConfig.woosh,
+        reason: 'the catch that would have been a woosh was the bang instead',
+      );
+      run(h.sim, HotPotatoConfig.blastHoldSeconds + 0.1);
+      expect(h.sim.outcome!.winners, isNot(contains(h.sim.holder)));
+    });
+
+    test('in the holder\'s hands it goes off on time, even mid-juggle', () {
+      final h = heard(3);
+      run(h.sim, HotPotatoConfig.fuseSeconds - 0.01);
+      expect(h.sim.sharedState['exploded'], isFalse);
+      run(h.sim, 0.05);
+      expect(h.sim.sharedState['exploded'], isTrue);
+    });
+
+    test('the kettle stops dead for the bang', () {
+      final h = heard(3);
+      run(h.sim, HotPotatoConfig.fuseSeconds + 1);
+
+      final kettle = h.audio.tones.single;
+      expect(h.audio.stopped, contains(kettle.handle));
+
+      final bang = h.audio.plays.last;
+      expect(bang.cue, HotPotatoConfig.explosion);
+      expect(bang.phoneId, h.sim.holder);
+      expect(
+        h.audio.plays.where((p) => p.cue == HotPotatoConfig.explosion),
+        hasLength(1),
+        reason: 'the bang goes off once, however long the blast is held',
+      );
+    });
+  });
+}
+
+class _Tone {
+  _Tone(this.handle, this.phoneId, this.tone);
+  final SoundHandle handle;
+  final String phoneId;
+  final Tone tone;
+}
+
+class _Play {
+  _Play(this.handle, this.phoneId, this.cue, this.loop, this.volume);
+  final SoundHandle handle;
+  final String phoneId;
+  final SoundCue cue;
+  final bool loop;
+  final double volume;
+}
+
+/// Hears what the sim asks for, without a network or a speaker.
+class _HeardAudio implements GameAudio {
+  final plays = <_Play>[];
+  final tones = <_Tone>[];
+  final stopped = <SoundHandle>[];
+  var _next = 1;
+
+  @override
+  SoundHandle playGeneral(
+    SoundCue cue, {
+    bool loop = false,
+    double volume = 1.0,
+    bool persist = false,
+  }) => throw StateError('Hot Potato only ever plays on a phone');
+
+  @override
+  SoundHandle playOnPhone(
+    Player player,
+    SoundCue cue, {
+    bool loop = false,
+    double volume = 1.0,
+    bool persist = false,
+  }) {
+    final handle = SoundHandle(_next++);
+    plays.add(_Play(handle, player.phoneId, cue, loop, volume));
+    return handle;
+  }
+
+  @override
+  SoundHandle playToneOnPhone(
+    Player player,
+    Tone tone, {
+    bool persist = false,
+  }) {
+    final handle = SoundHandle(_next++);
+    tones.add(_Tone(handle, player.phoneId, tone));
+    return handle;
+  }
+
+  @override
+  void stopSound(SoundHandle handle, {Duration fade = Duration.zero}) {
+    if (handle != SoundHandle.none) stopped.add(handle);
+  }
+
+  @override
+  void stopRoundSounds() {}
 }

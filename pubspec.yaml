@@ -51,6 +51,7 @@ dependencies:
   # project is on 3.11.5. Raise it after the SDK moves, not before.
   bonsoir: ^7.1.4
   url_launcher: ^6.3.2
+  flutter_soloud: ^5.1.2
 
 dev_dependencies:
   flutter_test:
@@ -86,6 +87,16 @@ flutter:
     - assets/sdk/sfx/
     - assets/sdk/animations/
     - assets/sdk/screenshots/
+    # Each game's own sounds and art, one folder per game id. Leveled copies —
+    # the originals live in audio-src/originals/games/ (see audio-src/README.md).
+    - assets/games/arena/
+    - assets/games/dodgeball/
+    - assets/games/flood/
+    - assets/games/guacamole/
+    - assets/games/hotpotato/
+    - assets/games/hungryhippos/
+    - assets/games/pitch_cars/
+    - assets/games/subway_skater/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

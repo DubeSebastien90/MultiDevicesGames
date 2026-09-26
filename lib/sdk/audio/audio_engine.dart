@@ -23,6 +23,8 @@ import '../platform_config.dart';
 import 'audio_output.dart';
 import 'game_audio.dart';
 import 'sound_cue.dart';
+import 'tone.dart';
+import 'tone_output.dart';
 
 /// A cue waiting for the timeline to reach it.
 class _Scheduled {
@@ -33,10 +35,14 @@ class _Scheduled {
     required this.loop,
     required this.volume,
     required this.persist,
+    this.tone,
   });
 
   final int handleId;
+
+  /// The recording to play — or, for a tone, empty and [tone] set instead.
   final String asset;
+  final Tone? tone;
   final double atMs;
   final bool loop;
   final double volume;
@@ -45,7 +51,17 @@ class _Scheduled {
 
 /// A sound that has started, and the two facts that decide when it ends.
 class _Live {
-  const _Live({required this.persist, required this.loop});
+  const _Live({
+    required this.persist,
+    required this.loop,
+    this.tone,
+    this.startMs = 0,
+  });
+
+  /// Set for a synthesised tone, which is moved every frame rather than left
+  /// to play; [startMs] is where on the timeline its glide began.
+  final Tone? tone;
+  final double startMs;
 
   /// Survives the round that started it.
   final bool persist;
@@ -55,8 +71,9 @@ class _Live {
 }
 
 class AudioEngine implements LocalAudio {
-  AudioEngine({AudioOutput? output, this.muted = false})
-    : _output = output ?? SilentAudioOutput() {
+  AudioEngine({AudioOutput? output, ToneOutput? tones, this.muted = false})
+    : _output = output ?? SilentAudioOutput(),
+      _tones = tones ?? SilentToneOutput() {
     // A one-shot that has played to the end is not a live voice any more.
     // Without this the voice cap below is a one-way ratchet: eight cues into a
     // round, [_live] is full of sounds that finished seconds ago and every cue
@@ -69,6 +86,12 @@ class AudioEngine implements LocalAudio {
   void _finished(int handleId) => _live.remove(handleId);
 
   final AudioOutput _output;
+
+  /// Where tones are synthesised: a different engine from [_output], because
+  /// the one that plays files cannot bend pitch on iOS.
+  final ToneOutput _tones;
+
+  ToneOutput get tones => _tones;
 
   /// Silence, honoured centrally so no game has to check it.
   ///
@@ -153,6 +176,19 @@ class AudioEngine implements LocalAudio {
           _pending.removeAt(0);
         }
 
+      case AudioOp.tone:
+        _pending.add(
+          _Scheduled(
+            handleId: (msg['h'] as num).toInt(),
+            asset: '',
+            tone: Tone.fromJson(msg['tone'] as Map<String, dynamic>),
+            atMs: (msg['at'] as num?)?.toDouble() ?? 0,
+            loop: true,
+            volume: 1.0,
+            persist: msg['persist'] == true,
+          ),
+        );
+
       case AudioOp.stop:
         _stop(
           (msg['h'] as num).toInt(),
@@ -167,8 +203,6 @@ class AudioEngine implements LocalAudio {
   /// Walk the timeline forward. Called once per rendered frame, from the same
   /// place the interpolator is advanced, with the same instant.
   void pump(double renderTimeMs) {
-    if (_pending.isEmpty) return;
-
     var i = 0;
     while (i < _pending.length) {
       final cue = _pending[i];
@@ -177,6 +211,15 @@ class AudioEngine implements LocalAudio {
         continue;
       }
       _pending.removeAt(i);
+      final tone = cue.tone;
+      if (tone != null) {
+        // Never stale. A tone is a state, not an event: a phone that arrives
+        // late — reconnected, or woken from the background — should join the
+        // glide where it has got to, not skip it. [_glide] below works out
+        // where that is from the tone's own start.
+        _startTone(cue.handleId, tone, cue.atMs, renderTimeMs, cue.persist);
+        continue;
+      }
       if (renderTimeMs - cue.atMs > staleMs) continue;
       _start(
         cue.handleId,
@@ -186,6 +229,39 @@ class AudioEngine implements LocalAudio {
         persist: cue.persist,
       );
     }
+    _glide(renderTimeMs);
+  }
+
+  /// Moves every playing tone to where its glide says it is now. Every frame,
+  /// on this phone's own clock: nothing about a glide crosses the wire after
+  /// it starts, which is what keeps it smooth on a bad connection.
+  void _glide(double renderTimeMs) {
+    for (final e in _live.entries) {
+      final tone = e.value.tone;
+      if (tone == null) continue;
+      final elapsed = renderTimeMs - e.value.startMs;
+      _tones.set(e.key, tone.hzAt(elapsed), tone.volumeAt(elapsed));
+    }
+  }
+
+  void _startTone(
+    int handleId,
+    Tone tone,
+    double atMs,
+    double nowMs,
+    bool persist,
+  ) {
+    if (muted) return;
+    // Exempt from the voice cap, like a loop: it is one oscillator, not a
+    // clip, and culling it would leave a hole where a sustained sound was.
+    _live[handleId] = _Live(
+      persist: persist,
+      loop: true,
+      tone: tone,
+      startMs: atMs,
+    );
+    final elapsed = nowMs - atMs;
+    _tones.start(handleId, tone.hzAt(elapsed), tone.volumeAt(elapsed));
   }
 
   /// A view's own sound, on this device, now.
@@ -255,8 +331,13 @@ class AudioEngine implements LocalAudio {
     // queue while the clock is still short of T. Cancelling is the same
     // operation as stopping, from the game's point of view.
     _pending.removeWhere((c) => c.handleId == handleId);
-    if (_live.remove(handleId) == null) return;
-    _output.stop(handleId, fade: fade);
+    final live = _live.remove(handleId);
+    if (live == null) return;
+    if (live.tone != null) {
+      _tones.stop(handleId, fade: fade);
+    } else {
+      _output.stop(handleId, fade: fade);
+    }
   }
 
   /// End of round, or leaving the game entirely.
@@ -269,6 +350,7 @@ class AudioEngine implements LocalAudio {
       _pending.clear();
       _live.clear();
       _output.stopAll();
+      _tones.stopAll();
       return;
     }
     _pending.removeWhere((c) => !c.persist);
@@ -277,8 +359,12 @@ class AudioEngine implements LocalAudio {
         if (!e.value.persist) e.key,
     ];
     for (final id in ending) {
-      _live.remove(id);
-      _output.stop(id, fade: PlatformConfig.roundEndFade);
+      final live = _live.remove(id);
+      if (live?.tone != null) {
+        _tones.stop(id, fade: PlatformConfig.roundEndFade);
+      } else {
+        _output.stop(id, fade: PlatformConfig.roundEndFade);
+      }
     }
   }
 
@@ -286,5 +372,6 @@ class AudioEngine implements LocalAudio {
     _pending.clear();
     _live.clear();
     await _output.dispose();
+    await _tones.dispose();
   }
 }

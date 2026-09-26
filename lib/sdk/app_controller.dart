@@ -7,6 +7,7 @@ import 'model/device_metrics.dart';
 import 'model/player_color.dart';
 import 'model/preferred_color.dart';
 import 'audio/audioplayers_output.dart';
+import 'audio/soloud_tone_output.dart';
 import 'monetization/premium_status.dart';
 import 'net/loopback_transport.dart';
 import 'net/websocket_transport.dart';
@@ -85,6 +86,7 @@ class AppController extends ChangeNotifier {
         metrics: metrics,
         onColorChosen: _rememberColor,
         audioOutput: AudioPlayersOutput(),
+        toneOutput: SoLoudToneOutput(),
       );
 
       // Connect (and therefore subscribe) before handing the peer to the host,
@@ -122,6 +124,7 @@ class AppController extends ChangeNotifier {
         preferredColor: _preferredColor,
         onColorChosen: _rememberColor,
         audioOutput: AudioPlayersOutput(),
+        toneOutput: SoLoudToneOutput(),
       );
       await client.connect();
       _client = client..addListener(notifyListeners);
