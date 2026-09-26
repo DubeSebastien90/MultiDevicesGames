@@ -122,6 +122,7 @@ class SoLoudOutput implements AudioOutput {
     String asset, {
     bool loop = false,
     double volume = 1.0,
+    Duration fadeIn = Duration.zero,
   }) async {
     if (_disposed) return;
 
@@ -129,23 +130,34 @@ class SoLoudOutput implements AudioOutput {
     // cues asked for in order start in order.
     final ready = _loaded[asset];
     if (ready != null) {
-      _start(handleId, ready, loop, volume);
+      _start(handleId, ready, loop, volume, fadeIn);
       return;
     }
 
     _starting.add(handleId);
     final source = await _load(asset);
     if (!_starting.remove(handleId) || _disposed || source == null) return;
-    _start(handleId, source, loop, volume);
+    _start(handleId, source, loop, volume, fadeIn);
   }
 
-  void _start(int handleId, so.AudioSource source, bool loop, double volume) {
+  void _start(
+    int handleId,
+    so.AudioSource source,
+    bool loop,
+    double volume,
+    Duration fadeIn,
+  ) {
     try {
-      final voice = so.SoLoud.instance.play(
+      final soloud = so.SoLoud.instance;
+      final target = volume.clamp(0.0, 1.0);
+      final fading = fadeIn > Duration.zero;
+      final voice = soloud.play(
         source,
-        volume: volume.clamp(0.0, 1.0),
+        volume: fading ? 0 : target,
         looping: loop,
       );
+      // On the mixer's own clock, like the fade out in [stop].
+      if (fading) soloud.fadeVolume(voice, target, fadeIn);
       _live[handleId] = voice;
       _owners[voice] = this;
     } on Object catch (e) {

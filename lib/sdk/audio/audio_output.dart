@@ -31,11 +31,15 @@ abstract class AudioOutput {
 
   /// Start [asset] under [handleId]. Returns when playback has been *asked*
   /// for, not when the sound finishes.
+  ///
+  /// [fadeIn] starts it silent and brings it up to [volume] over that long,
+  /// where the implementation can; one that cannot simply starts it.
   Future<void> play(
     int handleId,
     String asset, {
     bool loop = false,
     double volume = 1.0,
+    Duration fadeIn = Duration.zero,
   });
 
   /// Stop [handleId], fading over [fade] where the implementation can.
@@ -85,6 +89,7 @@ class SilentAudioOutput implements AudioOutput {
     String asset, {
     bool loop = false,
     double volume = 1.0,
+    Duration fadeIn = Duration.zero,
   }) async {
     _playing.add(handleId);
     if (keepLog) _log.add('play $handleId $asset${loop ? ' loop' : ''}');

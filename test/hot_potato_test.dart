@@ -1068,6 +1068,7 @@ class _HeardAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
+    Duration fadeIn = Duration.zero,
   }) => throw StateError('Hot Potato only ever plays on a phone');
 
   @override
@@ -1077,6 +1078,7 @@ class _HeardAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
+    Duration fadeIn = Duration.zero,
   }) {
     final handle = SoundHandle(_next++);
     plays.add(_Play(handle, player.phoneId, cue, loop, volume));

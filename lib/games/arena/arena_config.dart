@@ -1,3 +1,5 @@
+import '../../sdk/audio/sound_cue.dart';
+
 /// Tunables for the Arena fighter game.
 class ArenaConfig {
   const ArenaConfig._();
@@ -242,6 +244,45 @@ class ArenaConfig {
     final t = (distance - minMoveDistance) / span;
     return t < 1 ? t : 1;
   }
+
+  // -- sound ------------------------------------------------------------------
+  //
+  // Every one of these plays on the phone of the fighter it is about, and
+  // nowhere else: the swing, the hit and the guard are one person's, and the
+  // table hears each of them from the right seat. Leveled copies of
+  // audio-src/originals/games/arena/.
+
+  /// The guard back: the blade lit up again after a block's cooldown.
+  static const saberOn = SoundCue.asset(
+    'assets/games/arena/lightsaber_on.wav',
+  );
+
+  /// Dazed: a swing turned back by a guard. Held for as long as the stun is,
+  /// faded in and out rather than cut, because it is a state the fighter is
+  /// in rather than something that happened to them.
+  static const knockedOut = SoundCue.asset(
+    'assets/games/arena/knocked_out.wav',
+  );
+  static const knockedOutFadeIn = Duration(milliseconds: 250);
+  static const knockedOutFadeOut = Duration(milliseconds: 400);
+
+  /// A blade moving through the air — a swing, or a guard being raised.
+  static const saberVoid = [
+    SoundCue.asset('assets/games/arena/lightsaber_void_1.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_void_2.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_void_3.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_void_4.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_void_5.wav'),
+  ];
+
+  /// A blade landing on somebody.
+  static const saberHit = [
+    SoundCue.asset('assets/games/arena/lightsaber_hit_1.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_hit_2.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_hit_3.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_hit_4.wav'),
+    SoundCue.asset('assets/games/arena/lightsaber_hit_5.wav'),
+  ];
 
   // -- player colours (ARGB ints) ---------------------------------------------
   static const List<int> playerColors = [

@@ -68,6 +68,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('the emitter', () {
+    test('a fade in goes on the wire, and only when asked for', () {
+      final audio = RoundAudio();
+      audio.playOnPhone(green, bang, fadeIn: const Duration(milliseconds: 250));
+      audio.playOnPhone(green, bang);
+      final sent = wire(audio, 0);
+      expect(sent[0]['fadeIn'], 250);
+      expect(sent[1].containsKey('fadeIn'), isFalse);
+    });
+
     test('queues rather than plays, so a step stays replayable', () {
       final audio = RoundAudio();
       audio.playGeneral(bang);

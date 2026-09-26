@@ -36,6 +36,7 @@ class _Scheduled {
     required this.volume,
     required this.persist,
     this.tone,
+    this.fadeInMs = 0,
   });
 
   final int handleId;
@@ -47,6 +48,7 @@ class _Scheduled {
   final bool loop;
   final double volume;
   final bool persist;
+  final int fadeInMs;
 }
 
 /// A sound that has started, and the two facts that decide when it ends.
@@ -167,6 +169,7 @@ class AudioEngine implements LocalAudio {
             loop: msg['loop'] == true,
             volume: (msg['vol'] as num?)?.toDouble() ?? 1.0,
             persist: msg['persist'] == true,
+            fadeInMs: (msg['fadeIn'] as num?)?.toInt() ?? 0,
           ),
         );
         // Bounded, for the phone that stops rendering while the host keeps
@@ -227,6 +230,7 @@ class AudioEngine implements LocalAudio {
         loop: cue.loop,
         volume: cue.volume,
         persist: cue.persist,
+        fadeIn: Duration(milliseconds: cue.fadeInMs),
       );
     }
     _glide(renderTimeMs);
@@ -287,6 +291,7 @@ class AudioEngine implements LocalAudio {
     required bool loop,
     required double volume,
     required bool persist,
+    Duration fadeIn = Duration.zero,
   }) {
     if (muted) return;
 
@@ -302,7 +307,7 @@ class AudioEngine implements LocalAudio {
     // Not awaited: a decode that takes a moment must not stall a render frame,
     // and there is nothing to do with the answer. Failures are the output's to
     // swallow — a missing file is a silence, never a crashed round.
-    _output.play(handleId, asset, loop: loop, volume: volume);
+    _output.play(handleId, asset, loop: loop, volume: volume, fadeIn: fadeIn);
   }
 
   /// The live one-shot that started first, or null if there are none.

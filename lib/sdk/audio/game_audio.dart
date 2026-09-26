@@ -45,9 +45,14 @@ abstract class GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
+    Duration fadeIn = Duration.zero,
   });
 
   /// Play on one player's phone, and nowhere else.
+  ///
+  /// [fadeIn] brings it up from silence rather than starting it at full
+  /// volume — for a sound that is a state coming on, not an event landing.
+  /// Pair it with a faded [stopSound] to take it away the same way.
   ///
   /// A phone that has gone, or whose owner has muted it, is **silence**. It
   /// never falls back to the host: a sound coming from the wrong side of the
@@ -58,6 +63,7 @@ abstract class GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
+    Duration fadeIn = Duration.zero,
   });
 
   /// A synthesised [Tone] on one player's phone: a pitch the game can glide,
@@ -118,6 +124,7 @@ class SilentGameAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
+    Duration fadeIn = Duration.zero,
   }) => SoundHandle.none;
 
   @override
@@ -127,6 +134,7 @@ class SilentGameAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
+    Duration fadeIn = Duration.zero,
   }) => SoundHandle.none;
 
   @override
@@ -168,6 +176,7 @@ class AudioCommand {
     required this.loop,
     required this.volume,
     required this.persist,
+    this.fadeInMs = 0,
   }) : op = AudioOp.play,
        tone = null,
        fadeMs = 0;
@@ -181,7 +190,8 @@ class AudioCommand {
        cue = null,
        loop = true,
        volume = 1.0,
-       fadeMs = 0;
+       fadeMs = 0,
+       fadeInMs = 0;
 
   /// [phoneId] is where the sound was *started*, not where the stop was
   /// decided. A stop has to follow its handle to the phone that holds it, or
@@ -195,7 +205,8 @@ class AudioCommand {
        tone = null,
        loop = false,
        volume = 1.0,
-       persist = false;
+       persist = false,
+       fadeInMs = 0;
 
   AudioCommand.stopRound()
     : op = AudioOp.stopRound,
@@ -206,7 +217,8 @@ class AudioCommand {
       loop = false,
       volume = 1.0,
       persist = false,
-      fadeMs = 0;
+      fadeMs = 0,
+      fadeInMs = 0;
 
   final String op;
   final int handleId;
@@ -222,6 +234,9 @@ class AudioCommand {
   final double volume;
   final bool persist;
   final int fadeMs;
+
+  /// For [AudioOp.play]: how long to bring it up from silence.
+  final int fadeInMs;
 
   /// Whether every phone needs to hear about this.
   ///
@@ -249,6 +264,7 @@ class AudioCommand {
     if (volume != 1.0) 'vol': volume,
     if (persist) 'persist': true,
     if (fadeMs > 0) 'fade': fadeMs,
+    if (fadeInMs > 0) 'fadeIn': fadeInMs,
   };
 }
 
@@ -303,7 +319,8 @@ class RoundAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
-  }) => _play(cue, null, loop, volume, persist);
+    Duration fadeIn = Duration.zero,
+  }) => _play(cue, null, loop, volume, persist, fadeIn);
 
   @override
   SoundHandle playOnPhone(
@@ -312,7 +329,8 @@ class RoundAudio implements GameAudio {
     bool loop = false,
     double volume = 1.0,
     bool persist = false,
-  }) => _play(cue, player.phoneId, loop, volume, persist);
+    Duration fadeIn = Duration.zero,
+  }) => _play(cue, player.phoneId, loop, volume, persist, fadeIn);
 
   @override
   SoundHandle playToneOnPhone(
@@ -339,6 +357,7 @@ class RoundAudio implements GameAudio {
     bool loop,
     double volume,
     bool persist,
+    Duration fadeIn,
   ) {
     // A cue with no asset is a silence, and a silence still gets a handle: a
     // game that stores one and stops it later must not have to care which of
@@ -355,6 +374,7 @@ class RoundAudio implements GameAudio {
         loop: loop,
         volume: volume,
         persist: persist,
+        fadeInMs: fadeIn.inMilliseconds,
       ),
     );
     return SoundHandle(id);

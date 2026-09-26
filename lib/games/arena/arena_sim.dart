@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
+import '../../sdk/audio/sound_cue.dart';
 import '../../sdk/physics/play_area.dart';
 import 'arena_config.dart';
 
@@ -59,6 +60,52 @@ class ArenaSim implements GameSim {
       if (f.phoneId == phoneId) return f;
     }
     return null;
+  }
+
+  // -- sound ------------------------------------------------------------------
+
+  /// Picks which take of a sound plays. Seeded, so a step stays a pure
+  /// function of the sim's state.
+  final _soundPick = math.Random(7);
+
+  /// The take each list last played, so the same one never plays twice in a
+  /// row — two identical swings back to back is what makes a sample sound
+  /// like a sample.
+  final _lastTake = <List<SoundCue>, int>{};
+
+  /// One of [takes], on [fighter]'s phone. Only in the round itself: the
+  /// briefing's demonstration swings on every phone at once, and eight of the
+  /// same whoosh together is a noise, not an instruction.
+  void _playFor(_Fighter fighter, List<SoundCue> takes) {
+    if (_phase != 'playing' || takes.isEmpty) return;
+    final last = _lastTake[takes];
+    var pick = _soundPick.nextInt(takes.length);
+    if (takes.length > 1 && pick == last) {
+      pick = (pick + 1 + _soundPick.nextInt(takes.length - 1)) % takes.length;
+    }
+    _lastTake[takes] = pick;
+    final player = context.roster.byPhone(fighter.phoneId);
+    if (player != null) context.audio.playOnPhone(player, takes[pick]);
+  }
+
+  /// The daze, on [fighter]'s phone for as long as they are stunned.
+  void _startDaze(_Fighter fighter) {
+    _stopDaze(fighter);
+    if (_phase != 'playing') return;
+    final player = context.roster.byPhone(fighter.phoneId);
+    if (player == null) return;
+    fighter.daze = context.audio.playOnPhone(
+      player,
+      ArenaConfig.knockedOut,
+      fadeIn: ArenaConfig.knockedOutFadeIn,
+    );
+  }
+
+  void _stopDaze(_Fighter fighter) {
+    final daze = fighter.daze;
+    if (daze == null) return;
+    fighter.daze = null;
+    context.audio.stopSound(daze, fade: ArenaConfig.knockedOutFadeOut);
   }
 
   // -- GameSim ----------------------------------------------------------------
@@ -151,8 +198,13 @@ class ArenaSim implements GameSim {
 
       // Decrement timers.
       f.attackCooldownLeft = math.max(0, f.attackCooldownLeft - dt);
+      final recharging = f.blockCooldownLeft > 0;
       f.blockCooldownLeft = math.max(0, f.blockCooldownLeft - dt);
+      if (recharging && f.blockCooldownLeft <= 0) {
+        _playFor(f, const [ArenaConfig.saberOn]);
+      }
       f.stunLeft = math.max(0, f.stunLeft - dt);
+      if (!f.isStunned) _stopDaze(f);
       f.invincibleLeft = math.max(0, f.invincibleLeft - dt);
 
       // Block duration limit.
@@ -170,6 +222,7 @@ class ArenaSim implements GameSim {
             f.blockCooldownLeft <= 0) {
           f.blocking = true;
           f.blockDuration = 0;
+          _playFor(f, ArenaConfig.saberVoid);
         }
       }
 
@@ -294,12 +347,14 @@ class ArenaSim implements GameSim {
         attacker.moveAngle = null;
         attacker.moveScale = 0;
         attacker.swingStage = _Swing.none;
+        _startDaze(attacker);
         target.recordImpact(_Impact.parry);
         return;
       }
 
       if (target.invincibleLeft > 0) continue;
 
+      _playFor(attacker, ArenaConfig.saberHit);
       target.lives -= 1;
       target.invincibleLeft = ArenaConfig.hitInvincibility;
       if (target.lives <= 0) {
@@ -317,6 +372,7 @@ class ArenaSim implements GameSim {
         // and without it their joystick would be left painted on the floor.
         target.touchDown = false;
         target.blocking = false;
+        _stopDaze(target);
         context.scores.award(attacker.phoneId, ArenaConfig.pointsPerKill);
       } else {
         // Only while they are still standing. A fatal blow has a burst of its
@@ -434,6 +490,9 @@ class ArenaSim implements GameSim {
         // the slash below always begins at the shoulder and not a hair off it.
         if (f.swordTilt == ArenaConfig.attackWindup) {
           f.swingStage = _Swing.slashing;
+          // On the cut, not on the tap: the raise is a move between poses,
+          // and the whoosh belongs to the blade actually going through.
+          _playFor(f, ArenaConfig.saberVoid);
         }
 
       case _Swing.slashing:
@@ -836,6 +895,9 @@ class ArenaSim implements GameSim {
       f.blocking = false;
       f.blockDuration = 0;
       f.stunLeft = 0;
+      // The round's sounds are stopped by the platform at the boundary; the
+      // handle just has to be forgotten with it.
+      f.daze = null;
       f.invincibleLeft = ArenaConfig.spawnInvincibility;
       f.touchDown = false;
       f.touchMoved = false;
@@ -960,6 +1022,10 @@ class _Fighter {
   bool blocking = false;
   double blockDuration = 0;
   double stunLeft = 0;
+
+  /// The daze playing on this fighter's phone while they are stunned, so the
+  /// end of the stun can fade it out.
+  SoundHandle? daze;
   double invincibleLeft = ArenaConfig.spawnInvincibility;
 
   bool get isStunned => stunLeft > 0;
