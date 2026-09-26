@@ -1,8 +1,8 @@
 /// Tones on SoLoud: the one engine here that can bend pitch while it plays.
 ///
-/// `audioplayers` stays in charge of every recording. It cannot do this —
-/// on iOS it changes rate with a pitch-preserving algorithm, so a rising tone
-/// would only ever rise on Android. SoLoud synthesises the sine itself, and
+/// Recordings go through `SoLoudOutput`, on the same engine. `audioplayers`
+/// could never have done this — on iOS it changes rate with a pitch-preserving
+/// algorithm, so a rising tone would only ever rise on Android. SoLoud synthesises the sine itself, and
 /// its oscillator accumulates phase and smooths each change of frequency over
 /// the next buffer (`src/synth/basic_wave.cpp`), so moving the pitch every
 /// frame is a glide and not a staircase of clicks.
@@ -17,24 +17,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_soloud/flutter_soloud.dart' as so;
 
+import 'soloud_output.dart';
 import 'tone_output.dart';
 
 class SoLoudToneOutput implements ToneOutput {
-  /// One engine per process, however many sessions come and go. Started on
-  /// the first tone rather than at launch: most rounds never make one.
-  static Future<bool>? _ready;
-
-  static Future<bool> _init() => _ready ??= () async {
-    try {
-      final soloud = so.SoLoud.instance;
-      if (!soloud.isInitialized) await soloud.init();
-      return true;
-    } on Object catch (e) {
-      debugPrint('[tone] SoLoud did not start: $e');
-      return false;
-    }
-  }();
-
   final _tones = <int, _Voice>{};
   bool _disposed = false;
 
@@ -47,7 +33,7 @@ class SoLoudToneOutput implements ToneOutput {
   }
 
   Future<void> _open(int handleId, _Voice voice) async {
-    if (!await _init()) return;
+    if (!await ensureSoLoud()) return;
     try {
       final soloud = so.SoLoud.instance;
       final source = await soloud.loadWaveform(so.WaveForm.sin, false, 1, 0);

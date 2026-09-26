@@ -6,7 +6,7 @@ import 'model/device_identity.dart';
 import 'model/device_metrics.dart';
 import 'model/player_color.dart';
 import 'model/preferred_color.dart';
-import 'audio/audioplayers_output.dart';
+import 'audio/soloud_output.dart';
 import 'audio/soloud_tone_output.dart';
 import 'monetization/premium_status.dart';
 import 'net/loopback_transport.dart';
@@ -85,7 +85,7 @@ class AppController extends ChangeNotifier {
         transport: loopback.transport,
         metrics: metrics,
         onColorChosen: _rememberColor,
-        audioOutput: AudioPlayersOutput(),
+        audioOutput: SoLoudOutput(),
         toneOutput: SoLoudToneOutput(),
       );
 
@@ -123,7 +123,7 @@ class AppController extends ChangeNotifier {
         deviceId: _deviceId,
         preferredColor: _preferredColor,
         onColorChosen: _rememberColor,
-        audioOutput: AudioPlayersOutput(),
+        audioOutput: SoLoudOutput(),
         toneOutput: SoLoudToneOutput(),
       );
       await client.connect();
