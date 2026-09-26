@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:forge2d/forge2d.dart';
 
+import '../../sdk/audio/sound_cue.dart';
+import '../../sdk/audio/sounds.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/model/world_rect.dart';
 import '../../sdk/physics/forge2d_game_sim.dart';
@@ -23,7 +25,7 @@ import 'hungry_hippos_config.dart';
 /// reaches the middle but is slow to launch and slow to recover. The jaws only
 /// open at the end of the lunge, and whatever is just outside them is thrown
 /// clear — which is how you steal a marble on its way to your neighbour. A
-/// lunge that neither eats nor shoves anything leaves the hippo dazed.
+/// lunge that eats nothing leaves the hippo dazed, whatever it shoved.
 ///
 /// One rule places all the hippos — out along the line from the middle of the
 /// board through the middle of your phone — and each arrangement decides what
@@ -37,6 +39,10 @@ class HungryHipposSim extends Forge2DGameSim {
   }
 
   final math.Random _random;
+
+  /// Which pitch of the boup a bite gets. Its own generator rather than
+  /// [_random], so a sound cannot change how a seeded round deals.
+  final _boupPick = math.Random(3);
 
   final _hippos = <_Hippo>[];
 
@@ -364,7 +370,9 @@ class HungryHipposSim extends Forge2DGameSim {
   /// Move each hippo: drawn back while charging, then out and back.
   void _driveHippos(double dt) {
     for (final h in _hippos) {
+      final before = h._phase;
       h.advance(dt);
+      _soundPhase(h, before);
 
       // Solid everywhere but on the way out. A lunge that knocked marbles
       // aside on the way in threw away the very marbles it was aimed at before
@@ -412,6 +420,10 @@ class HungryHipposSim extends Forge2DGameSim {
         _live.remove(id);
         hide(id);
         _eaten[h.phoneId] = (_eaten[h.phoneId] ?? 0) + 1;
+        // A boup a marble, each at one of its pitches, so a mouthful of three
+        // is three bites rather than one note played three times.
+        final bites = Sounds.buttonPress;
+        _playFor(h, bites[_boupPick.nextInt(bites.length)]);
       }
       h.ateThisLunge += swallowed.length;
     }
@@ -434,7 +446,6 @@ class HungryHipposSim extends Forge2DGameSim {
         h.charge,
       );
 
-      var shoved = 0;
       for (final id in _live) {
         final body = bodyOf(id);
         if (body == null) continue;
@@ -456,16 +467,15 @@ class HungryHipposSim extends Forge2DGameSim {
           v.x * 0.4 + dx * speed,
           v.y * 0.4 + dy * speed,
         );
-        shoved++;
       }
 
       _shoves++;
       _lastShove[h.phoneId] =
           '$_shoves:${mouthX.toStringAsFixed(2)}:${mouthY.toStringAsFixed(2)}';
 
-      // A lunge that moved nothing at all was a guess. Shoving counts: sending
-      // a marble away from your neighbour is a move, not a miss.
-      if (h.ateThisLunge == 0 && shoved == 0) h.stunned = true;
+      // Nothing swallowed is a miss, however many marbles went flying: a
+      // shove is a bonus on top of a bite, not a way out of the penalty.
+      if (h.ateThisLunge == 0) h.stunned = true;
     }
   }
 
@@ -487,12 +497,45 @@ class HungryHipposSim extends Forge2DGameSim {
     if (_over) return;
     for (final h in _hippos) {
       if (h.phoneId != touch.phoneId) continue;
+      final before = h._phase;
       if (touch.phase == TouchPhase.down) {
         h.press(touch.pointerId);
       } else if (touch.phase == TouchPhase.up) {
         h.lift(touch.pointerId);
       }
+      _soundPhase(h, before);
     }
+  }
+
+  // ----------------------------------------------------------------- sound
+
+  /// The hold as a charge starts, and the shot as it is let go — however it
+  /// happened: a finger, a press that was waiting out the recovery, or a
+  /// charge held so long it went by itself.
+  void _soundPhase(_Hippo h, _HippoPhase before) {
+    final now = h._phase;
+    if (now == before) return;
+    if (now == _HippoPhase.charging) {
+      _stopHold(h);
+      h.holdSound = _playFor(h, HungryHipposConfig.hold);
+    } else if (before == _HippoPhase.charging && now == _HippoPhase.out) {
+      _stopHold(h);
+      _playFor(h, HungryHipposConfig.shot);
+    }
+  }
+
+  void _stopHold(_Hippo h) {
+    final hold = h.holdSound;
+    if (hold == null) return;
+    h.holdSound = null;
+    context.audio.stopSound(hold, fade: HungryHipposConfig.holdFadeOut);
+  }
+
+  /// [cue] on [h]'s owner's phone, if somebody is sitting at it.
+  SoundHandle? _playFor(_Hippo h, SoundCue cue) {
+    final player = context.roster.byPhone(h.phoneId);
+    if (player == null) return null;
+    return context.audio.playOnPhone(player, cue);
   }
 
   // ------------------------------------------------------------- snapshots
@@ -761,9 +804,13 @@ class _Hippo {
     }
   }
 
+  /// The hold playing while this hippo charges, so letting go can fade it.
+  SoundHandle? holdSound;
+
   void reset() {
     _phase = _HippoPhase.resting;
     _t = 0;
+    holdSound = null;
     _fingers.clear();
     charge = 0;
     reach = 0;

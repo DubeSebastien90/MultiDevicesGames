@@ -1,3 +1,5 @@
+import '../../sdk/audio/sound_cue.dart';
+
 /// Hungry Hippos' tunables, all in one place.
 ///
 /// World units are centimetres, so these numbers are readable as real sizes on
@@ -128,8 +130,8 @@ class HungryHipposConfig {
 
   // ------------------------------------------------------------- the miss
 
-  /// A lunge that neither ate nor shoved anything leaves the hippo dazed for
-  /// this long on top of its usual recovery. This is what makes hammering the
+  /// A lunge that ate nothing leaves the hippo dazed for this long on top of
+  /// its usual recovery — shoving marbles aside does not count as a bite. This is what makes hammering the
   /// screen worse than waiting for a marble to come round.
   static const double missStunSeconds = 0.9;
 
@@ -155,4 +157,18 @@ class HungryHipposConfig {
   static const int colorHippoFallback = 0xFF9AA6C8;
   static const int colorPush = 0x88FFFFFF;
   static const int colorCharge = 0xCCFFFFFF;
+
+  // --------------------------------------------------------------- sound
+  //
+  // All on the hippo's own phone. Leveled copies of
+  // audio-src/originals/games/hungryhippos/; the bite is the SDK's own boup.
+
+  /// A charge building. Faded out the moment the hippo is let go — or plays on
+  /// to the end, near enough, when it is held right up to
+  /// [chargeMaxHoldSeconds].
+  static const hold = SoundCue.asset('assets/games/hungryhippos/hold.wav');
+  static const holdFadeOut = Duration(milliseconds: 120);
+
+  /// The lunge, as the hippo is let go.
+  static const shot = SoundCue.asset('assets/games/hungryhippos/shot.wav');
 }
