@@ -23,10 +23,18 @@ class HungryHipposView extends ShapeView {
 
   final _dish = Paint()..style = PaintingStyle.fill;
 
+  final _ripple = Paint()
+    ..style = PaintingStyle.stroke
+    ..color = const Color(HungryHipposConfig.colorRipple);
+
+  /// How far apart the ripples round the middle of the pond are.
+  static const _rippleGap = 1.6;
+
   @override
   void renderBackground(Canvas canvas, Frame frame) {
     final board = frame.board;
     final centre = Offset(board.centerX, board.centerY);
+    _drawPond(canvas, frame, centre);
 
     // Wide enough to reach under every hippo, so the dish looks like the thing
     // they are all leaning into.
@@ -35,7 +43,7 @@ class HungryHipposView extends ShapeView {
     // A soft dip rather than a flat disc: the marbles behave as though the
     // middle is lower, and the picture should agree with the physics.
     _dish.shader = ui.Gradient.radial(centre, radius, [
-      const Color(0x1AFFFFFF),
+      const Color(0x40FFFFFF),
       const Color(0x00FFFFFF),
     ]);
     canvas.drawCircle(centre, radius, _dish);
@@ -43,6 +51,43 @@ class HungryHipposView extends ShapeView {
 
     _rim.strokeWidth = frame.onePixel * 2;
     canvas.drawCircle(centre, radius, _rim);
+  }
+
+  /// The water: a darker edge round the table, and rings spreading from the
+  /// middle of it, centred on the board so they are one set of rings across
+  /// every phone rather than a set per screen.
+  void _drawPond(Canvas canvas, Frame frame, Offset centre) {
+    final view = frame.visible;
+    final board = frame.board;
+    final everything = Rect.fromLTWH(
+      view.left,
+      view.top,
+      view.width,
+      view.height,
+    );
+    _dish.color = const Color(HungryHipposConfig.colorWaterEdge);
+    canvas.drawRect(everything, _dish);
+    _dish.color = const Color(HungryHipposConfig.colorWater);
+    canvas.drawRect(
+      Rect.fromLTWH(board.left, board.top, board.width, board.height),
+      _dish,
+    );
+
+    // Only the rings this screen can see.
+    final corners = [
+      Offset(view.left, view.top),
+      Offset(view.right, view.top),
+      Offset(view.left, view.bottom),
+      Offset(view.right, view.bottom),
+    ];
+    var far = 0.0;
+    for (final c in corners) {
+      far = far > (c - centre).distance ? far : (c - centre).distance;
+    }
+    _ripple.strokeWidth = 0.07;
+    for (var r = _rippleGap; r <= far; r += _rippleGap) {
+      canvas.drawCircle(centre, r, _ripple);
+    }
   }
 
   /// Straight from the simulation, which sized it. Working it out again here

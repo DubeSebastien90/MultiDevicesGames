@@ -12,7 +12,11 @@ import 'pitch_cars_config.dart';
 /// aiming ring drawn over whichever car is being pulled back.
 class PitchCarsView extends ShapeView {
   PitchCarsView({super.roster})
-    : super(grid: false, playfield: const Color(0xFF141C33)) {
+    : super(
+        grid: false,
+        background: const Color(_grassEdge),
+        playfield: const Color(_grass),
+      ) {
     PitchCarsArt.preload([for (final p in roster.players) p.color]);
   }
 
@@ -27,6 +31,14 @@ class PitchCarsView extends ShapeView {
   double get characterScale => 2.2;
 
   final _carLayer = Paint();
+
+  /// The infield: mown grass, so the grey road and every car on it stand out.
+  static const _grass = 0xFFAEE294;
+  static const _grassEdge = 0xFF8FCF79;
+  static const _grassStripe = Color(0xFFA2D988);
+
+  /// The width of one mown stripe, in world units.
+  static const _stripe = 2.5;
 
   final _aim = Paint()..style = PaintingStyle.stroke;
   final _finishedFill = Paint();
@@ -74,12 +86,38 @@ class PitchCarsView extends ShapeView {
   @override
   void renderBackground(Canvas canvas, Frame frame) {
     super.renderBackground(canvas, frame);
+    _mowStripes(canvas, frame);
     _strokePolylines(canvas, frame, PitchCarsConfig.ribbonKind);
     _fillFinishTiles(canvas, frame);
     _strokePolylines(canvas, frame, PitchCarsConfig.wallKind);
   }
 
   final _tileFill = Paint();
+
+  /// Mown stripes across the grass, laid from the world origin rather than
+  /// from this screen's edge so they run unbroken from one phone to the next.
+  void _mowStripes(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    final board = frame.board;
+    final left = math.max(view.left, board.left);
+    final right = math.min(view.right, board.right);
+    _tileFill.color = _grassStripe;
+    for (
+      var x = (left / (_stripe * 2)).floorToDouble() * _stripe * 2;
+      x < right;
+      x += _stripe * 2
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(
+          math.max(x, board.left),
+          board.top,
+          math.min(x + _stripe, board.right),
+          board.bottom,
+        ),
+        _tileFill,
+      );
+    }
+  }
 
   /// Each finish tile is a closed quad bent along the road — see
   /// `_buildFinishLineEntities` — so it is filled, not stroked.

@@ -63,10 +63,11 @@ class GuacamoleConfig {
 
   // ----------------------------------------------------------------- paint
 
-  static const int colorBackground = 0xFF1B2A1F;
-  static const int colorPlayfield = 0xFF24382A;
-  static const int colorHole = 0xFF16220F;
-  static const int colorHoleRim = 0xFF2F4A33;
+  static const int colorBackground = 0xFF93D17F;
+  static const int colorPlayfield = 0xFFBDEAA8;
+  static const int colorLawnStripe = 0xFFB0E19A;
+  static const int colorHole = 0xFF4A2F18;
+  static const int colorHoleRim = 0xFF8B6038;
 
   /// The avocado's pit, and the flesh ring just inside the skin. The skin
   /// itself is the owner's colour — that is the thing you have to read.

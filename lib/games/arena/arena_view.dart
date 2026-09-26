@@ -49,7 +49,23 @@ class ArenaView extends GameView {
   /// shown in the lobby, rather than the sim's own palette.
   final Roster roster;
 
-  static const _floorColor = Color(0xFF16213E);
+  /// Packed earth, as in a real arena: warm sand, raked round the middle and
+  /// scattered with grit. Light, so every fighter's colour and every blade's
+  /// glow stands out against it — and the controls and words drawn over it
+  /// are in [_ink], the lobby's own dark, rather than white.
+  static const _floorColor = Color(0xFFEBD0A2);
+  static const _rake = Color(0x33B98A4E);
+  static const _ring = Color(0xFFD2A76C);
+  static const _gritDark = Color(0x55976A36);
+  static const _gritLight = Color(0x66FFF3DC);
+  static const _ink = Color(0xFF191510);
+
+  /// How far apart the rake's lines are, in world units.
+  static const _rakeGap = 0.45;
+
+  /// The grit is laid one speck per cell of this size, each nudged about
+  /// inside its own cell so the floor does not read as a grid.
+  static const _gritCell = 0.7;
 
   /// The air kept between the message and the bottom edge of the glass, as a
   /// fraction of the screen's half-height.
@@ -96,12 +112,7 @@ class ArenaView extends GameView {
     // the screens themselves (see [PlayArea]), which means every point this
     // phone can draw is a point somebody can stand on, and the floor can
     // simply cover it.
-    _fill.color = _floorColor;
-    final view = frame.visible;
-    canvas.drawRect(
-      Rect.fromLTWH(view.left, view.top, view.width, view.height),
-      _fill,
-    );
+    _drawFloor(canvas, frame);
 
     // Grips under the bodies, blades over them: the hilt sits in the hand
     // that holds it, and whatever of it would show through the body is the
@@ -603,13 +614,9 @@ class ArenaView extends GameView {
     // Held still long enough to be blocking: the stick says so in the shield's
     // own colour, because a player holding a block is doing it by *not*
     // moving, and an unlit ring looks identical to a dead one.
-    final ringColor = blocking
-        ? const Color(0xFF4488FF)
-        : const Color(0xFFFFFFFF);
+    final ringColor = blocking ? const Color(0xFF4488FF) : _ink;
 
-    _fill.color = const Color(
-      0xFFFFFFFF,
-    ).withAlpha(ArenaConfig.joystickWellAlpha);
+    _fill.color = _ink.withAlpha(ArenaConfig.joystickWellAlpha);
     canvas.drawCircle(anchor, reach, _fill);
 
     _stroke
@@ -639,9 +646,96 @@ class ArenaView extends GameView {
     _fill.color = knobColor.withAlpha(ArenaConfig.joystickKnobAlpha);
     canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _fill);
     _stroke
-      ..color = const Color(0xFFFFFFFF).withAlpha(ArenaConfig.joystickRingAlpha)
+      ..color = _ink.withAlpha(ArenaConfig.joystickRingAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
     canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _stroke);
+  }
+
+  /// The arena floor: sand, the rake's rings round the middle of the table,
+  /// the fighting circle trodden into it, and grit.
+  ///
+  /// All of it laid from the world, never from this screen's edge — the rings
+  /// share the board's centre, and each speck of grit is placed by its cell's
+  /// own coordinates — so the floor runs unbroken from one phone to the next.
+  void _drawFloor(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    final area = Rect.fromLTWH(view.left, view.top, view.width, view.height);
+    _fill.color = _floorColor;
+    canvas.drawRect(area, _fill);
+
+    final board = frame.board;
+    final centre = Offset(board.centerX, board.centerY);
+
+    // The rake, in rings round the middle. Only the rings this screen reaches.
+    final near =
+        (Offset(
+                  centre.dx.clamp(area.left, area.right),
+                  centre.dy.clamp(area.top, area.bottom),
+                ) -
+                centre)
+            .distance;
+    var far = 0.0;
+    for (final corner in [
+      area.topLeft,
+      area.topRight,
+      area.bottomLeft,
+      area.bottomRight,
+    ]) {
+      far = math.max(far, (corner - centre).distance);
+    }
+    _stroke
+      ..color = _rake
+      ..strokeWidth = 0.05;
+    for (
+      var r = math.max(_rakeGap, (near / _rakeGap).floorToDouble() * _rakeGap);
+      r <= far;
+      r += _rakeGap
+    ) {
+      canvas.drawCircle(centre, r, _stroke);
+    }
+
+    // The fighting circle, trodden darker into the sand.
+    final ring = math.min(board.width, board.height) * 0.42;
+    _stroke
+      ..color = _ring
+      ..strokeWidth = 0.3;
+    canvas.drawCircle(centre, ring, _stroke);
+
+    _drawGrit(canvas, area);
+  }
+
+  /// A speck of grit in every cell, dark or light, placed and sized by the
+  /// cell's own coordinates — the same speck on every phone that can see it.
+  ///
+  /// Hashed with small integer arithmetic on purpose: it has to come out the
+  /// same on a phone running compiled Dart and one running it as JavaScript,
+  /// where big products lose their low bits.
+  void _drawGrit(Canvas canvas, Rect area) {
+    final x0 = (area.left / _gritCell).floor();
+    final x1 = (area.right / _gritCell).ceil();
+    final y0 = (area.top / _gritCell).floor();
+    final y1 = (area.bottom / _gritCell).ceil();
+    for (var ix = x0; ix <= x1; ix++) {
+      for (var iy = y0; iy <= y1; iy++) {
+        final h = _hash(ix, iy);
+        final dx = (h % 97) / 97;
+        final dy = (h ~/ 97 % 89) / 89;
+        final size = 0.03 + (h ~/ 8633 % 5) * 0.012;
+        _fill.color = h % 3 == 0 ? _gritLight : _gritDark;
+        canvas.drawCircle(
+          Offset((ix + dx) * _gritCell, (iy + dy) * _gritCell),
+          size,
+          _fill,
+        );
+      }
+    }
+  }
+
+  static int _hash(int x, int y) {
+    const m = 1000003;
+    var h = ((x * 7919 + y * 104729) % m + m) % m;
+    h = (h * h + 12345) % m;
+    return (h * 31 + x % 17) % m;
   }
 
   /// Which fighter is this phone's, as `p0`..`p7`. Null before the sim has
@@ -697,12 +791,7 @@ class ArenaView extends GameView {
         ui.ParagraphBuilder(
             ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size),
           )
-          ..pushStyle(
-            ui.TextStyle(
-              color: const Color(0xFFFFFFFF),
-              fontWeight: FontWeight.w900,
-            ),
-          )
+          ..pushStyle(ui.TextStyle(color: _ink, fontWeight: FontWeight.w900))
           ..addText(text);
     final paragraph = builder.build()
       ..layout(ui.ParagraphConstraints(width: width));

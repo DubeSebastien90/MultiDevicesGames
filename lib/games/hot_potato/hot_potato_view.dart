@@ -22,10 +22,18 @@ import 'hot_potato_config.dart';
 /// smoke are all read here off the fuse in `sharedState`.
 class HotPotatoView extends ShapeView {
   HotPotatoView({this.phoneId = '', super.roster = Roster.empty})
-    : super(grid: false, playfield: const Color(0xFF141C33)) {
+    : super(grid: false, playfield: const Color(_cloth)) {
     PlayerHand.preload([for (final p in roster.players) p.color]);
     HotPotatoArt.preload();
   }
+
+  /// A picnic table under a blue gingham cloth: light, and blue, so the
+  /// orange potato and the red of the heat are the warmest things on it.
+  static const _cloth = 0xFFF2F9FF;
+  static const _gingham = Color(0x66A9D6F2);
+
+  /// One square of the check, in world units.
+  static const _check = 1.4;
 
   /// This screen's phone, so the holder's screen can be the one that burns.
   final String phoneId;
@@ -95,6 +103,43 @@ class HotPotatoView extends ShapeView {
     if (potato != null) _drawPotato(canvas, frame, potato, heat, height);
     if (blast != null) _drawBlast(canvas, blast);
     _drawChunks(canvas);
+  }
+
+  /// The cloth, with its check laid from the world origin rather than from
+  /// this screen's edge, so it runs unbroken from one phone to the next. Bands
+  /// one way and bands the other, both see-through: where they cross is
+  /// darker, which is what makes it gingham.
+  @override
+  void renderBackground(Canvas canvas, Frame frame) {
+    final view = frame.visible;
+    _fill.color = const Color(_cloth);
+    canvas.drawRect(
+      Rect.fromLTWH(view.left, view.top, view.width, view.height),
+      _fill,
+    );
+
+    _fill.color = _gingham;
+    const period = _check * 2;
+    for (
+      var x = (view.left / period).floorToDouble() * period;
+      x < view.right;
+      x += period
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(x, view.top, x + _check, view.bottom),
+        _fill,
+      );
+    }
+    for (
+      var y = (view.top / period).floorToDouble() * period;
+      y < view.bottom;
+      y += period
+    ) {
+      canvas.drawRect(
+        Rect.fromLTRB(view.left, y, view.right, y + _check),
+        _fill,
+      );
+    }
   }
 
   /// Fill with a gradient. The colour goes back to opaque first: a paint's
@@ -480,7 +525,7 @@ class HotPotatoView extends ShapeView {
       final t = p.age / p.life;
       // Hotter smoke is thicker and darker, and starts as a glowing ember.
       final smoke = Color.lerp(
-        const Color(0xFFD9D9D9),
+        const Color(0xFF9C9C9C),
         const Color(0xFF2E2A28),
         p.power,
       )!;
