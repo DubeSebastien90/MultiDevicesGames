@@ -1,3 +1,5 @@
+import '../../sdk/audio/sound_cue.dart';
+
 /// Tunables for Guac-a-Mole.
 ///
 /// Almost everything here is about *time*, because this is the first game on
@@ -38,10 +40,13 @@ class GuacamoleConfig {
   /// actually delivers the fast part.
   static const double rampFraction = 0.6;
 
-  /// Rising and sinking, in seconds. Part of [visibleSecondsStart], not on top
-  /// of it: a mole is tappable the whole time it is above ground.
+  /// Rising, in seconds. Part of [visibleSecondsStart], not on top of it: a
+  /// mole is tappable from the moment it starts coming up.
   static const double riseSeconds = 0.18;
-  static const double sinkSeconds = 0.22;
+
+  /// Sinking, in seconds — quick, and all the way down into the hole. A mole
+  /// on its way down is already gone: it cannot be squished.
+  static const double sinkSeconds = 0.16;
 
   /// How long a squished mole stays on screen, flattened and fading.
   static const double squishSeconds = 0.42;
@@ -74,4 +79,15 @@ class GuacamoleConfig {
   static const int colorPit = 0xFF8B5E34;
   static const int colorPitHighlight = 0xFFA97A4E;
   static const int colorFlesh = 0xFFE8E4A0;
+
+  // ----------------------------------------------------------------- sound
+  //
+  // Each on the phone the avocado is on. Leveled copies of
+  // audio-src/originals/games/guacamole/; the squish is the SDK's own boup.
+
+  /// One of these, at random, as an avocado pops up.
+  static final voices = List<SoundCue>.unmodifiable([
+    for (var i = 1; i <= 14; i++)
+      SoundCue.asset('assets/games/guacamole/god$i.wav'),
+  ]);
 }

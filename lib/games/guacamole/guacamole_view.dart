@@ -173,7 +173,13 @@ class GuacamoleView extends GameView {
 
     // Ride up out of the hole. The rest position sits a little above the
     // ellipse's centre so the body overlaps its own rim.
-    final lift = r * 1.15 * out;
+    //
+    // All the way from under the clip, at nothing out, rather than from a
+    // pose that left the top half showing: then the last frame of a sink was
+    // half an avocado that simply vanished, and the first of a rise was half
+    // of one that simply appeared. [_buried] is how far further down it has
+    // to go to be wholly inside the hole.
+    final lift = r * 1.15 * out - _buried * r * (1 - out);
     final cx = e.x;
     final cy = e.y + r * 0.62 - lift;
 
@@ -192,6 +198,11 @@ class GuacamoleView extends GameView {
 
     canvas.restore();
   }
+
+  /// How far below its resting pose, in radii, an avocado has to sit to be
+  /// wholly under the clip: the half-height of the body (1.025) and a little
+  /// to spare.
+  static const double _buried = 1.08;
 
   /// The avocado itself, centred on the origin.
   ///

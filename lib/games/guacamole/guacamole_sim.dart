@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../sdk/audio/sound_cue.dart';
+import '../../sdk/audio/sounds.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/model/player_color.dart';
@@ -84,6 +86,14 @@ class GuacamoleSim implements GameSim {
 
   final BoardContext context;
   final math.Random _random;
+
+  /// Which voice an avocado pops up with, and which pitch of boup a squish
+  /// gets. Its own generator rather than [_random], so a sound cannot change
+  /// where a seeded round puts its moles.
+  final _soundPick = math.Random(9);
+
+  /// The voice last played, so the same one never comes twice in a row.
+  int _lastVoice = -1;
 
   late final List<Hole> _holes;
   late final List<PlayerColor> _players;
@@ -251,6 +261,18 @@ class GuacamoleSim implements GameSim {
       ..phase = MolePhase.rising
       ..t = 0
       ..upSeconds = _upSeconds;
+
+    final voices = GuacamoleConfig.voices;
+    var voice = _soundPick.nextInt(voices.length);
+    if (voice == _lastVoice) voice = (voice + 1) % voices.length;
+    _lastVoice = voice;
+    _playOn(hole.phoneId, voices[voice]);
+  }
+
+  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
+  void _playOn(String phoneId, SoundCue cue) {
+    final player = context.roster.byPhone(phoneId);
+    if (player != null) context.audio.playOnPhone(player, cue);
   }
 
   _Mole? _freeMole() {
@@ -315,6 +337,13 @@ class GuacamoleSim implements GameSim {
       ..phase = MolePhase.squished
       ..t = 0;
 
+    // On the phone it was squished on, whoever it belonged to.
+    final bites = Sounds.buttonPress;
+    final hole = hit.hole;
+    if (hole != null) {
+      _playOn(hole.phoneId, bites[_soundPick.nextInt(bites.length)]);
+    }
+
     if (owner == null) return;
     final phoneId = context.phoneOfColor(owner);
     if (phoneId != null) {
@@ -325,14 +354,16 @@ class GuacamoleSim implements GameSim {
   /// The topmost squishable mole under a finger.
   ///
   /// Generous by a margin: fingers are wide, the target is small, and this is a
-  /// party game. A mole already sinking still counts — snatching one on the way
-  /// down is the best feeling the game has.
+  /// party game. A mole on its way back down does not count: once it turns to
+  /// go, it has got away.
   _Mole? _moleAt(double x, double y) {
     _Mole? best;
     var bestDistance = double.infinity;
 
     for (final mole in _pool) {
-      if (!mole.live || mole.phase == MolePhase.squished) continue;
+      if (!mole.live) continue;
+      if (mole.phase == MolePhase.squished) continue;
+      if (mole.phase == MolePhase.sinking) continue;
       final hole = mole.hole;
       if (hole == null) continue;
 
