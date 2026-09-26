@@ -14,21 +14,27 @@ import 'udp_discovery.dart';
 
 /// Whether to run Bonjour alongside UDP broadcast on this device.
 ///
-/// Apple platforms only, and for two separate reasons rather than one.
+/// Apple platforms and Android — every phone — for two different reasons.
 ///
 /// On iOS it is not an optimisation, it is the only transport that works:
 /// broadcast is refused without the multicast entitlement, so without this the
 /// join list is simply always empty on iPhone.
 ///
-/// Everywhere else it would be redundant at best. Android's UDP path works
-/// today with permissions the app already holds, and `bonsoir` documents that
-/// service attributes — which is where the whole beacon lives — "don't work on
-/// Android 6.0 and below". Adding a second transport that carries no payload on
-/// old handsets, to duplicate a first one that works, is how you acquire a bug
-/// report you cannot reproduce.
+/// On Android it is what lets an iPhone and an Android find each other at all.
+/// Android's own games travel fine over UDP, but an iPhone can neither hear
+/// that broadcast nor send one, so a table mixing the two needs a language both
+/// speak — and Bonjour is the only one the iPhone has. UDP keeps running beside
+/// it, so Android-to-Android discovery loses nothing on a network that filters
+/// mDNS. `bonsoir` warns that attributes, where the whole beacon lives, do not
+/// work on Android 6.0 and below; this app's minimum is Android 7 (API 24), so
+/// no handset it installs on is affected.
+///
+/// Desktop stays on UDP alone: nobody hosts or joins a table from one outside
+/// development, and there is no iPhone-shaped gap there to fill.
 bool get bonjourWorthRunning =>
     defaultTargetPlatform == TargetPlatform.iOS ||
-    defaultTargetPlatform == TargetPlatform.macOS;
+    defaultTargetPlatform == TargetPlatform.macOS ||
+    defaultTargetPlatform == TargetPlatform.android;
 
 /// Announces a game through every transport this device can use.
 GameAdvertiser createGameAdvertiser({

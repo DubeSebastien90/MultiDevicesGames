@@ -720,15 +720,19 @@ each other.
   `net/bonjour_discovery.dart`. iOS 14+ fails to browse an undeclared type by
   quietly finding nothing, so a mismatch there looks like a dead network.
 
-  Both transports run at once on Apple platforms and one list is merged from
-  them by `GameBeacon.id`; everywhere else UDP runs alone, because it already
-  works there and `bonsoir` cannot carry TXT attributes on Android 6 and below.
-  `net/discovery_stack.dart` is the only place that decides. Requesting the
+  Both transports run at once on iOS, macOS and Android, and one list is
+  merged from them by `GameBeacon.id`. Android runs Bonjour too even though its
+  UDP already works, because Bonjour is the only thing an iPhone can hear:
+  without it an iPhone and an Android never see each other's games. (`bonsoir`
+  cannot carry TXT attributes on Android 6 and below; the app's minimum is
+  Android 7.) Desktop runs UDP alone. `net/discovery_stack.dart` is the only
+  place that decides. Requesting the
   entitlement from Apple is still an option, and no longer a necessity.
 
   One caveat worth knowing: **the Bonjour path has never run on hardware.** Its
-  codec and the merge are unit-tested, but the platform-channel half needs two
-  iPhones on one WiFi to be believed.
+  codec and the merge are unit-tested, but the platform-channel half needs real
+  phones on one WiFi to be believed — two iPhones, and an iPhone with an
+  Android, each hosting in turn.
 
 - **A TXT record cannot be edited in place.** Nothing exposes an update, because
   the platform APIs underneath do not — changing what is advertised means
@@ -756,8 +760,8 @@ each other.
 ## Deliberately not built
 
 No TypeScript, no cloud, no dedicated server. No accounts. No Nearby and no
-Multipeer — discovery is UDP broadcast, plus Bonjour/mDNS on Apple platforms
-where broadcast is not allowed to work, with a QR and a typed address behind
+Multipeer — discovery is UDP broadcast, plus Bonjour/mDNS on phones so
+that iPhones — where broadcast is not allowed to work — can take part, with a QR and a typed address behind
 both. It never leaves the LAN either way. No automatic freeform
 packing — a game that wants something the `Layouts` helpers cannot express
 writes its placements by hand, as Flood's 2×N grid does. No sensor-based placement

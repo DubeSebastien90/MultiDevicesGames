@@ -66,6 +66,57 @@ void main() {
 
     listener.dispose();
   });
+
+  // Leaving a lobby a moment after creating it disposes the advertiser while
+  // its bind is still in flight. It used to finish starting anyway and announce
+  // the abandoned game, once a second, for as long as the app ran.
+  test('an advertiser disposed while starting never announces', () async {
+    final listener = UdpGameFinder();
+    await listener.start();
+
+    final ghost = UdpGameAdvertiser(
+      id: 'ghost-test',
+      name: 'ghost',
+      address: Uri.parse('ws://127.0.0.1:8080'),
+    );
+    final starting = ghost.start();
+    ghost.dispose();
+    await starting;
+    expect(ghost.running, isFalse);
+
+    // Well past the first beacon and a probe answer.
+    listener.refresh();
+    await Future<void>.delayed(kBeaconInterval * 2.5);
+    expect(listener.games.where((g) => g.id == 'ghost-test'), isEmpty);
+
+    listener.dispose();
+  });
+
+  // Same shape on the joining side: open the sheet, back straight out.
+  test('a finder disposed while starting stays quiet and lets go', () async {
+    final escaped = <Object>[];
+
+    await runZonedGuarded(() async {
+      final finder = UdpGameFinder();
+      final starting = finder.start();
+      finder.dispose();
+      await starting;
+
+      // Something beaconing, so a socket left open would have news to deliver
+      // to the disposed notifier.
+      final beacon = UdpGameAdvertiser(
+        id: 'late-test',
+        name: 'late',
+        address: Uri.parse('ws://127.0.0.1:8080'),
+      );
+      await beacon.start();
+      await Future<void>.delayed(kBeaconInterval * 1.5);
+      beacon.dispose();
+    }, (error, _) => escaped.add(error));
+
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(escaped, isEmpty, reason: '$escaped');
+  });
 }
 
 /// A socket refusal must never escape as an unhandled error.
