@@ -28,18 +28,13 @@ class GuacamoleGame implements MultiscreenGame {
     title: 'Guac-a-Mole',
     tagline: 'Avocados pop up everywhere. Squish the ones wearing your colour.',
     goal: 'Most points when the minute is up.',
-    // Below four the reaching-across-the-table game does not happen, and the
-    // colours stop being the point. The ceiling is the palette.
+    // Three is the fewest that still makes it a reach across the table for
+    // somebody else's colour. The ceiling is the palette.
     //
-    // Even, because the board is two rows and [Layouts.grid] will not split an
-    // odd table between them. Five people wanting to play is a real situation,
-    // but a 3-and-2 block puts somebody at a corner nobody else can reach, and
-    // refusing is more honest than pretending that is the same game.
-    players: PlayerCount.range(
-      min: 4,
-      max: PlayerPalette.size,
-      parity: CountParity.even,
-    ),
+    // Odd tables are fine: they lay out as bricks rather than a grid (see
+    // [planBoard]), so every phone below sits against two above and nobody is
+    // left in a corner out of reach.
+    players: PlayerCount.range(min: 3, max: PlayerPalette.size),
     tier: GameTier.premium,
   );
 
@@ -52,17 +47,33 @@ class GuacamoleGame implements MultiscreenGame {
   ///
   /// Upright, because a phone lying the way you would normally hold it splits
   /// into four honest quarters; on its side the quarters are wide letterboxes.
+  ///
+  /// Two rows facing each other across the table, however many are playing: a
+  /// third row would put the middle of the board out of everyone's reach.
+  /// Four phones make a 2x2 and eight a 4x2 that is still one lunge deep; an
+  /// odd table puts one more on top and centres the rows, the same bricks
+  /// Arena and Dodgeball use.
   @override
-  BoardPlan planBoard(LobbyInfo lobby) => Layouts.grid(
-    lobby.phones,
-    // Two rows facing each other across the table, however many are playing.
-    // Four phones make a 2x2; eight make a 4x2 that is still one lunge deep.
-    // A third row would put the middle of the board out of everyone's reach.
-    rows: 2,
-    sort: PhoneSort.joinOrder,
-    orientation: PhoneOrientation.upright,
-    gap: Gaps.casingsTouching,
-  );
+  BoardPlan planBoard(LobbyInfo lobby) {
+    final phones = lobby.phones;
+    if (phones.length.isEven) {
+      return Layouts.grid(
+        phones,
+        rows: 2,
+        sort: PhoneSort.joinOrder,
+        orientation: PhoneOrientation.upright,
+        gap: Gaps.casingsTouching,
+      );
+    }
+    return Layouts.brick(
+      // Three: the one below spans the join of the two above, so it had best
+      // be the one that fits across it.
+      phones.length == 3 ? Layouts.shortestLast(phones) : phones,
+      sort: PhoneSort.joinOrder,
+      orientation: PhoneOrientation.upright,
+      gap: Gaps.casingsTouching,
+    );
+  }
 
   @override
   GameSim createSim(BoardContext context) => GuacamoleSim(context);

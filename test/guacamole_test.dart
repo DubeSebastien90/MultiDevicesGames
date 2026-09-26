@@ -6,10 +6,9 @@ import 'package:multiscreen_slingshot/games/guacamole/guacamole_game.dart';
 import 'package:multiscreen_slingshot/games/guacamole/guacamole_sim.dart';
 import 'package:multiscreen_slingshot/sdk/contract/sim.dart';
 import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
-import 'package:multiscreen_slingshot/sdk/layout/board_plan.dart';
-import 'package:multiscreen_slingshot/sdk/layout/layouts.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
+import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
 /// A phone, seated in a colour — which is what makes it a *player*.
@@ -94,28 +93,12 @@ void main() {
       );
     });
 
-    test('an odd table is refused rather than fudged', () {
-      // Two rows cannot be split evenly five ways, and the manifest says so
-      // before anyone is asked to move a phone.
-      expect(const GuacamoleGame().manifest.fits(5), isFalse);
-
-      // And the layout itself refuses, so the rule holds even if a future
-      // manifest were to loosen.
-      final lobby = LobbyInfo([
-        for (var i = 0; i < 5; i++) phone('p${i + 1}', PlayerPalette.all[i]),
-      ]);
-      expect(
-        () => Layouts.grid(lobby.phones, rows: 2),
-        throwsA(isA<BoardPlanError>()),
-      );
-    });
-
-    test('two rows, evenly split, whatever the table size', () {
+    test('an even table is two equal rows', () {
       for (final n in [4, 6, 8]) {
         final lobby = LobbyInfo([
           for (var i = 0; i < n; i++) phone('p${i + 1}', PlayerPalette.all[i]),
         ]);
-        final plan = Layouts.grid(lobby.phones, rows: 2);
+        final plan = const GuacamoleGame().planBoard(lobby);
 
         final byRow = <double, int>{};
         for (final p in plan.placements) {
@@ -130,8 +113,43 @@ void main() {
       }
     });
 
+    test('an odd table is bricks: one more on top, centred', () {
+      for (final n in [3, 5, 7]) {
+        final lobby = LobbyInfo([
+          for (var i = 0; i < n; i++) phone('p${i + 1}', PlayerPalette.all[i]),
+        ]);
+        final board = const BoardCompiler().compile(
+          const GuacamoleGame().planBoard(lobby),
+          lobby,
+        );
+
+        final top = board.slices.map((s) => s.viewport.top).reduce(math.min);
+        final upper = [
+          for (final s in board.slices)
+            if ((s.viewport.top - top).abs() < 1e-6) s.viewport,
+        ];
+        final lower = [
+          for (final s in board.slices)
+            if ((s.viewport.top - top).abs() >= 1e-6) s.viewport,
+        ];
+        expect(upper, hasLength((n + 1) ~/ 2), reason: '$n phones');
+        expect(lower, hasLength(n ~/ 2), reason: '$n phones');
+
+        double mid(List<WorldRect> row) =>
+            (row.map((r) => r.left).reduce(math.min) +
+                row.map((r) => r.right).reduce(math.max)) /
+            2;
+        expect(mid(lower), closeTo(mid(upper), 1e-6), reason: '$n phones');
+
+        // Still upright: taller than wide, every one.
+        for (final r in [...upper, ...lower]) {
+          expect(r.height, greaterThan(r.width));
+        }
+      }
+    });
+
     test('every phone gets exactly four holes', () {
-      for (final n in [4, 6, 8]) {
+      for (final n in [3, 4, 5, 6, 7, 8]) {
         final started = start(n);
         expect(
           started.sim.holes,
@@ -512,10 +530,12 @@ void main() {
   });
 
   group('the manifest', () {
-    test('needs four phones and tops out at the palette', () {
+    test('three to the palette, odd or even', () {
       final manifest = const GuacamoleGame().manifest;
-      expect(manifest.fits(3), isFalse, reason: 'three is not a table');
-      expect(manifest.fits(4), isTrue);
+      expect(manifest.fits(2), isFalse, reason: 'two is not a table');
+      for (var n = 3; n <= PlayerPalette.size; n++) {
+        expect(manifest.fits(n), isTrue, reason: '$n phones');
+      }
       expect(manifest.fits(PlayerPalette.size), isTrue);
       expect(
         manifest.fits(PlayerPalette.size + 1),
