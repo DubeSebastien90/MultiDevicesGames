@@ -1,3 +1,4 @@
+import '../../sdk/audio/sounds.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/score/scoreboard.dart';
@@ -91,6 +92,11 @@ abstract class FloodSim extends GameSim {
   double _bluePulse = 0;
   double _redPulse = 0;
 
+  /// Which boup plays next. Walks [Sounds.buttonPress] in turn rather than at
+  /// random, so a run of taps still changes pitch and the sim stays
+  /// deterministic.
+  int _boupIndex = 0;
+
   GameOutcome? _outcome;
 
   double get elapsed => _elapsed;
@@ -160,7 +166,19 @@ abstract class FloodSim extends GameSim {
     // invisible lead far past the win line while the field was still wide.
     boundary = boundary.clamp(-1.0, 1.0);
 
+    _playBoup(touch.phoneId);
+
     _checkWin();
+  }
+
+  /// The tap, heard on the phone that made it — and only there, so each
+  /// player hears their own taps land.
+  void _playBoup(String phoneId) {
+    final player = context.roster.byPhone(phoneId);
+    if (player == null) return;
+    final cues = Sounds.buttonPress;
+    context.audio.playOnPhone(player, cues[_boupIndex % cues.length]);
+    _boupIndex++;
   }
 
   // ---------------------------------------------------------------- step
@@ -279,6 +297,7 @@ abstract class FloodSim extends GameSim {
     _lastTapAt.clear();
     _bluePulse = 0;
     _redPulse = 0;
+    _boupIndex = 0;
     _outcome = null;
   }
 }
