@@ -167,6 +167,44 @@ void main() {
       expect(s.sim.phase, 'playing');
     });
 
+    test('no painter jumps or snaps round, right through to GO', () {
+      for (final n in [2, 3, 4, 5]) {
+        final s = start(n, skipIntro: false);
+        final last = <String, ({double x, double y, double a})>{};
+        var countdownMoves = 0;
+        while (s.sim.phase != 'playing') {
+          s.sim.step(_dt);
+          for (final e in s.sim.entities.where((e) => e.kind == 'player')) {
+            final id = e.props['phoneId']! as String;
+            final was = last[id];
+            last[id] = (x: e.x, y: e.y, a: e.angle);
+            if (was == null) continue;
+
+            final moved = math.sqrt(
+              math.pow(e.x - was.x, 2) + math.pow(e.y - was.y, 2),
+            );
+            expect(
+              moved,
+              lessThanOrEqualTo(PaintWarConfig.moveSpeed * _dt * 1.01),
+              reason: '$id jumped in the ${s.sim.phase} ($n phones)',
+            );
+
+            var turned = (e.angle - was.a).abs() % (2 * math.pi);
+            if (turned > math.pi) turned = 2 * math.pi - turned;
+            expect(
+              turned,
+              lessThanOrEqualTo(PaintWarConfig.demoTurnSpeed * _dt * 1.01),
+              reason: '$id snapped round in the ${s.sim.phase} ($n phones)',
+            );
+
+            if (s.sim.phase == 'countdown' && moved > 1e-9) countdownMoves++;
+          }
+        }
+        // The loop ends where it started, so the count has nothing to walk.
+        expect(countdownMoves, 0, reason: '$n phones');
+      }
+    });
+
     test('nobody can be cut during it', () {
       final s = start(2, skipIntro: false);
       run(s.sim, PaintWarConfig.briefingSeconds);

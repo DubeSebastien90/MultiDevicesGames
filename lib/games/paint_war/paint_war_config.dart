@@ -98,6 +98,11 @@ class PaintWarConfig {
   static const double demoLoopAcross = 2.6;
   static const double demoLoopUp = 2.0;
 
+  /// How fast a painter turns to face where a demonstration walks them, in
+  /// radians a second. Turned rather than set: a body that snaps a quarter
+  /// turn at every corner of the loop reads as a glitch.
+  static const double demoTurnSpeed = 14;
+
   /// 3, 2, 1, then GO, which holds for [goSeconds].
   static const double countdownSeconds = 3.6;
   static const double goSeconds = 0.6;

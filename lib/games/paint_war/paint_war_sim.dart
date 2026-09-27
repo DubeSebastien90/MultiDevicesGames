@@ -234,12 +234,11 @@ class PaintWarSim implements GameSim {
           // Out, round, and back in: the loop that grows the territory.
           const across = PaintWarConfig.demoLoopAcross;
           const up = PaintWarConfig.demoLoopUp;
-          p.script = [
-            at(across, 0),
-            at(across, up),
-            at(0, up),
-            at(0, PaintWarConfig.spawnRadius * 0.25),
-          ];
+          // Ending exactly where they started: a loop that stopped a few
+          // millimetres short left the count to walk them the rest, and a
+          // body turning round to take two steps and turning back reads as a
+          // jolt towards the middle of the screen.
+          p.script = [at(across, 0), at(across, up), at(0, up), at(0, 0)];
         }
       }
     }
@@ -277,7 +276,13 @@ class PaintWarSim implements GameSim {
         ..x += dx / away * stride
         ..y += dy / away * stride;
     }
-    if (away > 1e-6) p.facingAngle = math.atan2(dy, dx);
+    if (away > 1e-6) {
+      p.facingAngle = _turnTowards(
+        p.facingAngle,
+        math.atan2(dy, dx),
+        PaintWarConfig.demoTurnSpeed * dt,
+      );
+    }
   }
 
   /// The count, spent walking back to the middle of their own phone and
@@ -292,8 +297,16 @@ class PaintWarSim implements GameSim {
       if (away > stride) {
         p
           ..x += dx / away * stride
-          ..y += dy / away * stride
-          ..facingAngle = math.atan2(dy, dx);
+          ..y += dy / away * stride;
+        // Only turned to face the walk when there is a walk to face: a
+        // shuffle of a few millimetres is not worth spinning round for.
+        if (away > PaintWarConfig.characterRadius) {
+          p.facingAngle = _turnTowards(
+            p.facingAngle,
+            math.atan2(dy, dx),
+            PaintWarConfig.demoTurnSpeed * dt,
+          );
+        }
       } else {
         p
           ..x = home.centerX
