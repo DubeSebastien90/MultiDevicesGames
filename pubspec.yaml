@@ -94,6 +94,7 @@ flutter:
     - assets/games/guacamole/
     - assets/games/hotpotato/
     - assets/games/hungryhippos/
+    - assets/games/paintwar/
     - assets/games/pitch_cars/
     - assets/games/subway_skater/
     # One file rather than the folder: the rest of it is app icons, which
