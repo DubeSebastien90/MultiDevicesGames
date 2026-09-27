@@ -18,7 +18,7 @@ class PaintWarGame implements MultiscreenGame {
     id: 'paintwar',
     title: 'Paint War',
     tagline: 'Loop out of your colour to claim the table. Cut the others.',
-    goal: 'The biggest territory when the minute is up.',
+    goal: 'The biggest territory when the time is up.',
     players: PlayerCount.range(min: 2, max: 8),
   );
 

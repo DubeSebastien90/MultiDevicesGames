@@ -14,7 +14,7 @@ import 'paint_war_config.dart';
 /// trail closed off. Touch somebody else's wet trail and they are wiped off the
 /// board — their paint with them — and start again somewhere empty.
 ///
-/// A minute, then the biggest territory wins.
+/// Forty-five seconds, then the biggest territory wins.
 ///
 /// ## The paint is a grid
 ///
@@ -516,6 +516,9 @@ class PaintWarSim implements GameSim {
     final at = context.nearestPhone(atX, atY);
     if (at != null) _playOn(at, PaintWarConfig.cutTrail);
     if (at != v.phoneId) _playOn(v.phoneId, PaintWarConfig.cutTrail);
+    // And out, in their own voice, on their own phone.
+    final out = context.roster.byPhone(v.phoneId);
+    if (out != null) context.audio.playOnPhone(out, out.soundSad);
   }
 
   void _respawn(_Player p) {

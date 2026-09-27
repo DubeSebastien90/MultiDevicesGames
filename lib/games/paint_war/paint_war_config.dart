@@ -6,8 +6,8 @@ class PaintWarConfig {
   const PaintWarConfig._();
 
   // -- the round --------------------------------------------------------------
-  /// A minute of painting, then the biggest territory wins.
-  static const double roundSeconds = 60;
+  /// Forty-five seconds of painting, then the biggest territory wins.
+  static const double roundSeconds = 45;
 
   /// The last seconds, counted down on every phone: 5, 4, 3, 2, 1, then OVER.
   static const int finalCountdown = 5;

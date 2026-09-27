@@ -259,6 +259,14 @@ void main() {
           if (p.cue == PaintWarConfig.cutTrail) p.phoneId,
       ];
       expect(cuts, contains('p1'), reason: 'the one cut hears it');
+
+      // And their own sad voice, on their own phone only.
+      final sad = Player(phoneId: 'p1', color: PlayerPalette.all[0]).soundSad;
+      final sads = [
+        for (final p in s.audio.plays)
+          if (p.cue == sad) p.phoneId,
+      ];
+      expect(sads, ['p1']);
     });
 
     test('crossing your own trail is not a cut', () {
@@ -299,6 +307,8 @@ void main() {
   group('the end', () {
     test('counts down the last five, then OVER, then ranks by area', () {
       final s = start(3);
+      expect(PaintWarConfig.roundSeconds, 45);
+      expect(s.sim.sharedState['left'], 45);
       // p2 grows a little, so there is a clear first place.
       final home = positionOf(s.sim, 'p2');
       walkTo(s.sim, 'p2', home.x - 2.5, home.y);
