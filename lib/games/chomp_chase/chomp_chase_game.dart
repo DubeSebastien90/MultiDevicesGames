@@ -21,6 +21,7 @@ class ChompChaseGame implements MultiscreenGame {
     goal: 'Your team eats more dots in its turn than theirs.',
     // Two equal teams, so an even table: one against one up to four a side.
     players: PlayerCount.range(min: 2, max: 8, parity: CountParity.even),
+    tier: GameTier.premium,
   );
 
   /// The same table as Arena and Dodgeball, phones on their sides: a row for

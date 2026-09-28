@@ -32,11 +32,11 @@ class GameCatalog {
     PitchCarsGame(),
     SubwaySkaterGame(),
     PaintWarGame(),
-    ChompChaseGame(),
     // Premium, at the end.
     GuacamoleGame(),
     HungryHipposGame(),
     DodgeballGame(),
+    ChompChaseGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

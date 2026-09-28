@@ -175,6 +175,10 @@ void main() {
   });
 
   group('the table', () {
+    test('a premium game', () {
+      expect(const ChompChaseGame().manifest.isPremium, isTrue);
+    });
+
     test('even tables only, two to eight', () {
       final manifest = const ChompChaseGame().manifest;
       for (var n = 1; n <= 9; n++) {
