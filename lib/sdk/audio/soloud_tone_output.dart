@@ -21,8 +21,24 @@ import 'soloud_output.dart';
 import 'tone_output.dart';
 
 class SoLoudToneOutput implements ToneOutput {
+  SoLoudToneOutput() {
+    soLoudRestarted.add(_reopen);
+  }
+
   final _tones = <int, _Voice>{};
   bool _disposed = false;
+
+  /// SoLoud was rebuilt under us: every oscillator's source and voice belong
+  /// to the old engine. Open each again where it had got to, so a tone that
+  /// was gliding carries on gliding.
+  void _reopen() {
+    for (final entry in _tones.entries) {
+      entry.value
+        ..source = null
+        ..handle = null;
+      unawaited(_open(entry.key, entry.value));
+    }
+  }
 
   @override
   void start(int handleId, double hz, double volume) {
@@ -104,6 +120,7 @@ class SoLoudToneOutput implements ToneOutput {
 
   @override
   Future<void> dispose() async {
+    soLoudRestarted.remove(_reopen);
     _disposed = true;
     stopAll();
   }
