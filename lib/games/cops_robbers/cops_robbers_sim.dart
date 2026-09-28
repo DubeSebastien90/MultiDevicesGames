@@ -194,7 +194,9 @@ class CopsRobbersSim implements GameSim {
       final robber = p.team == robbingTeam;
       _move(
         p,
-        (robber ? CopsRobbersConfig.robberSpeed : CopsRobbersConfig.copSpeed) *
+        (robber
+                ? CopsRobbersConfig.robberSpeed
+                : CopsRobbersConfig.copSpeedFor(_runners.length)) *
             dt,
       );
       if (robber) _eat(p);

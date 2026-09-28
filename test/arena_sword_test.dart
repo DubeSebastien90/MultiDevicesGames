@@ -156,9 +156,24 @@ void placeSecond(ArenaSim sim, double angle, double distance) {
     final them = positionOf(sim, 1);
     final dx = target.x - them.x;
     final dy = target.y - them.y;
-    if (dx * dx + dy * dy < 0.01) break;
+    final d = math.sqrt(dx * dx + dy * dy);
+    if (d < 0.1) break;
+    // Pushed along the way to the target, never into the stick's dead zone
+    // — aiming the finger at the target itself stopped the fighter dead
+    // 0.8cm short of it — and eased off as it closes, so it arrives rather
+    // than circling.
+    final push =
+        ArenaConfig.minMoveDistance +
+        (ArenaConfig.joystickRadius - ArenaConfig.minMoveDistance) *
+            math.min(1.0, d / 0.5);
     touch(sim, 'p2', TouchPhase.down, them.x, them.y);
-    touch(sim, 'p2', TouchPhase.move, target.x, target.y);
+    touch(
+      sim,
+      'p2',
+      TouchPhase.move,
+      them.x + dx / d * push,
+      them.y + dy / d * push,
+    );
     sim.step(_dt);
   }
   final them = positionOf(sim, 1);
@@ -436,11 +451,31 @@ void main() {
       // getting ready rather than a fighter attacking. A tap that took a life
       // before the slash had begun would be a hit nobody could see coming.
       final sim = start(2);
-      placeSecond(sim, ArenaConfig.attackWindup, ArenaConfig.attackRange * 0.6);
-
+      // Facing first: turning takes a nudge of the stick, which moves the
+      // fighter a hair, and the target has to be placed from where they end
+      // up.
       final me = positionOf(sim, 0);
       faceTowards(sim, 'p1', 0, me.x + 5, me.y);
       run(sim, 0.4);
+
+      // Right on the blade as the cut starts: along the windup angle from the
+      // *hilt*, part way down the blade. From the body's middle instead, the
+      // fist's reach and its offset to the sword hand put the target 0.7 off
+      // the blade's line — outside a body's radius, so never cut at all.
+      final body = positionOf(sim, 0);
+      final hilt = hiltOf(sim, 0);
+      final along = facingOf(sim, 0) + ArenaConfig.attackWindup;
+      final onBlade = (
+        x: hilt.x + math.cos(along) * ArenaConfig.swordLength * 0.6,
+        y: hilt.y + math.sin(along) * ArenaConfig.swordLength * 0.6,
+      );
+      placeSecond(
+        sim,
+        math.atan2(onBlade.y - body.y, onBlade.x - body.x),
+        math.sqrt(
+          math.pow(onBlade.x - body.x, 2) + math.pow(onBlade.y - body.y, 2),
+        ),
+      );
 
       attack(sim, 'p1', 0);
       // Stopped short of the shoulder: the blade is on its way and the cut has

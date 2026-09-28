@@ -127,7 +127,7 @@ void main() {
       }
     });
 
-    test('five and seven are bricks, four, six and eight stay grids', () {
+    test('two and up are two rows: bricks when odd, grids when even', () {
       for (final MapEntry(key: name, value: game) in games.entries) {
         for (final n in [2, 3, 4, 5, 6, 7, 8]) {
           final lobby = LobbyInfo(phones(n));
@@ -135,15 +135,14 @@ void main() {
           final tops = {
             for (final r in screensOf(board).values) r.top.toStringAsFixed(4),
           };
-          final rows = n == 2 ? 1 : 2;
-          expect(tops, hasLength(rows), reason: '$name, $n phones');
+          // Two rows at every size, a pair included: one above the other.
+          expect(tops, hasLength(2), reason: '$name, $n phones');
 
           final firstRow = screensOf(board)
               .values
               .where((r) => r.top.toStringAsFixed(4) == tops.first)
               .length;
-          expect(firstRow, n == 2 ? 2 : (n + 1) ~/ 2,
-              reason: '$name, $n phones');
+          expect(firstRow, (n + 1) ~/ 2, reason: '$name, $n phones');
         }
       }
     });

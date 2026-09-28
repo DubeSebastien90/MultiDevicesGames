@@ -396,6 +396,49 @@ void main() {
     });
   });
 
+  group('speed', () {
+    /// How far [phoneId]'s runner gets, in world units, heading off down the
+    /// first open street for a quarter of a second — less than a tile, so no
+    /// junction or wall gets a say.
+    double stride(CopsRobbersSim sim, String phoneId) {
+      final (c, r) = sim.tileOf(phoneId);
+      final way = [
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+      ].firstWhere((d) => sim.maze.open(c, r, d.$1, d.$2));
+      final from = sim.entities.firstWhere(
+        (e) => e.props['phoneId'] == phoneId,
+      );
+      final (fx, fy) = (from.x, from.y);
+      swipe(sim, phoneId, way.$1, way.$2);
+      for (var i = 0; i < 15; i++) {
+        sim.step(_dt);
+      }
+      final to = sim.entities.firstWhere((e) => e.props['phoneId'] == phoneId);
+      // In tiles, not centimetres: tiles are stretched a hair to fill the
+      // board, so across and down differ, and the speed is set in tiles.
+      final tw = sim.sharedState['tw']! as double;
+      final th = sim.sharedState['th']! as double;
+      return way.$1 != 0 ? (to.x - fx).abs() / tw : (to.y - fy).abs() / th;
+    }
+
+    test('one on one, the cop runs a tenth faster', () {
+      final s = start(2);
+      final robber = stride(s.sim, onTeam(s.sim, 0));
+      final cop = stride(s.sim, onTeam(s.sim, 1));
+      expect(cop / robber, closeTo(1.10, 0.02));
+    });
+
+    test('with more a side, everyone runs at the same speed', () {
+      final s = start(4);
+      final robber = stride(s.sim, onTeam(s.sim, 0));
+      final cop = stride(s.sim, onTeam(s.sim, 1));
+      expect(cop / robber, closeTo(1.0, 0.02));
+    });
+  });
+
   test('corridors are about 1.65cm wide, at the same speed on the glass', () {
     for (final n in [2, 4, 8]) {
       final s = start(n, toPlay: false);

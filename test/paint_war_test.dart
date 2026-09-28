@@ -259,11 +259,14 @@ void main() {
       final s = start(2, tablets: true);
       final p1 = positionOf(s.sim, 'p1');
       final p2 = positionOf(s.sim, 'p2');
-      // p1 walks right round everything p2 has painted, and home again.
-      walkTo(s.sim, 'p1', p1.x, p2.y - 2.4);
-      walkTo(s.sim, 'p1', p2.x + 3.2, p2.y - 2.4);
+      // A pair lies one above the other, so p2 is below p1. p1 walks down
+      // past one side of everything p2 has painted, across below it, back up
+      // the other side and home — a loop with p2's paint inside it.
+      expect(p2.y, greaterThan(p1.y));
+      walkTo(s.sim, 'p1', p2.x - 2.4, p1.y);
+      walkTo(s.sim, 'p1', p2.x - 2.4, p2.y + 3.8);
       walkTo(s.sim, 'p1', p2.x + 3.2, p2.y + 3.8);
-      walkTo(s.sim, 'p1', p1.x, p2.y + 3.8);
+      walkTo(s.sim, 'p1', p2.x + 3.2, p1.y);
       walkTo(s.sim, 'p1', p1.x, p1.y);
 
       // p2's paint is p1's now, and p2 is out — there was nothing left to go

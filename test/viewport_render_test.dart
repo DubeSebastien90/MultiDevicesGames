@@ -120,19 +120,20 @@ void main() {
 
   testWidgets("the camera is pinned to this phone's slice of the world",
       (tester) async {
-    // The right-hand phone must be looking at the right-hand half of the board,
-    // one bezel gap past where the left phone's pixels end.
+    // A pair of Arena phones lies one above the other, long edges touching, so
+    // the second phone must be looking at the lower half of the board — one
+    // bezel gap past where the upper phone's pixels end.
     final (session, game, loopback) =
         await mountViewport(tester, phoneIndex: 1);
     expect(tester.takeException(), isNull);
     // Centre-anchored and turned to match the phone: that is the one place
     // arbitrary rotation is handled.
     expect(game.camera.viewfinder.anchor, Anchor.center);
-    expect(game.camera.viewfinder.position.x, closeTo(15.84 + 7.62, 1e-6));
-    expect(game.camera.viewfinder.position.y, closeTo(3.429, 1e-6));
+    expect(game.camera.viewfinder.position.x, closeTo(7.62, 1e-6));
+    expect(game.camera.viewfinder.position.y, closeTo(7.458 + 3.429, 1e-6));
     expect(game.camera.viewfinder.angle,
         closeTo(session.layout!.turnRadians, 1e-9));
-    expect(session.layout!.viewport.left, closeTo(15.84, 1e-6));
+    expect(session.layout!.viewport.top, closeTo(7.458, 1e-6));
 
     await _teardown(tester, session, loopback);
   });

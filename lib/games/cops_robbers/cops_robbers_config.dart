@@ -23,6 +23,16 @@ class CopsRobbersConfig {
   static const double robberSpeed = 3.15;
   static const double copSpeed = 3.15;
 
+  /// How much faster the cop runs in a game of two. One cop cannot corner
+  /// anybody alone — every loop in the maze is a way round them — so at even
+  /// speeds a lone robber is simply never caught. A tenth is enough to close
+  /// a gap, not enough to run anyone down in a straight line.
+  static const double copBoostOneOnOne = 1.10;
+
+  /// The cops' speed for a table of [players].
+  static double copSpeedFor(int players) =>
+      players == 2 ? copSpeed * copBoostOneOnOne : copSpeed;
+
   /// How far a finger has to travel on the glass to count as a swipe.
   static const double swipeThreshold = 0.6;
 

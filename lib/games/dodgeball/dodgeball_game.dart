@@ -28,15 +28,15 @@ class DodgeballGame implements MultiscreenGame {
   @override
   BoardPlan planBoard(LobbyInfo lobby) {
     final n = lobby.phones.length;
-    if (n <= 2) {
+    // Only a lone phone gets a row — a table of two is a grid of one column:
+    // one phone above the other, long edges touching, for a squarer floor than
+    // two phones end to end.
+    if (n < 2) {
       return Layouts.row(
         lobby.phones,
         sort: PhoneSort.joinOrder,
         orientation: PhoneOrientation.sideways,
         gap: Gaps.casingsTouching,
-        instruction:
-            'Lay your phones side by side on their sides, '
-            'short edges touching.',
       );
     }
     if (n.isEven) {
@@ -46,9 +46,11 @@ class DodgeballGame implements MultiscreenGame {
         sort: PhoneSort.joinOrder,
         orientation: PhoneOrientation.sideways,
         gap: Gaps.casingsTouching,
-        instruction:
-            'Two rows facing each other, phones on their sides, '
-            'edges touching.',
+        instruction: n == 2
+            ? 'One phone above the other, both on their sides, long edges '
+                  'touching.'
+            : 'Two rows facing each other, phones on their sides, '
+                  'edges touching.',
       );
     }
     // Odd: a grid with one more phone on top, the rows centred like bricks.

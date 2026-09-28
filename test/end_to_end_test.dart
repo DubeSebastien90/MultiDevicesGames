@@ -114,9 +114,10 @@ void main() {
     // One tap. Planning the board and building the renderer happen inside it —
     // there is no arrangement screen to pass through.
     //
-    // A named game rather than Play, because the numbers below are a *row's*
-    // geometry — two phones side by side, one bezel pair apart. Whichever game
-    // the playlist happens to open with is not the subject here.
+    // A named game rather than Play, because the numbers below are this game's
+    // geometry — a pair of Arena phones one above the other, long edges
+    // touching, one bezel pair apart. Whichever game the playlist happens to
+    // open with is not the subject here.
     host.startGame(const ArenaGame());
     expect(host.phase, HostPhase.placing);
 
@@ -130,13 +131,14 @@ void main() {
     // Identical phones, so the game's sort is a no-op and join order stands.
     expect(phone1.layout!.index, 0);
     expect(phone2.layout!.index, 1);
-    expect(phone1.layout!.leftEdge, closeTo(0, 1e-9));
-    expect(phone2.layout!.leftEdge, closeTo(15.24 + 0.6, 1e-9));
-    expect(phone2.layout!.placement, contains('right of phone 1'));
+    expect(phone1.layout!.topEdge, closeTo(0, 1e-9));
+    expect(phone2.layout!.topEdge, closeTo(6.858 + 0.6, 1e-9));
+    expect(phone2.layout!.leftEdge, closeTo(phone1.layout!.leftEdge, 1e-9));
+    expect(phone2.layout!.placement, contains('bottom row'));
 
     // Both were told what they are about to play, and how to stand for it.
     expect(phone1.manifest!.title, 'Arena');
-    expect(phone2.instruction, contains('side by side'));
+    expect(phone2.instruction, contains('one above the other'));
 
     // Both were also handed the compiled board, in board order — this is what
     // the placement diagram draws, and it must be the layout the game chose
@@ -147,11 +149,11 @@ void main() {
       phone2.slices.map((s) => s.phoneId).toList(),
       reason: 'every phone must be shown the same arrangement',
     );
-    expect(phone1.slices.first.viewport.left, closeTo(0, 1e-9));
-    expect(phone1.slices.last.viewport.left, greaterThan(0),
-        reason: 'the second phone sits along the board from the first');
-    expect(phone1.slices.last.viewport.left,
-        closeTo(phone2.slices.last.viewport.left, 1e-9),
+    expect(phone1.slices.first.viewport.top, closeTo(0, 1e-9));
+    expect(phone1.slices.last.viewport.top, greaterThan(0),
+        reason: 'the second phone sits below the first on the board');
+    expect(phone1.slices.last.viewport.top,
+        closeTo(phone2.slices.last.viewport.top, 1e-9),
         reason: 'two phones disagreed about where the second screen is');
     expect(phone1.slices.first.label, isNotEmpty);
 
@@ -177,7 +179,9 @@ void main() {
     final b = phone2.frameAt(16)!;
     expect(a.entities.keys.toSet(), b.entities.keys.toSet());
     expect(a.entities, isNotEmpty);
-    expect(a.board.width, closeTo(31.08, 1e-9));
+    // One phone wide, two phones and a bezel pair deep.
+    expect(a.board.width, closeTo(15.24, 1e-9));
+    expect(a.board.height, closeTo(6.858 * 2 + 0.6, 1e-9));
 
     await waitFor(
       'snapshots streaming to both',
