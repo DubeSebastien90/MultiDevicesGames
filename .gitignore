@@ -86,3 +86,5 @@ superpowers/
 # resolves the RevenueCat SPM dependency. No other iOS lockfile is tracked
 # here, so this follows the same rule as .swiftpm/ above.
 **/xcshareddata/swiftpm/
+
+key.properties
