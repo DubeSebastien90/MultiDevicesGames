@@ -43,6 +43,7 @@ are compared on the **loudest 50 ms** of each sound (RMS over that window):
 | Character voices | about −11 dBFS (−9 to −14) | the reference; from the −18 RMS pass above |
 | Hold gauge (`hold_*.wav`) | −12 dBFS | feedback the player is waiting on — same family as the voices |
 | Menu button (`boup_*.wav`) | −18 dBFS | answers every tap in every menu; heard that often, it sits 6 dB under |
+| Intro chime (`dingdingding.wav`) | −14 dBFS | over the curtain at the start of a run; a notch under the voices so it greets rather than blares — leveled with the game script's pass at `TARGET_DB = -14` |
 
 New sounds should land in the voices' band unless, like the button, they are
 heard constantly. `gen_hold_steps.py` and `gen_boup_variants.py` normalise to
