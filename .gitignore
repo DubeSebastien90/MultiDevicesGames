@@ -88,3 +88,8 @@ superpowers/
 **/xcshareddata/swiftpm/
 
 key.properties
+
+# Android signing keys. android/.gitignore already covers these under android/;
+# these catch one kept anywhere else in the project, the root included.
+*.jks
+*.keystore
