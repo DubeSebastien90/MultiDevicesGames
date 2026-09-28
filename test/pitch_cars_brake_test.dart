@@ -49,7 +49,13 @@ void main() {
     final car = sim.carOf(me);
     final at = car.position.clone();
     final along = sim.track.tangentAt(0);
-    final back = at - Vector2(along.x, along.y) * (sim.scale.maxPull * 0.5);
+    // A gentle flick, straight down the road: this is about how a car comes
+    // to rest, and a car that leaves the track lands already stopped — which
+    // is a different story, and ends its turn on landing.
+    final back =
+        at -
+        Vector2(along.x, along.y) *
+            (sim.scale.maxPull * (PitchCarsConfig.cancelPullFraction + 0.08));
     for (final (phase, p) in [
       (TouchPhase.down, at),
       (TouchPhase.move, back),
@@ -66,6 +72,11 @@ void main() {
     while (sim.sharedState['moving'] == true && t < 10) {
       sim.step(_dt);
       t += _dt;
+      expect(
+        sim.sharedState.keys.where((k) => k.startsWith('fall_')),
+        isEmpty,
+        reason: 'the flick sent the car off the road',
+      );
       if (stoppedAt == null && car.linearVelocity.length == 0) stoppedAt = t;
       if (sim.sharedState['moving'] == true && stoppedAt == null) {
         // Still rolling means still this turn.
