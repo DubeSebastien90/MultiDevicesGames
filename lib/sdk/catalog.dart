@@ -1,4 +1,5 @@
 import '../games/arena/arena_game.dart';
+import '../games/chomp_chase/chomp_chase_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
 import '../games/guacamole/guacamole_game.dart';
@@ -31,6 +32,7 @@ class GameCatalog {
     PitchCarsGame(),
     SubwaySkaterGame(),
     PaintWarGame(),
+    ChompChaseGame(),
     // Premium, at the end.
     GuacamoleGame(),
     HungryHipposGame(),
