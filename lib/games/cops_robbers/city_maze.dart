@@ -9,8 +9,8 @@ import 'dart:typed_data';
 /// on opposite halves, so each gets exactly the other's maze; and there are no
 /// dead ends, because a chase with a dead end in it is decided by whoever runs
 /// into it first.
-class ChompMaze {
-  ChompMaze._(this.cols, this.rows, this._right, this._down);
+class CityMaze {
+  CityMaze._(this.cols, this.rows, this._right, this._down);
 
   final int cols;
   final int rows;
@@ -25,13 +25,13 @@ class ChompMaze {
   ///
   /// [extraLoops] is the share of the remaining walls knocked through on top
   /// of what removing the dead ends needs, for more than one way round.
-  factory ChompMaze.generate(
+  factory CityMaze.generate(
     int cols,
     int rows,
     math.Random random, {
     double extraLoops = 0.12,
   }) {
-    final maze = ChompMaze._(
+    final maze = CityMaze._(
       cols,
       rows,
       Uint8List(cols * rows),
@@ -42,7 +42,7 @@ class ChompMaze {
   }
 
   /// Rebuild one from [encode]'s output, on a phone.
-  factory ChompMaze.decode(String code) {
+  factory CityMaze.decode(String code) {
     final parts = code.split(':');
     final cols = int.parse(parts[0]);
     final rows = int.parse(parts[1]);
@@ -54,7 +54,7 @@ class ChompMaze {
       right[k] = nibble & 1;
       down[k] = (nibble >> 1) & 1;
     }
-    return ChompMaze._(cols, rows, right, down);
+    return CityMaze._(cols, rows, right, down);
   }
 
   /// The maze as one short string: its size, then a digit per tile saying

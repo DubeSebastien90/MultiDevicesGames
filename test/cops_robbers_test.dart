@@ -2,11 +2,11 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/games/chomp_chase/chomp_chase_config.dart';
-import 'package:multiscreen_slingshot/games/chomp_chase/chomp_chase_game.dart';
-import 'package:multiscreen_slingshot/games/chomp_chase/chomp_chase_maze.dart';
-import 'package:multiscreen_slingshot/games/chomp_chase/chomp_chase_sim.dart';
-import 'package:multiscreen_slingshot/games/chomp_chase/chomp_chase_view.dart';
+import 'package:multiscreen_slingshot/games/cops_robbers/cops_robbers_config.dart';
+import 'package:multiscreen_slingshot/games/cops_robbers/cops_robbers_game.dart';
+import 'package:multiscreen_slingshot/games/cops_robbers/city_maze.dart';
+import 'package:multiscreen_slingshot/games/cops_robbers/cops_robbers_sim.dart';
+import 'package:multiscreen_slingshot/games/cops_robbers/cops_robbers_view.dart';
 import 'package:multiscreen_slingshot/sdk/audio/game_audio.dart';
 import 'package:multiscreen_slingshot/sdk/audio/sound_cue.dart';
 import 'package:multiscreen_slingshot/sdk/audio/sounds.dart';
@@ -21,7 +21,7 @@ import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
-/// Chomp Chase, played headlessly: no host, no sockets, no rendering.
+/// Cops & Robbers, played headlessly: no host, no sockets, no rendering.
 const _dt = 1 / PlatformConfig.simHz;
 
 PhoneSpec phone(String id, PlayerColor color, {double heightMm = 152.4}) =>
@@ -38,7 +38,7 @@ PhoneSpec phone(String id, PlayerColor color, {double heightMm = 152.4}) =>
       color: color,
     );
 
-({ChompChaseSim sim, BoardLayout board, Scoreboard scores, _HeardAudio audio})
+({CopsRobbersSim sim, BoardLayout board, Scoreboard scores, _HeardAudio audio})
 start(int count, {int seed = 3, bool toPlay = true}) {
   final lobby = LobbyInfo([
     for (var i = 0; i < count; i++) phone('p${i + 1}', PlayerPalette.all[i]),
@@ -48,11 +48,11 @@ start(int count, {int seed = 3, bool toPlay = true}) {
     scores.register(p.phoneId, p.label);
   }
   final board = const BoardCompiler().compile(
-    const ChompChaseGame().planBoard(lobby),
+    const CopsRobbersGame().planBoard(lobby),
     lobby,
   );
   final audio = _HeardAudio();
-  final sim = ChompChaseSim(
+  final sim = CopsRobbersSim(
     board.contextFor(scores, audio: audio),
     random: math.Random(seed),
   );
@@ -61,14 +61,14 @@ start(int count, {int seed = 3, bool toPlay = true}) {
   return (sim: sim, board: board, scores: scores, audio: audio);
 }
 
-void run(ChompChaseSim sim, double seconds) {
+void run(CopsRobbersSim sim, double seconds) {
   for (var t = 0.0; t < seconds; t += _dt) {
     sim.step(_dt);
   }
 }
 
 /// Past the role card and the count.
-void toPlaying(ChompChaseSim sim) {
+void toPlaying(CopsRobbersSim sim) {
   for (
     var i = 0;
     i < PlatformConfig.simHz * 10 && sim.phase != 'playing';
@@ -78,8 +78,8 @@ void toPlaying(ChompChaseSim sim) {
   }
 }
 
-void swipe(ChompChaseSim sim, String phoneId, int dc, int dr) {
-  const far = ChompChaseConfig.swipeThreshold * 2;
+void swipe(CopsRobbersSim sim, String phoneId, int dc, int dr) {
+  const far = CopsRobbersConfig.swipeThreshold * 2;
   for (final (phase, x, y) in [
     (TouchPhase.down, 0.0, 0.0),
     (TouchPhase.move, dc * far, dr * far),
@@ -92,7 +92,7 @@ void swipe(ChompChaseSim sim, String phoneId, int dc, int dr) {
 }
 
 /// The first step of a shortest path through the maze, or null if there.
-(int, int)? firstStep(ChompMaze maze, (int, int) from, (int, int) to) {
+(int, int)? firstStep(CityMaze maze, (int, int) from, (int, int) to) {
   if (from == to) return null;
   final back = <(int, int), (int, int)>{from: from};
   final queue = [from];
@@ -117,7 +117,7 @@ void swipe(ChompChaseSim sim, String phoneId, int dc, int dr) {
 /// Swipe [phoneId] along the shortest way to [target], a tick at a time,
 /// until [done].
 void chase(
-  ChompChaseSim sim,
+  CopsRobbersSim sim,
   String phoneId,
   (int, int) Function() target,
   bool Function() done, {
@@ -134,10 +134,10 @@ void chase(
   }
 }
 
-String onTeam(ChompChaseSim sim, int team) =>
+String onTeam(CopsRobbersSim sim, int team) =>
     sim.board.phoneIds.firstWhere((id) => sim.teamOf(id) == team);
 
-extension on ChompChaseSim {
+extension on CopsRobbersSim {
   BoardContext get board => context;
 }
 
@@ -146,7 +146,7 @@ void main() {
     for (final (cols, rows) in [(5, 5), (7, 6), (16, 7), (33, 15), (34, 16)]) {
       test('$cols by $rows: one piece, no dead ends, mirrored both ways', () {
         for (var seed = 0; seed < 6; seed++) {
-          final maze = ChompMaze.generate(cols, rows, math.Random(seed));
+          final maze = CityMaze.generate(cols, rows, math.Random(seed));
           expect(maze.reachableFrom(0, 0), maze.tiles, reason: 'seed $seed');
           for (var r = 0; r < rows; r++) {
             for (var c = 0; c < cols; c++) {
@@ -167,7 +167,7 @@ void main() {
               );
             }
           }
-          final copy = ChompMaze.decode(maze.encode());
+          final copy = CityMaze.decode(maze.encode());
           expect(copy.encode(), maze.encode());
         }
       });
@@ -176,17 +176,17 @@ void main() {
 
   group('the table', () {
     test('a premium game', () {
-      expect(const ChompChaseGame().manifest.isPremium, isTrue);
+      expect(const CopsRobbersGame().manifest.isPremium, isTrue);
     });
 
     test('even tables only, two to eight', () {
-      final manifest = const ChompChaseGame().manifest;
+      final manifest = const CopsRobbersGame().manifest;
       for (var n = 1; n <= 9; n++) {
         expect(manifest.fits(n), n.isEven && n >= 2 && n <= 8, reason: '$n');
       }
     });
 
-    test('a row for two, two facing rows beyond; each side a team', () {
+    test('two facing rows at every size, a pair too; each side a team', () {
       for (final n in [2, 4, 6, 8]) {
         final s = start(n, toPlay: false);
         final teams = [
@@ -194,17 +194,26 @@ void main() {
         ];
         expect(teams.where((t) => t == 0), hasLength(n ~/ 2), reason: '$n');
 
-        // Team 0 all on one side of the middle, team 1 on the other.
+        // Team 0 all above the middle, team 1 all below it.
         final board = s.board.coverage.board;
-        final byRows = n > 2;
         for (final slice in s.board.slices) {
-          final v = slice.viewport;
-          final firstSide = byRows
-              ? v.centerY < board.centerY
-              : v.centerX < board.centerX;
-          expect(s.sim.teamOf(slice.phoneId), firstSide ? 0 : 1);
+          final above = slice.viewport.centerY < board.centerY;
+          expect(s.sim.teamOf(slice.phoneId), above ? 0 : 1);
         }
       }
+    });
+
+    test('a pair lies one above the other, long edges touching', () {
+      final s = start(2, toPlay: false);
+      final [a, b] = [for (final slice in s.board.slices) slice.viewport];
+      // Side by side across, one above the other down.
+      expect(a.centerX, closeTo(b.centerX, 1e-6));
+      expect((a.centerY - b.centerY).abs(), greaterThan(a.height * 0.9));
+      // On their sides, so the edge they share is the long one.
+      expect(a.width, greaterThan(a.height));
+      // A squarer maze than a strip of two phones end to end.
+      final board = s.board.coverage.board;
+      expect(board.width / board.height, lessThan(1.3));
     });
 
     test('the maze fills exactly the board every screen can show', () {
@@ -219,10 +228,10 @@ void main() {
         scores.register(p.phoneId, p.label);
       }
       final board = const BoardCompiler().compile(
-        const ChompChaseGame().planBoard(lobby),
+        const CopsRobbersGame().planBoard(lobby),
         lobby,
       );
-      final sim = ChompChaseSim(board.contextFor(scores));
+      final sim = CopsRobbersSim(board.contextFor(scores));
       final state = sim.sharedState;
       final ox = state['ox']! as double;
       final oy = state['oy']! as double;
@@ -240,15 +249,15 @@ void main() {
     test('tells each side its role, counts down, then plays', () {
       final s = start(2, toPlay: false);
       expect(s.sim.phase, 'role');
-      run(s.sim, ChompChaseConfig.roleSeconds + 0.05);
+      run(s.sim, CopsRobbersConfig.roleSeconds + 0.05);
       expect(s.sim.phase, 'countdown');
-      run(s.sim, ChompChaseConfig.countdownSeconds + 0.05);
+      run(s.sim, CopsRobbersConfig.countdownSeconds + 0.05);
       expect(s.sim.phase, 'playing');
-      expect(s.sim.chompingTeam, 0);
-      expect({for (final e in s.sim.entities) e.kind}, {'chomper', 'ghost'});
+      expect(s.sim.robbingTeam, 0);
+      expect({for (final e in s.sim.entities) e.kind}, {'robber', 'cop'});
     });
 
-    test('a swipe turns you, and a chomper eats what it runs over', () {
+    test('a swipe turns you, and a robber eats what it runs over', () {
       final s = start(2);
       final me = onTeam(s.sim, 0);
       final (c, r) = s.sim.tileOf(me);
@@ -298,17 +307,17 @@ void main() {
       expect(s.sim.tileOf(me), isNot((c + way.$1, r + way.$2)));
     });
 
-    test('ghosts catch chompers; the last one caught switches the roles', () {
+    test('cops catch robbers; the last one caught switches the roles', () {
       final s = start(2);
-      final chomper = onTeam(s.sim, 0);
-      final ghost = onTeam(s.sim, 1);
+      final robber = onTeam(s.sim, 0);
+      final cop = onTeam(s.sim, 1);
       chase(
         s.sim,
-        ghost,
-        () => s.sim.tileOf(chomper),
-        () => s.sim.isCaught(chomper),
+        cop,
+        () => s.sim.tileOf(robber),
+        () => s.sim.isCaught(robber),
       );
-      expect(s.sim.isCaught(chomper), isTrue);
+      expect(s.sim.isCaught(robber), isTrue);
       Player seat(String id) => Player(
         phoneId: id,
         color: PlayerPalette.all[int.parse(id.substring(1)) - 1],
@@ -319,22 +328,22 @@ void main() {
       ];
       // The bang on the phone where it happened...
       final (x, y) = s.sim.centreOf(
-        s.sim.tileOf(chomper).$1,
-        s.sim.tileOf(chomper).$2,
+        s.sim.tileOf(robber).$1,
+        s.sim.tileOf(robber).$2,
       );
-      expect(heardOf(ChompChaseConfig.explosion), [
+      expect(heardOf(CopsRobbersConfig.caught), [
         s.sim.context.nearestPhone(x, y),
       ]);
-      // ...the chomper's sad voice on theirs, the ghost's happy one on theirs.
-      expect(heardOf(seat(chomper).soundSad), [chomper]);
-      expect(heardOf(seat(ghost).soundHappy), [ghost]);
+      // ...the robber's sad voice on theirs, the cop's happy one on theirs.
+      expect(heardOf(seat(robber).soundSad), [robber]);
+      expect(heardOf(seat(cop).soundHappy), [cop]);
 
       s.sim.step(_dt);
       expect(s.sim.phase, 'switch');
-      run(s.sim, ChompChaseConfig.switchSeconds + 0.05);
+      run(s.sim, CopsRobbersConfig.switchSeconds + 0.05);
       expect(s.sim.half, 1);
-      expect(s.sim.chompingTeam, 1);
-      expect(s.sim.isCaught(chomper), isFalse, reason: 'everyone back');
+      expect(s.sim.robbingTeam, 1);
+      expect(s.sim.isCaught(robber), isFalse, reason: 'everyone back');
       expect(s.sim.dotsLeft, greaterThan(0), reason: 'the maze refilled');
     });
   });
@@ -342,7 +351,7 @@ void main() {
   group('the clock', () {
     test('a half lasts 45 seconds at most, counting down the last five', () {
       final s = start(2);
-      expect(ChompChaseConfig.halfSeconds, 45);
+      expect(CopsRobbersConfig.halfSeconds, 45);
       final seen = <int>{};
       while (s.sim.phase == 'playing') {
         final left = s.sim.sharedState['left'];
@@ -355,20 +364,20 @@ void main() {
       // Then ROUND OVER, for a moment, before the swap.
       expect(s.sim.phase, 'switch');
       expect(s.sim.sharedState['timeUp'], isTrue);
-      run(s.sim, ChompChaseConfig.timeUpSeconds + 0.05);
+      run(s.sim, CopsRobbersConfig.timeUpSeconds + 0.05);
       expect(s.sim.sharedState['timeUp'], isNull);
       expect(s.sim.phase, 'switch');
     });
 
     test('a half ended by a catch is not a time-out', () {
       final s = start(2);
-      final chomper = onTeam(s.sim, 0);
-      final ghost = onTeam(s.sim, 1);
+      final robber = onTeam(s.sim, 0);
+      final cop = onTeam(s.sim, 1);
       chase(
         s.sim,
-        ghost,
-        () => s.sim.tileOf(chomper),
-        () => s.sim.isCaught(chomper),
+        cop,
+        () => s.sim.tileOf(robber),
+        () => s.sim.isCaught(robber),
       );
       s.sim.step(_dt);
       expect(s.sim.phase, 'switch');
@@ -377,24 +386,31 @@ void main() {
 
     test('the second half times out into ROUND OVER too', () {
       final s = start(2);
-      run(s.sim, ChompChaseConfig.halfSeconds + 0.1);
-      run(s.sim, ChompChaseConfig.switchSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.halfSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.switchSeconds + 0.1);
       toPlaying(s.sim);
-      run(s.sim, ChompChaseConfig.halfSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.halfSeconds + 0.1);
       expect(s.sim.phase, 'over');
       expect(s.sim.sharedState['timeUp'], isTrue);
       expect(s.sim.outcome, isNull, reason: 'not before ROUND OVER has shown');
     });
   });
 
-  test('corridors are about 1.3cm wide', () {
+  test('corridors are about 1.65cm wide, at the same speed on the glass', () {
     for (final n in [2, 4, 8]) {
       final s = start(n, toPlay: false);
       final tw = s.sim.sharedState['tw']! as double;
       final th = s.sim.sharedState['th']! as double;
-      expect(tw, inInclusiveRange(1.3, 1.3 * 1.25), reason: '$n phones');
-      expect(th, inInclusiveRange(1.3, 1.3 * 1.4), reason: '$n phones');
+      expect(tw, inInclusiveRange(1.65, 1.65 * 1.25), reason: '$n phones');
+      expect(th, inInclusiveRange(1.65, 1.65 * 1.4), reason: '$n phones');
     }
+    // About nine along a phone on its side.
+    final s = start(2, toPlay: false);
+    expect(s.sim.maze.cols, inInclusiveRange(8, 9));
+    expect(
+      CopsRobbersConfig.robberSpeed * CopsRobbersConfig.targetTile,
+      closeTo(5.2, 0.1),
+    );
   });
 
   group('the round', () {
@@ -415,15 +431,15 @@ void main() {
       run(s.sim, 0.8);
       expect(s.sim.eatenBy(0), greaterThan(0));
       chase(s.sim, b, () => s.sim.tileOf(a), () => s.sim.isCaught(a));
-      run(s.sim, ChompChaseConfig.switchSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.switchSeconds + 0.1);
       toPlaying(s.sim);
 
       // Second half: b stands still on a dotless start and is caught at once.
-      expect(s.sim.chompingTeam, 1);
+      expect(s.sim.robbingTeam, 1);
       chase(s.sim, a, () => s.sim.tileOf(b), () => s.sim.isCaught(b));
       expect(s.sim.eatenBy(1), lessThan(s.sim.eatenBy(0)));
 
-      run(s.sim, ChompChaseConfig.overSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.overSeconds + 0.1);
       final outcome = s.sim.outcome;
       expect(outcome, isNotNull);
       expect(outcome!.winners, {a});
@@ -433,13 +449,13 @@ void main() {
 
     test('a half that nobody ends ends by the clock; a tie is a draw', () {
       final s = start(2);
-      run(s.sim, ChompChaseConfig.halfSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.halfSeconds + 0.1);
       expect(s.sim.phase, 'switch');
-      run(s.sim, ChompChaseConfig.switchSeconds + 0.1);
+      run(s.sim, CopsRobbersConfig.switchSeconds + 0.1);
       toPlaying(s.sim);
       run(
         s.sim,
-        ChompChaseConfig.halfSeconds + ChompChaseConfig.overSeconds + 0.2,
+        CopsRobbersConfig.halfSeconds + CopsRobbersConfig.overSeconds + 0.2,
       );
       final outcome = s.sim.outcome;
       expect(outcome, isNotNull);
@@ -447,9 +463,20 @@ void main() {
     });
   });
 
+  test('at half time the cops are only told to switch', () {
+    expect(
+      CopsRobbersView.switchLine(wasRobbing: true, grabbed: 12),
+      'SWITCH! You grabbed 12',
+    );
+    expect(
+      CopsRobbersView.switchLine(wasRobbing: false, grabbed: 0),
+      'SWITCH!',
+    );
+  });
+
   test('the view draws every phase without falling over', () {
     final s = start(4, toPlay: false);
-    final view = ChompChaseView(phoneId: 'p1', roster: s.board.roster);
+    final view = CopsRobbersView(phoneId: 'p1', roster: s.board.roster);
     void draw() {
       for (final slice in s.board.slices) {
         final recorder = ui.PictureRecorder();
@@ -481,11 +508,11 @@ void main() {
     draw();
     toPlaying(s.sim);
     draw();
-    run(s.sim, ChompChaseConfig.halfSeconds + 0.1);
+    run(s.sim, CopsRobbersConfig.halfSeconds + 0.1);
     draw();
-    run(s.sim, ChompChaseConfig.switchSeconds + 0.1);
+    run(s.sim, CopsRobbersConfig.switchSeconds + 0.1);
     toPlaying(s.sim);
-    run(s.sim, ChompChaseConfig.halfSeconds + 0.1);
+    run(s.sim, CopsRobbersConfig.halfSeconds + 0.1);
     draw();
   });
 }

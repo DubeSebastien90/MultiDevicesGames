@@ -6,27 +6,30 @@ import '../../sdk/audio/sounds.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/sim.dart';
 import '../../sdk/score/scoreboard.dart';
-import 'chomp_chase_config.dart';
-import 'chomp_chase_maze.dart';
+import 'cops_robbers_config.dart';
+import 'city_maze.dart';
 
-/// Two teams, one maze, two halves.
+/// Two teams, one city, two halves.
 ///
-/// In the first half one team are the chompers, eating the dots, and the other
-/// are the ghosts hunting them; once every chomper is caught — or the dots are
-/// gone, or the half runs out — the maze is refilled and the roles swap. The
-/// team that ate more dots in its turn wins the round.
+/// In the first half one team are the robbers, grabbing the coins lying in the
+/// streets, and the other are the cops hunting them; once every robber is
+/// caught — or the coins are gone, or the half runs out — the streets are
+/// refilled and the roles swap. The team that grabbed more in its turn wins.
 ///
 /// A swipe on your own phone picks the next way to turn, and the turn is taken
 /// at the first junction that allows it — so a swipe can be made early, the
-/// way a corridor is actually run.
+/// way a street is actually run.
+///
+/// The streets are the maze's corridors and the blocks its walls; underneath,
+/// "dots" are the coins, which is what the code still calls them.
 ///
 /// ## The teams
 ///
-/// Each side of the table is a team: the top row against the bottom on a
-/// block of phones, left against right on a pair. The maze is mirrored across
-/// both middles, so each team starts on the same maze the other does.
-class ChompChaseSim implements GameSim {
-  ChompChaseSim(this.context, {math.Random? random})
+/// Each side of the table is a team: the top row against the bottom. The maze
+/// is mirrored across both middles, so each team starts on the same streets
+/// the other does.
+class CopsRobbersSim implements GameSim {
+  CopsRobbersSim(this.context, {math.Random? random})
     : _random = random ?? math.Random() {
     _build();
   }
@@ -38,7 +41,7 @@ class ChompChaseSim implements GameSim {
   /// change the maze a seeded round is dealt.
   final _boupPick = math.Random(6);
 
-  late final ChompMaze maze;
+  late final CityMaze maze;
   late final String _mazeCode;
 
   late final double _ox;
@@ -51,7 +54,7 @@ class ChompChaseSim implements GameSim {
   /// Dots still in the maze, one byte a tile.
   late Uint8List _dots;
 
-  /// Dots eaten by each team, in the half it was chomping.
+  /// Dots eaten by each team, in the half it was robbing.
   final _eaten = [0, 0];
 
   // 'role' | 'countdown' | 'playing' | 'switch' | 'over' | 'finished'
@@ -65,26 +68,26 @@ class ChompChaseSim implements GameSim {
 
   GameOutcome? _outcome;
 
-  /// Which team chomps this half: team 0 first, then team 1.
-  int get chompingTeam => _half;
+  /// Which team robs this half: team 0 first, then team 1.
+  int get robbingTeam => _half;
 
   // ------------------------------------------------------------------ build
 
   void _build() {
     final board = context.board;
     final cols = math.max(
-      ChompChaseConfig.minTiles,
-      (board.width / ChompChaseConfig.targetTile).floor(),
+      CopsRobbersConfig.minTiles,
+      (board.width / CopsRobbersConfig.targetTile).floor(),
     );
     final rows = math.max(
-      ChompChaseConfig.minTiles,
-      (board.height / ChompChaseConfig.targetTile).floor(),
+      CopsRobbersConfig.minTiles,
+      (board.height / CopsRobbersConfig.targetTile).floor(),
     );
     _ox = board.left;
     _oy = board.top;
     _tw = board.width / cols;
     _th = board.height / rows;
-    maze = ChompMaze.generate(cols, rows, _random);
+    maze = CityMaze.generate(cols, rows, _random);
     _mazeCode = maze.encode();
 
     // Split the table across whichever way its phones spread less: a block
@@ -111,8 +114,8 @@ class ChompChaseSim implements GameSim {
             home: home,
             color:
                 context.colorOf(slices[i].phoneId)?.value.toARGB32() ??
-                ChompChaseConfig.fallbackColors[i %
-                    ChompChaseConfig.fallbackColors.length],
+                CopsRobbersConfig.fallbackColors[i %
+                    CopsRobbersConfig.fallbackColors.length],
           );
         }(),
     ];
@@ -166,15 +169,15 @@ class ChompChaseSim implements GameSim {
     _clock += dt;
     switch (_phase) {
       case 'role':
-        if (_clock >= ChompChaseConfig.roleSeconds) _next('countdown');
+        if (_clock >= CopsRobbersConfig.roleSeconds) _next('countdown');
       case 'countdown':
-        if (_clock >= ChompChaseConfig.countdownSeconds) _next('playing');
+        if (_clock >= CopsRobbersConfig.countdownSeconds) _next('playing');
       case 'playing':
         _stepPlaying(dt);
       case 'switch':
-        if (_clock >= ChompChaseConfig.switchSeconds) _startHalf(1);
+        if (_clock >= CopsRobbersConfig.switchSeconds) _startHalf(1);
       case 'over':
-        if (_clock >= ChompChaseConfig.overSeconds) _next('finished');
+        if (_clock >= CopsRobbersConfig.overSeconds) _next('finished');
       case 'finished':
         break;
     }
@@ -188,22 +191,22 @@ class ChompChaseSim implements GameSim {
   void _stepPlaying(double dt) {
     for (final p in _runners) {
       if (p.caught) continue;
-      final chomper = p.team == chompingTeam;
+      final robber = p.team == robbingTeam;
       _move(
         p,
-        (chomper ? ChompChaseConfig.chomperSpeed : ChompChaseConfig.ghostSpeed) *
+        (robber ? CopsRobbersConfig.robberSpeed : CopsRobbersConfig.copSpeed) *
             dt,
       );
-      if (chomper) _eat(p);
+      if (robber) _eat(p);
     }
 
-    // Caught: any ghost close enough to any chomper.
-    final reach = ChompChaseConfig.catchReach * math.min(_tw, _th);
-    for (final ghost in _runners) {
-      if (ghost.team == chompingTeam) continue;
-      final (gx, gy) = _centre(ghost.c, ghost.r);
+    // Caught: any cop close enough to any robber.
+    final reach = CopsRobbersConfig.catchReach * math.min(_tw, _th);
+    for (final cop in _runners) {
+      if (cop.team == robbingTeam) continue;
+      final (gx, gy) = _centre(cop.c, cop.r);
       for (final prey in _runners) {
-        if (prey.team != chompingTeam || prey.caught) continue;
+        if (prey.team != robbingTeam || prey.caught) continue;
         final (px, py) = _centre(prey.c, prey.r);
         if ((gx - px) * (gx - px) + (gy - py) * (gy - py) > reach * reach) {
           continue;
@@ -212,20 +215,20 @@ class ChompChaseSim implements GameSim {
           ..caught = true
           ..deadX = px
           ..deadY = py;
-        // The bang where it happened, the chomper's sad voice on their own
-        // phone, and the ghost's happy one on theirs.
+        // The bang where it happened, the robber's sad voice on their own
+        // phone, and the cop's happy one on theirs.
         final at = context.nearestPhone(px, py);
-        if (at != null) _playOn(at, ChompChaseConfig.explosion);
+        if (at != null) _playOn(at, CopsRobbersConfig.caught);
         final lost = context.roster.byPhone(prey.phoneId);
         if (lost != null) context.audio.playOnPhone(lost, lost.soundSad);
-        final won = context.roster.byPhone(ghost.phoneId);
+        final won = context.roster.byPhone(cop.phoneId);
         if (won != null) context.audio.playOnPhone(won, won.soundHappy);
       }
     }
 
-    final anyLeft = _runners.any((p) => p.team == chompingTeam && !p.caught);
+    final anyLeft = _runners.any((p) => p.team == robbingTeam && !p.caught);
     final dotsLeft = _dots.any((d) => d == 1);
-    final timeUp = _clock >= ChompChaseConfig.halfSeconds;
+    final timeUp = _clock >= CopsRobbersConfig.halfSeconds;
     if (!anyLeft || !dotsLeft || timeUp) {
       _timedOut = timeUp && anyLeft && dotsLeft;
       _endHalf();
@@ -306,8 +309,8 @@ class ChompChaseSim implements GameSim {
   void _eat(_Runner p) {
     final c = p.c.round();
     final r = p.r.round();
-    if ((p.c - c).abs() > ChompChaseConfig.eatReach ||
-        (p.r - r).abs() > ChompChaseConfig.eatReach) {
+    if ((p.c - c).abs() > CopsRobbersConfig.eatReach ||
+        (p.r - r).abs() > CopsRobbersConfig.eatReach) {
       return;
     }
     final k = r * maze.cols + c;
@@ -336,7 +339,7 @@ class ChompChaseSim implements GameSim {
     if (_eaten[0] == _eaten[1]) {
       context.scores.awardPlacements([teams.keys.toSet()]);
       _outcome = GameOutcome.draw(
-        summary: 'dead level, ${_eaten[0]} dots each',
+        summary: 'dead level, ${_eaten[0]} coins each',
         lines: _lines(),
       );
       return;
@@ -350,7 +353,7 @@ class ChompChaseSim implements GameSim {
     }
     _outcome = GameOutcome.contest(
       winners: winners,
-      summary: '${_eaten[winning]} dots to ${_eaten[1 - winning]}',
+      summary: '${_eaten[winning]} coins to ${_eaten[1 - winning]}',
       lines: _lines(),
     );
   }
@@ -358,7 +361,8 @@ class ChompChaseSim implements GameSim {
   Map<String, String> _lines() => {
     for (final p in _runners)
       p.phoneId:
-          'Your team ate ${_eaten[p.team]} dots — you ate ${p.ate} of them',
+          'Your team grabbed ${_eaten[p.team]} coins — '
+          'you grabbed ${p.ate} of them',
   };
 
   // ------------------------------------------------------------------ input
@@ -384,7 +388,7 @@ class ChompChaseSim implements GameSim {
         if (from == null || p.swiped) break;
         final dx = touch.worldX - from.$1;
         final dy = touch.worldY - from.$2;
-        if (math.max(dx.abs(), dy.abs()) < ChompChaseConfig.swipeThreshold) {
+        if (math.max(dx.abs(), dy.abs()) < CopsRobbersConfig.swipeThreshold) {
           break;
         }
         p.swiped = true;
@@ -407,14 +411,14 @@ class ChompChaseSim implements GameSim {
   Iterable<Entity> get entities sync* {
     for (final p in _runners) {
       if (p.caught) continue;
-      final chomper = p.team == chompingTeam;
+      final robber = p.team == robbingTeam;
       final (x, y) = _centre(p.c, p.r);
       yield Entity(
         descriptor: EntityDescriptor(
           // A new id each half: a runner changes what it is at half time, and
           // an entity's kind is fixed for its life.
-          id: '${chomper ? 'chomper' : 'ghost'}_${p.index}_$_half',
-          kind: chomper ? 'chomper' : 'ghost',
+          id: '${robber ? 'robber' : 'cop'}_${p.index}_$_half',
+          kind: robber ? 'robber' : 'cop',
           props: {'phoneId': p.phoneId, 'index': p.index},
         ),
         x: x,
@@ -442,19 +446,19 @@ class ChompChaseSim implements GameSim {
     final map = <String, Object?>{
       'phase': _phase,
       'half': _half,
-      'chomping': chompingTeam,
+      'robbing': robbingTeam,
       if (_phase == 'countdown')
         'countdown':
-            ((ChompChaseConfig.countdownSeconds - _clock) * 10).roundToDouble() /
+            ((CopsRobbersConfig.countdownSeconds - _clock) * 10).roundToDouble() /
             10,
       // Whole seconds of the half left: a value that changes every tick is a
       // packet every tick.
       if (_phase == 'playing')
-        'left': (ChompChaseConfig.halfSeconds - _clock).ceil(),
+        'left': (CopsRobbersConfig.halfSeconds - _clock).ceil(),
       // ROUND OVER, for as long as it holds the table after the clock ran out.
       if ((_phase == 'switch' || _phase == 'over') &&
           _timedOut &&
-          _clock < ChompChaseConfig.timeUpSeconds)
+          _clock < CopsRobbersConfig.timeUpSeconds)
         'timeUp': true,
       // The maze and where it sits: fixed for the round.
       'maze': _mazeCode,

@@ -89,7 +89,7 @@ flutter:
     # Each game's own sounds and art, one folder per game id. Leveled copies —
     # the originals live in audio-src/originals/games/ (see audio-src/README.md).
     - assets/games/arena/
-    - assets/games/chompchase/
+    - assets/games/copsrobbers/
     - assets/games/dodgeball/
     - assets/games/flood/
     - assets/games/guacamole/
