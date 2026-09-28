@@ -50,6 +50,13 @@ class HotPotatoConfig {
   static const double hopSecondsCalm = 0.55;
   static const double hopSecondsFrantic = 0.26;
 
+  /// Hops a potato makes in your hands before you can pass it on — from one
+  /// hand to the other and back. Without a floor, a potato could be swiped
+  /// straight back out the instant it landed, and the round turned into
+  /// whoever could spam the glass fastest. A swipe made sooner is not lost:
+  /// it waits, and goes on the hop that allows it.
+  static const int hopsBeforePass = 2;
+
   /// How high a hop goes, in world units. Lower as it heats up — quick little
   /// flicks rather than lazy tosses.
   static const double hopArcCalm = 2.2;

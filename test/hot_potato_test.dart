@@ -87,10 +87,11 @@ void swipeAlongScreen(
   );
 }
 
-/// A swipe, then long enough for the potato to land in a hand and go.
+/// A swipe, then long enough for the potato to go.
 ///
-/// A swipe only *queues* the throw — it leaves at the next catch — so the
-/// holder changes up to one hop later, not on the spot.
+/// A swipe only *queues* the throw: it leaves on a landing, and only once the
+/// potato has made its [HotPotatoConfig.hopsBeforePass] hops in these hands —
+/// so the holder changes a couple of hops later, not on the spot.
 void pass(
   HotPotatoSim sim,
   BoardLayout board,
@@ -98,7 +99,7 @@ void pass(
   required bool up,
 }) {
   swipeAlongScreen(sim, board, phoneId, up: up);
-  for (var i = 0; i < PlatformConfig.simHz && sim.holder == phoneId; i++) {
+  for (var i = 0; i < PlatformConfig.simHz * 3 && sim.holder == phoneId; i++) {
     sim.step(1 / PlatformConfig.simHz);
   }
 }
@@ -509,8 +510,13 @@ void main() {
         final ring = ringOrder(board);
 
         for (var hop = 0; hop < count * 3; hop++) {
+          // Each pass waits out its hops now, so a long run of them can
+          // outlast the fuse. A fresh round when it goes: this is about where
+          // a pass lands, not about the bang.
+          if (sim.sharedState['exploded'] == true) sim.reset();
           final from = sim.holder;
           pass(sim, board, from, up: hop.isEven);
+          if (sim.sharedState['exploded'] == true) continue;
 
           final was = ring.indexOf(from);
           final now = ring.indexOf(sim.holder);
@@ -620,9 +626,13 @@ void main() {
       expect(sim.holder, from, reason: 'nobody can throw what is in the air');
       expect(sim.passPending, isTrue);
 
-      // It goes at the catch — within one hop, never later.
-      final hopTicks = (HotPotatoConfig.hopSecondsCalm * PlatformConfig.simHz)
-          .ceil();
+      // It goes on a landing, once it has hopped enough in these hands —
+      // within that many hops, never later.
+      final hopTicks =
+          (HotPotatoConfig.hopSecondsCalm *
+                  HotPotatoConfig.hopsBeforePass *
+                  PlatformConfig.simHz)
+              .ceil();
       for (var i = 0; i < hopTicks && sim.holder == from; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
@@ -630,23 +640,63 @@ void main() {
       expect(sim.passPending, isFalse);
     });
 
-    test('a swipe made while it is flying goes straight back out', () {
-      final started = start(5);
+    test(
+      'a swipe made while it is flying waits for two hops, not the catch',
+      () {
+        final started = start(5);
+        final sim = started.sim;
+        final board = started.board;
+
+        final first = sim.holder;
+        pass(sim, board, first, up: true);
+        final second = sim.holder;
+        expect(sim.inFlight, isTrue);
+
+        // Swiped by the catcher before it has arrived: queued...
+        swipeAlongScreen(sim, board, second, up: true);
+        expect(sim.passPending, isTrue);
+        while (sim.inFlight) {
+          sim.step(1 / PlatformConfig.simHz);
+        }
+
+        // ...but not thrown at the catch, which is not a hop. Straight back out
+        // was the spam this rule is here to stop.
+        expect(sim.holder, second);
+        expect(sim.hopsHere, 0);
+        expect(sim.passPending, isTrue);
+
+        // It goes on the second hop, and not before the first.
+        var hopsSeen = 0;
+        for (
+          var i = 0;
+          i < PlatformConfig.simHz * 3 && sim.holder == second;
+          i++
+        ) {
+          final before = sim.hopsHere;
+          sim.step(1 / PlatformConfig.simHz);
+          if (sim.holder == second && sim.hopsHere > before) hopsSeen++;
+        }
+        expect(sim.holder, isNot(second));
+        expect(
+          hopsSeen,
+          HotPotatoConfig.hopsBeforePass - 1,
+          reason: 'it left on the hop that allowed it',
+        );
+      },
+    );
+
+    test('with no swipe waiting, it just keeps hopping', () {
+      final started = start(4);
       final sim = started.sim;
-      final board = started.board;
-
-      final first = sim.holder;
-      pass(sim, board, first, up: true);
-      final second = sim.holder;
-
-      // Swiped by the catcher before it has arrived: queued, then thrown the
-      // moment it lands.
-      swipeAlongScreen(sim, board, second, up: true);
-      expect(sim.passPending, isTrue);
-      for (var i = 0; i < PlatformConfig.simHz && sim.holder == second; i++) {
+      final from = sim.holder;
+      for (var i = 0; i < PlatformConfig.simHz * 3; i++) {
         sim.step(1 / PlatformConfig.simHz);
       }
-      expect(sim.holder, isNot(second));
+      expect(sim.holder, from);
+      expect(
+        sim.hopsHere,
+        greaterThanOrEqualTo(HotPotatoConfig.hopsBeforePass),
+      );
     });
   });
 
@@ -1000,7 +1050,8 @@ void main() {
       final landings = h.audio.plays
           .where(
             (p) =>
-                p.cue == HotPotatoConfig.woosh || p.cue == HotPotatoConfig.boing,
+                p.cue == HotPotatoConfig.woosh ||
+                p.cue == HotPotatoConfig.boing,
           )
           .toList();
       expect(
@@ -1010,6 +1061,17 @@ void main() {
       );
       run(h.sim, HotPotatoConfig.blastHoldSeconds + 0.1);
       expect(h.sim.outcome!.winners, isNot(contains(h.sim.holder)));
+
+      // And no kettle is left whistling. The bang lands in the middle of the
+      // throw's step, and the step used to carry on and start the loser's
+      // kettle straight back up — on through the results.
+      for (final kettle in h.audio.tones) {
+        expect(
+          h.audio.stopped,
+          contains(kettle.handle),
+          reason: 'a kettle on ${kettle.phoneId} was never stopped',
+        );
+      }
     });
 
     test('in the holder\'s hands it goes off on time, even mid-juggle', () {

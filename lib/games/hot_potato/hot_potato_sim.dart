@@ -97,6 +97,19 @@ class HotPotatoSim implements GameSim {
   /// ring, 0 for none.
   int _pendingStep = 0;
 
+  /// Hops the potato has made in the holder's hands since it arrived — see
+  /// [HotPotatoConfig.hopsBeforePass].
+  int _hopsHere = 0;
+
+  /// Whether it has hopped enough here to be passed on.
+  bool get canPass => _hopsHere >= HotPotatoConfig.hopsBeforePass;
+
+  /// Hops made in the current holder's hands so far.
+  int get hopsHere => _hopsHere;
+
+  /// On its way from one player to the next.
+  bool get inFlight => _flying;
+
   double _fuseLeft = HotPotatoConfig.fuseSeconds;
   double _elapsed = 0;
   bool _exploded = false;
@@ -232,6 +245,12 @@ class HotPotatoSim implements GameSim {
     } else {
       _stepJuggle(dt, u);
     }
+    // A throw can land in this very step with the fuse already spent, and go
+    // off in the catcher's hands (see [_landed]). The kettle was stopped for
+    // the bang; carrying on to [_updateKettle] would find the potato in a
+    // hand with no kettle playing and start the loser's straight back up —
+    // whistling on through the results.
+    if (_exploded) return;
     _updateKettle(u);
   }
 
@@ -324,6 +343,7 @@ class HotPotatoSim implements GameSim {
       _hand = 1 - _hand;
       _ground = seat.hands[_hand];
       _height = 0;
+      _hopsHere++;
       _landed();
       return;
     }
@@ -346,7 +366,9 @@ class HotPotatoSim implements GameSim {
       _explode();
       return;
     }
-    if (_pendingStep != 0) {
+    // Out only once it has hopped enough in these hands; a swipe made sooner
+    // keeps, and goes on the hop that allows it.
+    if (_pendingStep != 0 && canPass) {
       _playHere(HotPotatoConfig.woosh);
       _throw();
     } else {
@@ -366,6 +388,8 @@ class HotPotatoSim implements GameSim {
     _hand = step > 0 ? 0 : 1;
     _throwTo = _seats[_holderIndex].hands[_hand];
     _flying = true;
+    // A new pair of hands: it has to hop in these before it can go again.
+    _hopsHere = 0;
   }
 
   void _stepThrow(double dt) {
@@ -375,8 +399,8 @@ class HotPotatoSim implements GameSim {
 
     final remaining = (_throwTo - _ground).length;
     if (remaining <= 1e-6) {
-      // Caught. Juggling carries on from this hand — and landing in a hand
-      // counts as a contact, so a swipe made mid-flight goes straight back out.
+      // Caught. Juggling carries on from this hand. The catch is a contact but
+      // not a hop, so a swipe made mid-flight waits for the hops it owes.
       _flying = false;
       _ground = _throwTo;
       _height = 0;
@@ -422,6 +446,7 @@ class HotPotatoSim implements GameSim {
     _kettle = SoundHandle.none;
     _kettlePhone = null;
     _pendingStep = 0;
+    _hopsHere = 0;
     _flying = false;
     _spin = 0;
     _holderIndex = _random.nextInt(_ring.length);
