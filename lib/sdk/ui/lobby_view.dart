@@ -796,19 +796,27 @@ class _ColorPicker extends StatelessWidget {
       // they are better than the word did; what nobody could see was how full
       // the table is, and this is the panel that now knows.
       trailing: Text('$here/${PlayerPalette.size}', style: LobbyText.count),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 10,
-        children: [
-          for (final c in PlayerPalette.all)
-            _Swatch(
-              color: c,
-              selected: c.id == mine?.id,
-              // Mine is never "taken" from my own point of view.
-              owner: c.id == mine?.id ? null : seats[c.id],
-              onTap: () => client.pickColor(c),
-            ),
-        ],
+      // The full width of the panel, and the characters centred in it, row by
+      // row. Left to itself the wrap is only as wide as its characters and
+      // sits against the panel's left edge, with the spare room all on the
+      // right.
+      child: SizedBox(
+        width: double.infinity,
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 6,
+          runSpacing: 10,
+          children: [
+            for (final c in PlayerPalette.all)
+              _Swatch(
+                color: c,
+                selected: c.id == mine?.id,
+                // Mine is never "taken" from my own point of view.
+                owner: c.id == mine?.id ? null : seats[c.id],
+                onTap: () => client.pickColor(c),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -876,6 +884,9 @@ class _Swatch extends StatelessWidget {
                 duration: const Duration(milliseconds: 140),
                 width: _disc,
                 height: _disc,
+                // The character in the middle of its disc, whatever size it
+                // is drawn at.
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   // A tint of their own colour rather than the flat fill: the
                   // character is the colour now, and a saturated disc behind
@@ -897,10 +908,12 @@ class _Swatch extends StatelessWidget {
                 // says less than a greyed-out one.
                 child: Opacity(
                   opacity: taken ? 0.45 : 1,
+                  // The disc less its 3px ring either side: the size it was
+                  // always drawn at, back when the disc stretched it to fill.
                   child: PlayerArt.of(
                     color,
                     PlayerArtSlot.topdown,
-                  ).widget(size: 34),
+                  ).widget(size: _disc - 6),
                 ),
               ),
             ],
