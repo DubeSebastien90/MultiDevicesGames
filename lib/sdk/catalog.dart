@@ -1,8 +1,10 @@
 import '../games/arena/arena_game.dart';
+import '../games/chomp_chase/chomp_chase_game.dart';
 import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
 import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
+import '../games/paint_war/paint_war_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
 import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
@@ -29,10 +31,12 @@ class GameCatalog {
     ArenaGame(),
     PitchCarsGame(),
     SubwaySkaterGame(),
+    PaintWarGame(),
     // Premium, at the end.
     GuacamoleGame(),
     HungryHipposGame(),
     DodgeballGame(),
+    ChompChaseGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds
