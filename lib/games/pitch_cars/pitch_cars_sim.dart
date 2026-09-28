@@ -189,6 +189,31 @@ class PitchCarsSim extends Forge2DGameSim {
     _playOn(phone, PitchCarsConfig.crash, volume: PitchCarsConfig.crashVolume);
   }
 
+  /// The last of a car's speed, braked away rather than coasted off.
+  ///
+  /// After the physics, so the brake has the last word on the tick: a car
+  /// slower than [PitchCarsScale.brakeSpeed] loses a steady
+  /// [PitchCarsScale.brakeDecel] a second — instead of the ever-smaller share
+  /// damping takes — and one that reaches nothing is held there, spin and
+  /// all. A car falling into the void is left to its fall.
+  void _brake(double dt) {
+    for (final id in _order) {
+      if (_finished.contains(id) || _fallenFor.containsKey(id)) continue;
+      final car = carOf(id);
+      final v = car.linearVelocity;
+      final speed = v.length;
+      if (speed == 0 || speed >= scale.brakeSpeed) continue;
+      final slower = speed - scale.brakeDecel * dt;
+      if (slower <= 0) {
+        car
+          ..linearVelocity = Vector2.zero()
+          ..angularVelocity = 0;
+      } else {
+        car.linearVelocity = v * (slower / speed);
+      }
+    }
+  }
+
   void _stopHold() {
     final hold = _holdSound;
     if (hold == null) return;
@@ -201,6 +226,7 @@ class PitchCarsSim extends Forge2DGameSim {
     // Before the physics: that is where contacts, and so crashes, happen.
     _sinceCrash += dt;
     super.step(dt);
+    _brake(dt);
     if (_roundOver) {
       if (!_awarded) {
         _awarded = true;
@@ -225,7 +251,9 @@ class PitchCarsSim extends Forge2DGameSim {
         final speed = carOf(id).linearVelocity.length;
         if (speed > maxSpeed) maxSpeed = speed;
       }
-      _atRest = maxSpeed < scale.restSpeed ? _atRest + elapsed : Duration.zero;
+      // Stopped means stopped: [_brake] takes every car the last of the way to
+      // exactly nothing, so there is no threshold to be under.
+      _atRest = maxSpeed == 0 ? _atRest + elapsed : Duration.zero;
 
       // Angular damping should stop a car spinning-in-place well before
       // this, but this watchdog is the actual guarantee: force the turn to

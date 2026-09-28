@@ -13,8 +13,8 @@ import 'subway_skater_view.dart';
 ///
 /// The line is the whole game: your place in it pays out every tick, the front
 /// pays most and meets everything first, and being clipped tumbles you to the
-/// back and moves everyone behind you up one. Nobody holds the front for a
-/// minute, and everybody gets a turn at running point.
+/// back and moves everyone behind you up one. Nobody holds the front for the
+/// whole round, and everybody gets a turn at running point.
 class SubwaySkaterGame implements MultiscreenGame {
   const SubwaySkaterGame();
 
@@ -25,7 +25,7 @@ class SubwaySkaterGame implements MultiscreenGame {
     tagline:
         'Swipe to dodge. The front of the line scores most and gets hit '
         'first.',
-    goal: 'Spend as much of the minute as far up the line as you can.',
+    goal: 'Spend as much of the round as far up the line as you can.',
     // Two is a line, barely — one hit and you have swapped ends. Beyond about
     // eight the corridor is longer than anybody can watch at once.
     players: PlayerCount.range(min: 2, max: 8),
@@ -36,7 +36,7 @@ class SubwaySkaterGame implements MultiscreenGame {
   /// of the table and wants every centimetre of it.
   ///
   /// Joined in the order people connected rather than by size. Every place in
-  /// the line is played by everybody before the minute is out, so sorting by
+  /// the line is played by everybody before the round is out, so sorting by
   /// screen would be arranging the table around a position nobody keeps.
   ///
   /// Centred across, because the three lanes are cut from the band that *every*

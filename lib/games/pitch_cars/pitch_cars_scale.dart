@@ -178,4 +178,12 @@ class PitchCarsScale {
   /// A car is at rest when it is slower than this. Follows [reach] rather than
   /// [size]: it is a speed, and speeds on a big table are larger throughout.
   double get restSpeed => PitchCarsConfig.restSpeed * math.max(reach, 0.1);
+
+  /// The speed under which a car brakes to a stop — see
+  /// [PitchCarsConfig.brakeBelowRestSpeeds].
+  double get brakeSpeed => restSpeed * PitchCarsConfig.brakeBelowRestSpeeds;
+
+  /// How hard it brakes: from [brakeSpeed] to nothing in
+  /// [PitchCarsConfig.brakeSeconds].
+  double get brakeDecel => brakeSpeed / PitchCarsConfig.brakeSeconds;
 }

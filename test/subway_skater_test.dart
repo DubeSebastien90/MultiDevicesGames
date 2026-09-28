@@ -305,11 +305,17 @@ void main() {
   });
 
   group('the corridor winding up', () {
-    test('reaches full speed with twenty seconds left, and holds it', () {
+    test('reaches full speed for the last third, and holds it', () {
       const peak = SubwaySkaterConfig.endSpeed;
       final peakAt =
           SubwaySkaterConfig.roundSeconds -
           SubwaySkaterConfig.peakWithSecondsLeft;
+
+      // The same speeds as the minute-long round had, at both ends — only the
+      // climb between them is quicker: two thirds of the round, then flat out.
+      expect(SubwaySkaterConfig.obstacleSpeed, 12.6);
+      expect(peak, 16.2);
+      expect(peakAt, SubwaySkaterConfig.roundSeconds * 2 / 3);
 
       expect(SubwaySkaterConfig.speedAt(0), SubwaySkaterConfig.obstacleSpeed);
       expect(SubwaySkaterConfig.speedAt(peakAt), closeTo(peak, 1e-9));
@@ -679,7 +685,8 @@ void main() {
       expect(sim.positionTimeOf('p3'), greaterThan(atPromotion));
     });
 
-    test('the round ends after a minute, everybody with their own line', () {
+    test('the round ends after 45 seconds, everybody with their own line', () {
+      expect(SubwaySkaterConfig.roundSeconds, 45);
       final started = start(3);
       final sim = started.sim;
 
@@ -691,7 +698,7 @@ void main() {
       expect(
         outcome!.kind,
         OutcomeKind.personal,
-        reason: 'a corridor has no winner, only a minute each',
+        reason: 'a corridor has no winner, only a round each',
       );
       expect(outcome.winners, isNull);
       expect(outcome.lines!.keys, containsAll(<String>['p1', 'p2', 'p3']));

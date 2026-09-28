@@ -94,6 +94,15 @@ class PitchCarsConfig {
   static const double impulsePerPull = 5.5;
   static const double restSpeed = 0.3;
   static const Duration restDelay = Duration(milliseconds: 600);
+
+  /// Below this many times [restSpeed], a car stops coasting and brakes.
+  ///
+  /// Damping alone slows a car in proportion to its speed, so the last stretch
+  /// is a long creep: a car that was all but stopped slid on for another
+  /// second, and the turn waited on it. Under this, friction is replaced by a
+  /// steady brake that takes it to a dead stop in [brakeSeconds].
+  static const double brakeBelowRestSpeeds = 3;
+  static const double brakeSeconds = 0.15;
   static const Duration maxFlightTime = Duration(seconds: 6);
   static const Duration hitGraceWindow = Duration(milliseconds: 250);
 

@@ -16,8 +16,9 @@ class SubwaySkaterConfig {
   /// standing at the far side of the corridor.
   static const int lanes = 3;
 
-  /// One minute.
-  static const double roundSeconds = 60;
+  /// Forty-five seconds. It was a minute; the speeds at either end are the
+  /// same, and everything in between comes round faster.
+  static const double roundSeconds = 45;
 
   /// How fast the corridor comes at you at the start, in world units per
   /// second.
@@ -49,7 +50,7 @@ class SubwaySkaterConfig {
   /// which reads as the game stopping rather than as a climax.
   ///
   /// So the two ends were brought toward each other — the top down, and the
-  /// opening up to keep the first twenty seconds from feeling slack next to it.
+  /// opening up to keep the first stretch from feeling slack next to it.
   /// Half a second at the peak is still fast, and it is enough to act on.
   ///
   /// The round does not lose its build for this. Most of the pressure was never
@@ -66,11 +67,11 @@ class SubwaySkaterConfig {
   /// The wind-up is the first two thirds and the last third is flat out. A ramp
   /// that only arrived at full speed on the final second would mean nobody ever
   /// played at it: the top speed would be a number in a config file rather than
-  /// twenty seconds everybody remembers. The waves keep tightening through the
+  /// a stretch everybody remembers. The waves keep tightening through the
   /// plateau, so the closing stretch still builds — on spacing rather than on
   /// pace, which is a different kind of pressure and lands after players have
   /// had time to find the rhythm of the fast corridor.
-  static const double peakWithSecondsLeft = 20;
+  static const double peakWithSecondsLeft = 15;
 
   /// How long the wind-up lasts.
   static const double rampSeconds = roundSeconds - peakWithSecondsLeft;

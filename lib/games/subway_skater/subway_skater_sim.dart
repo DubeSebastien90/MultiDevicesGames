@@ -17,7 +17,7 @@ import 'subway_skater_config.dart';
 /// front of the line is worth the most and the back is worth nothing — and the
 /// front is also where obstacles arrive first. Being clipped tumbles you the
 /// whole length of the corridor to the back and moves everybody behind you up
-/// one, so the order churns and nobody holds the front for a whole minute.
+/// one, so the order churns and nobody holds the front for a whole round.
 ///
 /// **Your phone steers your runner, wherever they are in the line.** The one
 /// you joined on is yours for the whole round: climb a place or tumble to the
@@ -615,7 +615,7 @@ class SubwaySkaterSim implements GameSim {
   GameOutcome? get outcome {
     if (!_over) return null;
 
-    // Nobody wins a corridor. Everyone ran the same minute and the only thing
+    // Nobody wins a corridor. Everyone ran the same round and the only thing
     // to report is how much of it each of them spent near the front. Built once
     // and kept: `outcome` is polled several times a tick.
     return _outcome ??= GameOutcome.perPhone({
