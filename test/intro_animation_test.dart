@@ -162,6 +162,20 @@ void main() {
     expect(done, isTrue);
   });
 
+  test('plays a second and a half of wait and of animation, under the chime', () {
+    // Drawn as a second of each; played at two thirds speed.
+    expect(IntroAnimation.playedSeconds, 3.0);
+    expect(
+      IntroAnimation.drawnSeconds / IntroAnimation.pace,
+      closeTo(IntroAnimation.playedSeconds, 1e-9),
+    );
+    // The net sits well past the slowed animation, so it never cuts it off.
+    expect(
+      IntroAnimation.fallbackAfter.inMilliseconds / 1000,
+      greaterThan(IntroAnimation.playedSeconds + 1.5),
+    );
+  });
+
   test('the names in the code are the names in the file', () {
     // Five strings have to match what the artist typed in the Rive editor, and
     // not one of them fails loudly: a wrong state machine name throws where it

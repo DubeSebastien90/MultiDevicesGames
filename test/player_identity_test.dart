@@ -259,7 +259,12 @@ void main() {
         ],
       ].where((c) => c.exists);
 
-      expect(cues, hasLength(17), reason: 'a pop and sixteen player clips');
+      expect(
+        cues,
+        hasLength(18),
+        reason: 'a pop, the intro chime and sixteen player clips',
+      );
+      expect(cues, contains(Sounds.introChime));
 
       for (final cue in cues) {
         await tester.runAsync(() async {

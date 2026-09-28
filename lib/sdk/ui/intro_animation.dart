@@ -26,6 +26,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:rive/rive.dart' as rive;
 
+import '../audio/sounds.dart';
+import '../audio/ui_audio.dart';
+
 class IntroAnimation extends StatefulWidget {
   const IntroAnimation({
     super.key,
@@ -52,6 +55,20 @@ class IntroAnimation extends StatefulWidget {
   final Duration duration;
 
   static const fallbackAfter = Duration(seconds: 6);
+
+  /// How long the file plays as drawn: a second holding on `Idle` — the
+  /// transition to `Lock_In` waits for it to finish — then a second of
+  /// `Lock_In`.
+  static const drawnSeconds = 2.0;
+
+  /// How long it is played for here: a second and a half of each. Long enough
+  /// for the [Sounds.introChime] that starts with it to have all but rung out
+  /// when the curtain lifts, rather than being cut across by the next screen
+  /// halfway through.
+  static const playedSeconds = 3.0;
+
+  /// The rate the animation's clock runs at against the real one.
+  static const pace = drawnSeconds / playedSeconds;
 
   static const asset = 'assets/sdk/animations/startanimationColors.riv';
 
@@ -148,7 +165,8 @@ base class _IntroController extends rive.RiveWidgetController {
 
   @override
   bool advance(double elapsedSeconds) {
-    if (super.advance(elapsedSeconds)) {
+    // Slowed evenly, wait and animation alike — see [IntroAnimation.pace].
+    if (super.advance(elapsedSeconds * IntroAnimation.pace)) {
       _ran = true;
       _flushed = false;
       return true;
@@ -228,6 +246,12 @@ class _IntroAnimationState extends State<IntroAnimation> {
       // for good.
       // ignore: deprecated_member_use
       controller.stateMachine.trigger(IntroAnimation.startTrigger)?.fire();
+
+      // The chime, on the same instant the animation starts. Local, like the
+      // animation itself: every phone at the table was told to play within a
+      // few milliseconds of every other, and each rings its own. Not played
+      // when there is no animation to go with it.
+      UiAudio.speaker.play(Sounds.introChime);
 
       setState(() {
         _file = file;

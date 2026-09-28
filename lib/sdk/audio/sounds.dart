@@ -57,6 +57,14 @@ class Sounds {
   /// a file behind it, and the one a mole being squished wants.
   static const pop = SoundCue('pop', 'assets/sdk/sfx/pop.wav');
 
+  /// The chime over the curtain at the start of a run, played as its
+  /// animation begins. Longer than the animation — it rings on into the
+  /// placement screen, which is the point: it is the table arriving.
+  static const introChime = SoundCue(
+    'introChime',
+    'assets/sdk/sfx/dingdingding.wav',
+  );
+
   /// A phone joined the table, and a phone left it. Platform events, played by
   /// the lobby rather than by any game.
   static const joined = SoundCue('joined');
@@ -101,6 +109,7 @@ class Sounds {
     tap,
     denied,
     pop,
+    introChime,
     joined,
     left,
     lobbyTheme,

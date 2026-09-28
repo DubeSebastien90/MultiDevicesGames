@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'sdk/app_controller.dart';
 import 'sdk/audio/audio_engine.dart';
+import 'sdk/audio/audio_resume.dart';
 import 'sdk/audio/soloud_output.dart';
 import 'sdk/audio/sounds.dart';
 import 'sdk/audio/ui_audio.dart';
@@ -31,6 +32,9 @@ Future<void> main() async {
         ...Sounds.holdSteps,
         ...Sounds.buttonPress,
         Sounds.pop,
+        // Decoded ahead, or its first play waits on the decode and rings a
+        // beat behind the animation it belongs to.
+        Sounds.introChime,
       ])
         cue.asset!,
     ]),
@@ -88,13 +92,23 @@ class MultiscreenApp extends StatefulWidget {
 class _MultiscreenAppState extends State<MultiscreenApp> {
   final _controller = AppController();
 
-  /// Shuts the audio engine down when the window is closed. Without it the
-  /// process outlives its window on Windows — see [shutdownSoLoud].
+  /// Rebuilds the audio engine on the way back from the background — the
+  /// system takes the audio device from an app that is not in front, and
+  /// without this nothing played again until the app was killed. See
+  /// [restartSoLoud].
+  final _audioResume = AudioResumeWatcher(restart: restartSoLoud);
+
+  /// Shuts the audio engine down when the window is closed — without it the
+  /// process outlives its window on Windows, see [shutdownSoLoud] — and hands
+  /// leaving and coming back to [_audioResume].
   late final _exitListener = AppLifecycleListener(
     onExitRequested: () async {
       shutdownSoLoud();
       return AppExitResponse.exit;
     },
+    onHide: _audioResume.left,
+    onPause: _audioResume.left,
+    onResume: _audioResume.back,
   );
 
   @override
