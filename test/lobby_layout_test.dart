@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:multiscreen_slingshot/sdk/app_controller.dart';
 import 'package:multiscreen_slingshot/sdk/model/device_metrics.dart';
+import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
 import 'package:multiscreen_slingshot/sdk/ui/lobby_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The lobby is a screen that holds still: one column, no scrolling. So how it
-/// lays out on a real phone's screen is worth pinning down, and the only way
-/// to know is to host a table and draw it.
+/// The lobby is a screen that holds still on any phone with the room, and
+/// scrolls as a whole on one without. How it lays out on real screens is worth
+/// pinning down, and the only way to know is to host a table and draw it.
 void main() {
   Future<AppController> hosting(WidgetTester tester, double w, double h) async {
     SharedPreferences.setMockInitialValues({});
@@ -41,62 +42,56 @@ void main() {
     return controller;
   }
 
-  /// Every character's disc, grouped into the rows the picker wrapped them in.
+  /// Every character's tile, grouped into the rows the picker laid them in.
   (Rect, List<List<Rect>>) picker(WidgetTester tester) {
-    final panel = find
+    final card = find
         .ancestor(
-          of: find.text('Select your character'),
-          matching: find.byType(Container),
+          of: find.text('Pick your bubble'),
+          matching: find.byType(DecoratedBox),
         )
-        .first;
-    final discs = find.descendant(
-      of: panel,
-      matching: find.byType(AnimatedContainer),
-    );
+        .last;
     final rows = <double, List<Rect>>{};
-    for (final e in discs.evaluate()) {
-      final r = tester.getRect(find.byWidget(e.widget));
-      rows.putIfAbsent(r.top, () => []).add(r);
+    for (final c in PlayerPalette.all) {
+      // The tile's slot, outside its tilt: mine is turned and scaled a little,
+      // which is decoration rather than layout.
+      final r = tester.getRect(find.byKey(ValueKey('character-${c.id}')));
+      rows.putIfAbsent(r.center.dy.roundToDouble(), () => []).add(r);
     }
-    return (tester.getRect(panel), rows.values.toList());
+    return (tester.getRect(card), rows.values.toList());
   }
 
-  for (final (w, h, name, fits) in [
-    (320.0, 568.0, 'a first-generation iPhone SE', false),
-    (360.0, 640.0, 'a small Android', false),
-    (375.0, 667.0, 'an iPhone 8', true),
-    (390.0, 844.0, 'an iPhone 14', true),
-    (428.0, 926.0, 'an iPhone 14 Plus', true),
+  for (final (w, h, name) in [
+    (320.0, 568.0, 'a first-generation iPhone SE'),
+    (360.0, 640.0, 'a small Android'),
+    (375.0, 667.0, 'an iPhone 8'),
+    (390.0, 844.0, 'an iPhone 14'),
+    (428.0, 926.0, 'an iPhone 14 Plus'),
   ]) {
-    testWidgets('on $name the characters sit centred in their panel', (
+    testWidgets('on $name the characters are two rows of four, centred', (
       tester,
     ) async {
       await hosting(tester, w, h);
-      final (panel, rows) = picker(tester);
-      expect(rows.expand((r) => r), hasLength(8));
+      final (card, rows) = picker(tester);
 
+      expect(rows, hasLength(2));
       for (final row in rows) {
+        expect(row, hasLength(4));
         final left = row.map((r) => r.left).reduce((a, b) => a < b ? a : b);
         final right = row.map((r) => r.right).reduce((a, b) => a > b ? a : b);
         expect(
-          left - panel.left,
-          closeTo(panel.right - right, 1),
-          reason: 'a row of ${row.length} is off to one side',
+          left - card.left,
+          closeTo(card.right - right, 2),
+          reason: 'a row is off to one side',
         );
-        for (final disc in row) {
-          expect(disc.size, const Size(48, 48));
-        }
+      }
+      // Square, and big enough to be somebody — even on the narrowest phone.
+      for (final tile in rows.expand((r) => r)) {
+        expect(tile.width, closeTo(tile.height, 0.5));
+        expect(tile.width, greaterThanOrEqualTo(44));
       }
 
-      // Whether the whole lobby fits without scrolling. It does not on the
-      // two smallest screens, where the characters wrap to three rows — a
-      // known limit, written down here so it is changed on purpose.
-      final overflow = tester.takeException();
-      if (fits) {
-        expect(overflow, isNull, reason: 'the lobby no longer fits on $name');
-      } else {
-        expect(overflow, isNotNull);
-      }
+      // Nothing overflows on any of them: the short ones scroll instead.
+      expect(tester.takeException(), isNull, reason: 'overflowed on $name');
     });
   }
 }
