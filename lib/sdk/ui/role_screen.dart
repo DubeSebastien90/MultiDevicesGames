@@ -299,7 +299,11 @@ class _RoleScreenState extends State<RoleScreen> {
           // Scrolls only when it has to — a small phone, big system type, the
           // keyboard up — and otherwise fills the screen with the title taking
           // whatever height the controls leave, as drawn.
+          //
+          // Not primary: on iOS a primary scroll view always bounces, even
+          // with nothing to scroll, and the whole page moved under a finger.
           child: CustomScrollView(
+            primary: false,
             slivers: [
               SliverFillRemaining(
                 hasScrollBody: false,
