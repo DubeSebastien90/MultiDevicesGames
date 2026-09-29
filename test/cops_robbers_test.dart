@@ -18,6 +18,7 @@ import 'package:multiscreen_slingshot/sdk/layout/board_compiler.dart';
 import 'package:multiscreen_slingshot/sdk/layout/phone_spec.dart';
 import 'package:multiscreen_slingshot/sdk/model/player.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_color.dart';
+import 'package:multiscreen_slingshot/sdk/model/world_rect.dart';
 import 'package:multiscreen_slingshot/sdk/platform_config.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 
@@ -515,6 +516,63 @@ void main() {
       CopsRobbersView.switchLine(wasRobbing: false, grabbed: 0),
       'SWITCH!',
     );
+  });
+
+  group('a block on a seam', () {
+    // A horizontal seam 0.6 thick (two 3mm bezels) along y = 5.
+    const seams = [WorldRect(0, 4.7, 10, 0.6)];
+    const thickness = 0.56;
+
+    test('is built out across the seam and onto both screens', () {
+      final block = CopsRobbersView.seamBlock(2, 5, 4, 5, thickness, seams)!;
+      final peek = thickness * CopsRobbersView.seamPeek;
+      expect(block.top, closeTo(4.7 - peek, 1e-9));
+      expect(block.bottom, closeTo(5.3 + peek, 1e-9));
+      expect(block.left, closeTo(2 - thickness / 2, 1e-9));
+      expect(block.right, closeTo(4 + thickness / 2, 1e-9));
+    });
+
+    test('on a real table, the middle wall is found on the seam', () {
+      for (final n in [2, 4]) {
+        var found = 0;
+        for (var seed = 0; seed < 20; seed++) {
+          final s = start(n, seed: seed, toPlay: false);
+          final state = s.sim.sharedState;
+          final maze = CityMaze.decode(state['maze']! as String);
+          final ox = (state['ox']! as num).toDouble();
+          final oy = (state['oy']! as num).toDouble();
+          final tw = (state['tw']! as num).toDouble();
+          final th = (state['th']! as num).toDouble();
+          final seams = s.board.coverage.seamRects();
+          var here = 0;
+          for (var r = 0; r < maze.rows - 1; r++) {
+            for (var c = 0; c < maze.cols; c++) {
+              if (maze.open(c, r, 0, 1)) continue;
+              final y = oy + (r + 1) * th;
+              final x = ox + c * tw;
+              if (CopsRobbersView.seamBlock(
+                    x,
+                    y,
+                    x + tw,
+                    y,
+                    math.min(tw, th) * 0.34,
+                    seams,
+                  ) !=
+                  null) {
+                here++;
+              }
+            }
+          }
+          found += here;
+        }
+        expect(found, greaterThan(0), reason: '$n phones: no wall on the seam');
+      }
+    });
+
+    test('a wall across the seam, or away from it, is left alone', () {
+      expect(CopsRobbersView.seamBlock(3, 4, 3, 6, thickness, seams), isNull);
+      expect(CopsRobbersView.seamBlock(2, 2, 4, 2, thickness, seams), isNull);
+    });
   });
 
   test('the view draws every phase without falling over', () {

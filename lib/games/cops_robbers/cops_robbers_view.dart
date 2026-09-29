@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../../sdk/contract/entity.dart';
 import '../../sdk/contract/view.dart';
 import '../../sdk/model/player.dart';
+import '../../sdk/model/world_rect.dart';
 import '../../sdk/render/particle_burst.dart';
 import '../../sdk/render/player_animation.dart';
 import 'city_maze.dart';
@@ -51,6 +52,11 @@ class CopsRobbersView extends GameView {
   Path _blockOutline = Path();
   Path _dashes = Path();
 
+  /// The blocks that stand on a seam, as filled rectangles rather than
+  /// strokes: one path per roof colour, like [_blocks].
+  List<Path> _seamBlocks = const [];
+  Path _seamOutline = Path();
+
   final _burstAt = <String, double>{};
   final _lastSeen = <String, Offset>{};
 
@@ -76,7 +82,7 @@ class CopsRobbersView extends GameView {
     if (raw != _mazeRaw) {
       _mazeRaw = raw;
       final maze = _maze = CityMaze.decode(raw);
-      _build(maze, ox, oy, tw, th);
+      _build(maze, ox, oy, tw, th, frame.coverage.seamRects());
     }
     final maze = _maze!;
     final tile = math.min(tw, th);
@@ -102,12 +108,16 @@ class CopsRobbersView extends GameView {
       ..color = const Color(0x55000000)
       ..strokeWidth = wall;
     canvas.drawPath(_blockOutline, _line);
+    _fill.color = const Color(0x55000000);
+    canvas.drawPath(_seamOutline, _fill);
     canvas.restore();
     for (var k = 0; k < _blocks.length; k++) {
       _line
         ..color = Color(CopsRobbersConfig.roofColors[k])
         ..strokeWidth = wall;
       canvas.drawPath(_blocks[k], _line);
+      _fill.color = Color(CopsRobbersConfig.roofColors[k]);
+      canvas.drawPath(_seamBlocks[k], _fill);
     }
     _line
       ..color = const Color(0x40FFFFFF)
@@ -137,17 +147,44 @@ class CopsRobbersView extends GameView {
   /// The city from the maze: each closed side between two tiles is a stretch
   /// of building, roofed in one of a few colours picked by where it is — so
   /// the same maze is the same city on every phone.
-  void _build(CityMaze maze, double ox, double oy, double tw, double th) {
+  ///
+  /// A block standing on a seam is built out across it instead, far enough to
+  /// show on both screens — see [seamBlock].
+  void _build(
+    CityMaze maze,
+    double ox,
+    double oy,
+    double tw,
+    double th,
+    List<WorldRect> seams,
+  ) {
     final roofs = [
       for (var k = 0; k < CopsRobbersConfig.roofColors.length; k++) Path(),
     ];
+    final seamRoofs = [
+      for (var k = 0; k < CopsRobbersConfig.roofColors.length; k++) Path(),
+    ];
     final outline = Path();
+    final seamOutline = Path();
     final dashes = Path();
+    final thickness = math.min(tw, th) * CopsRobbersConfig.blockThickness;
 
     void wall(double x0, double y0, double x1, double y1, int c, int r) {
       // Neighbouring stretches share a roof often enough to read as blocks
       // rather than confetti: the colour follows a coarse patch of the grid.
       final patch = ((c ~/ 3) * 7 + (r ~/ 2) * 3) % roofs.length;
+      final onSeam = seamBlock(x0, y0, x1, y1, thickness, seams);
+      if (onSeam != null) {
+        final rect = Rect.fromLTRB(
+          onSeam.left,
+          onSeam.top,
+          onSeam.right,
+          onSeam.bottom,
+        );
+        seamRoofs[patch].addRect(rect);
+        seamOutline.addRect(rect);
+        return;
+      }
       roofs[patch]
         ..moveTo(x0, y0)
         ..lineTo(x1, y1);
@@ -182,8 +219,62 @@ class CopsRobbersView extends GameView {
     }
     _blocks = roofs;
     _blockOutline = outline;
+    _seamBlocks = seamRoofs;
+    _seamOutline = seamOutline;
     _dashes = dashes;
   }
+
+  /// The block to draw for the wall from ([x0], [y0]) to ([x1], [y1]) if it
+  /// stands on one of [seams]; null if it does not.
+  ///
+  /// The maze is mirrored, so its middle wall lies on the middle of the board —
+  /// which is where two rows of phones meet — and a block [thickness] thick is
+  /// thinner than two bezels. Drawn as it is, it vanishes into the dead glass,
+  /// and the way across looks open where it is not. So a block along a seam is
+  /// built out across the whole of it and [seamPeek] of a block onto each
+  /// screen: the maze is untouched, only what shows of it.
+  static WorldRect? seamBlock(
+    double x0,
+    double y0,
+    double x1,
+    double y1,
+    double thickness,
+    List<WorldRect> seams,
+  ) {
+    final half = thickness / 2;
+    final peek = thickness * seamPeek;
+    final horizontal = y0 == y1;
+    final midX = (x0 + x1) / 2;
+    final midY = (y0 + y1) / 2;
+    for (final seam in seams) {
+      // Only a wall running along the seam: one across it shows on both sides
+      // already.
+      final along = seam.width > seam.height;
+      if (along != horizontal) continue;
+      if (horizontal) {
+        if (midX < seam.left || midX > seam.right) continue;
+        if (y0 + half < seam.top || y0 - half > seam.bottom) continue;
+        final top = math.min(seam.top - peek, y0 - half);
+        final bottom = math.max(seam.bottom + peek, y0 + half);
+        final left = math.min(x0, x1) - half;
+        final right = math.max(x0, x1) + half;
+        return WorldRect(left, top, right - left, bottom - top);
+      }
+      if (midY < seam.top || midY > seam.bottom) continue;
+      if (x0 + half < seam.left || x0 - half > seam.right) continue;
+      final left = math.min(seam.left - peek, x0 - half);
+      final right = math.max(seam.right + peek, x0 + half);
+      final top = math.min(y0, y1) - half;
+      final bottom = math.max(y0, y1) + half;
+      return WorldRect(left, top, right - left, bottom - top);
+    }
+    return null;
+  }
+
+  /// How much of a seam block shows on each screen, as a share of a block's
+  /// thickness: half, so each side sees about as much roof as it would of an
+  /// ordinary block on its own glass.
+  static const double seamPeek = 0.5;
 
   void _drawCoins(
     Canvas canvas,
@@ -337,9 +428,7 @@ class CopsRobbersView extends GameView {
       }
       final started = _burstAt[key] ??= frame.timeMs;
       final t =
-          (frame.timeMs - started) /
-          1000 /
-          CopsRobbersConfig.deathBurstSeconds;
+          (frame.timeMs - started) / 1000 / CopsRobbersConfig.deathBurstSeconds;
       if (t < 0 || t >= 1) continue;
       final x = double.tryParse('${frame.sharedState['deadX_$key']}');
       final y = double.tryParse('${frame.sharedState['deadY_$key']}');
@@ -443,9 +532,7 @@ class CopsRobbersView extends GameView {
             ui.TextStyle(
               color: const Color(CopsRobbersConfig.colorText),
               fontWeight: FontWeight.w900,
-              shadows: const [
-                Shadow(color: Color(0xFF000000), blurRadius: 6),
-              ],
+              shadows: const [Shadow(color: Color(0xFF000000), blurRadius: 6)],
             ),
           )
           ..addText(text);
