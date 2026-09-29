@@ -8,7 +8,7 @@ import 'model/player_color.dart';
 import 'model/preferred_color.dart';
 import 'audio/soloud_output.dart';
 import 'audio/soloud_tone_output.dart';
-import 'monetization/premium_status.dart';
+// import 'monetization/premium_status.dart'; // NO-IAP
 import 'net/loopback_transport.dart';
 import 'net/websocket_transport.dart';
 
@@ -20,14 +20,17 @@ enum AppRole { host, join }
 /// a player too, and it reaches its own world through the same client code path
 /// as everyone else.
 class AppController extends ChangeNotifier {
-  AppController({PremiumStatus? premium})
-      : premium = premium ?? PremiumStatus();
+  // NO-IAP: no RevenueCat until in-app purchases ship. Restore with:
+  //   AppController({PremiumStatus? premium})
+  //       : premium = premium ?? PremiumStatus();
+  AppController();
 
-  /// Whether this device has Premium unlocked. Created once, in `main.dart`,
-  /// and handed to every [HostSession] this controller opens — a host session
-  /// is thrown away and rebuilt each time the table leaves and re-hosts, but
-  /// a purchase made mid-evening should not have to be re-fetched to count.
-  final PremiumStatus premium;
+  // NO-IAP
+  // /// Whether this device has Premium unlocked. Created once, in `main.dart`,
+  // /// and handed to every [HostSession] this controller opens — a host session
+  // /// is thrown away and rebuilt each time the table leaves and re-hosts, but
+  // /// a purchase made mid-evening should not have to be re-fetched to count.
+  // final PremiumStatus premium;
 
   AppRole? _role;
 
@@ -76,7 +79,8 @@ class AppController extends ChangeNotifier {
   Future<void> startHost(DeviceMetrics metrics, {required String name}) async {
     _begin(AppRole.host);
     try {
-      final host = HostSession(name: name, premium: premium);
+      // NO-IAP: was HostSession(name: name, premium: premium).
+      final host = HostSession(name: name);
       await host.start();
       await warmUp();
 

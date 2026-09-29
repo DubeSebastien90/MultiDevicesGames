@@ -1,12 +1,13 @@
 import '../games/arena/arena_game.dart';
-import '../games/cops_robbers/cops_robbers_game.dart';
-import '../games/dodgeball/dodgeball_game.dart';
+// NO-IAP: Premium games are out of the build until in-app purchases ship.
+// import '../games/cops_robbers/cops_robbers_game.dart';
+// import '../games/dodgeball/dodgeball_game.dart';
 import '../games/flood/flood_game.dart';
-import '../games/guacamole/guacamole_game.dart';
+// import '../games/guacamole/guacamole_game.dart';
 import '../games/hot_potato/hot_potato_game.dart';
 import '../games/paint_war/paint_war_game.dart';
 import '../games/pitch_cars/pitch_cars_game.dart';
-import '../games/hungry_hippos/hungry_hippos_game.dart';
+// import '../games/hungry_hippos/hungry_hippos_game.dart';
 import '../games/subway_skater/subway_skater_game.dart';
 import 'contract/game.dart';
 
@@ -32,11 +33,11 @@ class GameCatalog {
     PitchCarsGame(),
     SubwaySkaterGame(),
     PaintWarGame(),
-    // Premium, at the end.
-    GuacamoleGame(),
-    HungryHipposGame(),
-    DodgeballGame(),
-    CopsRobbersGame(),
+    // NO-IAP: Premium, at the end. Restore these with in-app purchases.
+    // GuacamoleGame(),
+    // HungryHipposGame(),
+    // DodgeballGame(),
+    // CopsRobbersGame(),
   ];
 
   /// Bumped when the contract changes shape in a way that would make two builds

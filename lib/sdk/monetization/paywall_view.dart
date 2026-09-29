@@ -1,3 +1,7 @@
+// NO-IAP: the whole paywall is out of the binary until in-app purchases ship.
+// To restore, delete this comment and the `/*` below and the `*/` at the end
+// of the file.
+/*
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -357,3 +361,4 @@ class _Unlocked extends StatelessWidget {
     );
   }
 }
+*/

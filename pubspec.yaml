@@ -41,7 +41,8 @@ dependencies:
   shared_preferences: ^2.3.0
   rive: ^0.14.11
   flutter_svg: ^2.3.0
-  purchases_flutter: ^10.9.0
+  # NO-IAP: RevenueCat is out of the binary until in-app purchases ship.
+  # purchases_flutter: ^10.9.0
   # Bonjour/mDNS discovery, for iOS. UDP broadcast — the original transport —
   # needs the multicast entitlement there, which Apple grants only on request;
   # Bonjour goes through the system daemon and needs none. See

@@ -64,7 +64,8 @@ void main() {
       expect(GameCatalog.byId('hotpotato'), isNotNull);
       expect(GameCatalog.byId('flood'), isNotNull);
       expect(GameCatalog.byId('arena'), isNotNull);
-      expect(GameCatalog.byId('guacamole'), isNotNull);
+      // NO-IAP: Guacamole is Premium and out of the build for now.
+      // expect(GameCatalog.byId('guacamole'), isNotNull);
       expect(GameCatalog.byId('pitch_cars'), isNotNull);
       expect(GameCatalog.byId('nope'), isNull);
     });

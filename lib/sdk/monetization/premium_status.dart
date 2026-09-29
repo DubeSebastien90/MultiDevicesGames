@@ -1,6 +1,10 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show PlatformException;
-import 'package:purchases_flutter/purchases_flutter.dart';
+// NO-IAP: RevenueCat is out of the binary until in-app purchases ship. The
+// real [PremiumStatus] is kept commented out below; the stub at the bottom of
+// this file stands in for it. To restore: uncomment these imports and the
+// real class, delete the stub, and put `purchases_flutter` back in pubspec.
+// import 'package:flutter/services.dart' show PlatformException;
+// import 'package:purchases_flutter/purchases_flutter.dart';
 
 /// The RevenueCat entitlement identifier that unlocks the full catalogue and
 /// the game-selection screen. Must match the entitlement created in the
@@ -56,6 +60,8 @@ class RevenueCatKeys {
       String.fromEnvironment('REVENUECAT_GOOGLE_KEY');
 }
 
+// NO-IAP: the real class, commented out.
+/*
 /// Whether this device currently has Premium, and the single place that asks
 /// RevenueCat.
 ///
@@ -306,4 +312,21 @@ class PremiumStatus extends ChangeNotifier {
     Purchases.removeCustomerInfoUpdateListener(_onCustomerInfo);
     super.dispose();
   }
+}
+*/
+
+/// NO-IAP: stands in for the real [PremiumStatus] while RevenueCat is out of
+/// the binary. Never Premium, always settled, never an error, and never talks
+/// to a store — the same public shape, so [HostSession] and the tests that
+/// subclass it compile unchanged.
+class PremiumStatus extends ChangeNotifier {
+  bool get isConfigured => false;
+  bool get isReady => true;
+  bool get isPremium => false;
+  String? get error => null;
+
+  Future<void> initialize() async {}
+  Future<void> refresh() async {}
+  Future<RestoreOutcome> restore() async => RestoreOutcome.unreachable;
+  Future<void> retry() async {}
 }

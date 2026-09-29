@@ -211,7 +211,9 @@ void main() {
       for (final game in GameCatalog.playlist)
         if (game.manifest.players.pairsOnly) game.manifest.id,
     ];
-    expect(pairs, unorderedEquals(['flood', 'hungryhippos', 'copsrobbers']));
+    // NO-IAP: Hungry Hippos and Cops & Robbers are Premium and out of the
+    // build for now. Was ['flood', 'hungryhippos', 'copsrobbers'].
+    expect(pairs, unorderedEquals(['flood']));
   });
 
   testWidgets('a locked Premium game has no checkbox and opens the paywall '

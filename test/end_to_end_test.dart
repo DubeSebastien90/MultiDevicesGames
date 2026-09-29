@@ -213,7 +213,7 @@ void main() {
     final ball = phone2.frameAt(16)!.ofKind('ball').first;
     expect(ball.propDouble('radius'), greaterThan(0),
         reason: 'the descriptor arrived with the spawn, not just a transform');
-  });
+  }, skip: 'NO-IAP: Dodgeball is Premium and out of the catalog for now');
 
   test('every phone assembles the same roster, without a new message', () async {
     await _startPlaying(host, phone1, phone2);

@@ -356,7 +356,7 @@ void main() {
       // Ticked is not the same as in the run, and with nobody connected the
       // difference is the whole list: twelve ticks, no games.
       expect(host.runningOrder, isEmpty);
-    });
+    }, skip: 'NO-IAP: no Premium game is in the catalog to be locked');
 
     test('a ticked game the table cannot play is not in the run', () async {
       final ada = joiner(label: 'Ada');
@@ -920,7 +920,7 @@ void main() {
 
       ada.dispose();
       again.dispose();
-    });
+    }, skip: 'NO-IAP: Dodgeball is Premium and out of the catalog for now');
 
     test('the next round deals a waiting phone back in', () async {
       // The whole promise of the screen. Its seat was kept, so the next board is
@@ -958,7 +958,7 @@ void main() {
 
       ada.dispose();
       again.dispose();
-    });
+    }, skip: 'NO-IAP: Dodgeball is Premium and out of the catalog for now');
   });
 
   group('a game hears about the table emptying', () {
@@ -994,7 +994,7 @@ void main() {
       expect(host.outcome!.summary, contains('Bob'));
 
       table.ada.dispose();
-    });
+    }, skip: 'NO-IAP: Dodgeball is Premium and out of the catalog for now');
 
     test('a game that has asked is told, and keeps playing', () async {
       // This one implements PlayerPresence, so it decides what a missing
@@ -1207,7 +1207,7 @@ void main() {
 
       ada.dispose();
       dave.dispose();
-    });
+    }, skip: 'NO-IAP: Dodgeball is Premium and out of the catalog for now');
 
     test('every phone is told, not only the host', () async {
       // It was being written down on the host and read by nobody: no screen
@@ -1519,7 +1519,7 @@ void main() {
           reason: 'a stranger is being offered a seat');
 
       ada.dispose();
-    });
+    }, skip: 'NO-IAP: Dodgeball is Premium and out of the catalog for now');
 
     test('a beacon carrying junk seats is not trusted', () {
       // It arrives from an unauthenticated stranger and goes straight into a

@@ -4,7 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../audio/ui_audio.dart';
 import '../contract/game.dart';
 import '../host/host_session.dart';
-import '../monetization/paywall_view.dart';
+// import '../monetization/paywall_view.dart'; // NO-IAP
 import '../monetization/premium_status.dart';
 import 'lobby_flow_style.dart';
 
@@ -64,16 +64,17 @@ Future<void> showGamesScreen(
                           host.chooseGame(game, chosen: chosen),
                       onAll: host.chooseAllGames,
                       onNone: host.chooseNoGames,
-                      onSelectionLockedTap: () => showPaywall(
-                        context,
-                        premium,
-                        trigger: 'Unlock game selection',
-                      ),
-                      onLockedTap: (game) => showPaywall(
-                        context,
-                        premium,
-                        trigger: 'Unlock ${game.manifest.title}',
-                      ),
+                      // NO-IAP: no paywall to open. Restore with:
+                      // onSelectionLockedTap: () => showPaywall(
+                      //   context,
+                      //   premium,
+                      //   trigger: 'Unlock game selection',
+                      // ),
+                      // onLockedTap: (game) => showPaywall(
+                      //   context,
+                      //   premium,
+                      //   trigger: 'Unlock ${game.manifest.title}',
+                      // ),
                     ),
                   ),
                 ),

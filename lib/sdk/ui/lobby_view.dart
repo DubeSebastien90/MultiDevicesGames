@@ -9,7 +9,7 @@ import '../host/host_session.dart';
 import '../score/scoreboard.dart';
 import '../model/player_color.dart';
 import '../render/player_art.dart';
-import 'game_picker.dart';
+// import 'game_picker.dart'; // NO-IAP: the gear that opens it is out.
 import 'join_code.dart';
 import 'lobby_flow_style.dart';
 import 'standings_card.dart';
@@ -39,8 +39,9 @@ class LobbyView extends StatelessWidget {
 
   final AppController controller;
 
-  /// Square-ish beside Play, which is 64-odd tall at the same padding.
-  static const _gearWidth = 66.0;
+  // NO-IAP: only the gear used this.
+  // /// Square-ish beside Play, which is 64-odd tall at the same padding.
+  // static const _gearWidth = 66.0;
 
   @override
   Widget build(BuildContext context) {
@@ -179,9 +180,12 @@ class LobbyView extends StatelessWidget {
                       children: [
                         Expanded(
                           child: LobbyPillButton(
+                            // NO-IAP: with no game list to open, the only fix
+                            // left for a Play that will not go is more phones.
+                            // Was 'Select at least one playable game'.
                             label: host.canStart
                                 ? 'Play'
-                                : 'Select at least one playable game',
+                                : 'Waiting for more phones',
                             icon: host.canStart
                                 ? Icons.play_arrow_rounded
                                 : null,
@@ -197,6 +201,9 @@ class LobbyView extends StatelessWidget {
                             onPressed: host.canStart ? host.startRound : null,
                           ),
                         ),
+                        // NO-IAP: choosing the lineup is a Premium feature, so
+                        // the gear is out until in-app purchases ship.
+                        /*
                         const SizedBox(width: 12),
                         // The playlist, down to its icon. It used to be a row of
                         // twelve games in the lobby, then a button with a label;
@@ -221,6 +228,7 @@ class LobbyView extends StatelessWidget {
                             ),
                           ),
                         ),
+                        */
                       ],
                     ),
                   ],

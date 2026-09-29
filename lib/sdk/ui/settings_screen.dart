@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../model/device_metrics.dart';
-import '../monetization/premium_status.dart';
+// import '../monetization/premium_status.dart'; // NO-IAP
 import 'lobby_flow_style.dart';
 import 'screen_size_screen.dart';
 
@@ -20,12 +20,12 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.metrics,
     required this.onMetricsChanged,
-    required this.premium,
+    // required this.premium, // NO-IAP
   });
 
   final DeviceMetrics metrics;
   final ValueChanged<DeviceMetrics> onMetricsChanged;
-  final PremiumStatus premium;
+  // final PremiumStatus premium; // NO-IAP
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -33,7 +33,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late DeviceMetrics _metrics = widget.metrics;
-  bool _restoring = false;
+  // bool _restoring = false; // NO-IAP
 
   void _onMetricsChanged(DeviceMetrics m) {
     setState(() => _metrics = m);
@@ -55,6 +55,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // NO-IAP: nothing to restore until in-app purchases ship.
+  /*
   /// The paywall's restore, reachable without first tapping a locked game —
   /// the place a player who reinstalled goes looking for it.
   Future<void> _reloadPurchases() async {
@@ -66,6 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SnackBar(content: Text(restoreMessage(outcome))),
     );
   }
+  */
 
   /// Opens the policy in an in-app browser sheet (SFSafariViewController on
   /// iOS, a Custom Tab on Android) rather than throwing the player out to the
@@ -110,11 +113,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: 'Calibrate screen',
                   onPressed: _calibrate,
                 ),
-                const SizedBox(height: 14),
-                _SettingsButton(
-                  label: _restoring ? 'Checking…' : 'Reload Purchases',
-                  onPressed: _restoring ? null : _reloadPurchases,
-                ),
+                // NO-IAP
+                // const SizedBox(height: 14),
+                // _SettingsButton(
+                //   label: _restoring ? 'Checking…' : 'Reload Purchases',
+                //   onPressed: _restoring ? null : _reloadPurchases,
+                // ),
                 const SizedBox(height: 14),
                 _SettingsButton(
                   label: 'See Privacy Policy',
