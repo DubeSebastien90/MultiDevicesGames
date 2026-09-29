@@ -15,6 +15,7 @@ import 'sdk/ui/ball_wipe.dart';
 import 'sdk/ui/intro_animation.dart';
 import 'sdk/ui/role_screen.dart';
 import 'sdk/ui/session_screen.dart';
+import 'sdk/ui/sticker/sticker.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -137,15 +138,9 @@ class _MultiscreenAppState extends State<MultiscreenApp> {
       // Also what Android shows in the recent-apps switcher.
       title: 'BubbleGames',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4ECDC4),
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: const Color(0xFF0B1020),
-      ),
+      // The stickers' palette, for whatever Material draws unasked. The games
+      // keep the dark theme they were built under — see [SessionScreen].
+      theme: stickerTheme(),
       // Nothing else gets a frame until the gate has an answer. The band it
       // produces is threaded into RoleScreen as an argument rather than looked
       // up there, so the screen that owns the name field cannot be built

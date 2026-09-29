@@ -4,7 +4,7 @@ import '../app_controller.dart';
 import '../model/player_color.dart';
 import '../render/player_art.dart';
 import '../score/scoreboard.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// The session standings.
 ///
@@ -96,47 +96,75 @@ class StandingsCard extends StatelessWidget {
     // in a Column with no ceiling is an assertion rather than a layout. So the
     // names fall back to their own [maxListHeight].
     return LayoutBuilder(
-      builder: (context, box) => Container(
+      builder: (context, box) => StickerCard(
         key: plateKey,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-        decoration: BoxDecoration(
-          color: LobbyFlowColors.field,
-          borderRadius: BorderRadius.circular(20),
-        ),
+        padding: EdgeInsets.zero,
+        clip: true,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           // As tall as the heading and the names it actually has. Without this
           // the card fills whatever it is offered, which on a screen with room
           // to spare is a heading with an acre of white under it, and in the
           // lobby is the whole leftover slot for two names.
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('Standings', style: LobbyText.label),
-                ),
-                if (onReset != null)
-                  LobbyPillButton(
-                    label: 'Reset',
-                    onPressed: onReset,
-                    background: LobbyFlowColors.paper,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: 12,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 7,
-                      horizontal: 14,
-                    ),
+            DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: St.ink, width: 3)),
+              ),
+              child: ColoredBox(
+                color: St.premium,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    onReset == null ? 16 : 8,
+                    8,
                   ),
-              ],
+                  child: Row(
+                    children: [
+                      const StIcon(
+                        Symbols.trophy_rounded,
+                        size: 22,
+                        color: St.gold,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Standings',
+                          style: St.display(20, color: St.white, height: 1.1),
+                        ),
+                      ),
+                      if (onReset != null)
+                        StickerButton(
+                          height: 30,
+                          radius: 10,
+                          shadow: 2,
+                          border: 2.5,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          onTap: onReset,
+                          child: Text('Reset', style: St.display(14)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(height: 10),
-            if (box.maxHeight.isFinite) Flexible(child: list) else list,
+            if (box.maxHeight.isFinite)
+              Flexible(child: _padded(list))
+            else
+              _padded(list),
           ],
         ),
       ),
     );
   }
+
+  /// The rows' breathing room inside the card, kept outside the list so the
+  /// list's own padding is only ever the scrollbar's lane.
+  static Widget _padded(Widget list) =>
+      Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 6), child: list);
 }
 
 /// One person's line: where they came, who they are, and what they have.
@@ -161,33 +189,52 @@ class _Row extends StatelessWidget {
   ///
   /// That dot was ten pixels of paint: enough to tell two rows apart, not
   /// enough to be anybody. The art is the same picture the player has been
-  /// looking for on the board all evening, and at this size it is recognisably
-  /// that animal rather than a smudge of its colour.
-  static const _art = 24.0;
+  /// looking for on the board all evening.
+  static const _art = 28.0;
+
+  static const _podium = [St.gold, St.silver, St.bronze];
+  static const _awayText = Color(0xFF999999);
 
   @override
   Widget build(BuildContext context) {
-    final ink = away ? LobbyFlowColors.muted : LobbyFlowColors.ink;
     // Somebody who is not here is the grey character, whatever colour they
     // last wore: between rounds that colour has gone back to the palette and
     // may be on somebody else by now, and mid-round it is only being kept for
     // the game's sake.
     final art = away ? PlayerPalette.away : color;
+    final podium = place <= 3;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.fromLTRB(6, 3, 10, 3),
+      decoration: BoxDecoration(
+        color: me && color != null
+            ? Color.alphaBlend(
+                color!.skinLight.withValues(alpha: .33),
+                St.white,
+              )
+            : St.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: me ? St.ink : Colors.transparent, width: 2.5),
+      ),
       child: Row(
         children: [
-          SizedBox(
-            width: 20,
-            child: Text(
-              '$place.',
-              style: LobbyText.button.copyWith(
-                color: LobbyFlowColors.muted,
-                fontSize: 12,
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: podium ? _podium[place - 1] : St.white,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: podium ? St.ink : const Color(0x33000000),
+                width: 2,
               ),
             ),
+            child: Center(
+              child: Text('$place', style: St.display(12, height: 1)),
+            ),
           ),
+          const SizedBox(width: 8),
           if (art != null) ...[
             PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
             const SizedBox(width: 8),
@@ -195,49 +242,52 @@ class _Row extends StatelessWidget {
           Expanded(
             child: Text(
               me ? '${entry.label} (you)' : entry.label,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: LobbyText.label.copyWith(
-                color: ink,
-                fontSize: 14,
-                fontWeight: me ? FontWeight.w800 : FontWeight.w600,
-              ),
+              style: me
+                  ? St.display(16)
+                  : St.body(15, color: away ? _awayText : St.ink),
             ),
           ),
           if (away) ...[
-            const Icon(
-              Icons.cloud_off,
-              size: 13,
-              color: LobbyFlowColors.muted,
+            const StIcon(
+              Symbols.cloud_off_rounded,
+              size: 14,
+              color: Color(0xFF777777),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
             Text(
               'away',
-              style: LobbyText.body.copyWith(fontSize: 11),
+              style: St.body(11, color: const Color(0xFF777777), height: 1),
             ),
             const SizedBox(width: 8),
           ],
           if (showDelta && entry.roundDelta != 0) ...[
-            Text(
-              // A negative number brings its own sign. Prefixing every delta
-              // made a loss read '+-10'.
-              entry.roundDelta > 0
-                  ? '+${entry.roundDelta}'
-                  : '${entry.roundDelta}',
-              style: LobbyText.button.copyWith(
-                fontSize: 12,
-                color: entry.roundDelta > 0
-                    ? LobbyFlowColors.shadeOf(LobbyFlowColors.green)
-                    : LobbyFlowColors.shadeOf(LobbyFlowColors.coral),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: entry.roundDelta > 0 ? St.go : St.back,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: St.ink, width: 2),
+              ),
+              child: Text(
+                // A negative number brings its own sign. Prefixing every delta
+                // made a loss read '+-10'.
+                entry.roundDelta > 0
+                    ? '+${entry.roundDelta}'
+                    : '${entry.roundDelta}',
+                style: St.display(12, color: St.white, height: 1),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
           ],
           Text(
             '${entry.total}',
-            style: LobbyText.count.copyWith(
-              color: ink,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: St.display(
+              19,
+              color: away ? const Color(0xFFAAAAAA) : St.ink,
+              height: 1,
+            ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
           ),
         ],
       ),
@@ -332,12 +382,14 @@ class _ScoreListState extends State<_ScoreList> {
 Set<String> awayPhoneIds(AppController controller) {
   final host = controller.host;
   if (host != null) {
-    return {for (final p in host.phones) if (!p.connected) p.phoneId};
+    return {
+      for (final p in host.phones)
+        if (!p.connected) p.phoneId,
+    };
   }
   return {
     for (final p in controller.client!.lobbyPhones)
-      if (((p['connected'] as bool?) ?? true) == false)
-        p['phoneId'] as String,
+      if (((p['connected'] as bool?) ?? true) == false) p['phoneId'] as String,
   };
 }
 

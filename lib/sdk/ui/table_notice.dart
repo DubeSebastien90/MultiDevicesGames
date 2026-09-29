@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../audio/ui_audio.dart';
+import 'sticker/sticker.dart';
 
 /// Something the table needs to know, on whichever screen it is looking at.
 ///
@@ -32,31 +33,33 @@ class TableNotice extends StatelessWidget {
     final message = _message;
     if (message == null) return const SizedBox.shrink();
 
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
+    return StickerCard(
+      radius: 18,
+      shadow: 4,
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-      decoration: BoxDecoration(
-        color: scheme.tertiaryContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
       child: Row(
         children: [
-          Icon(Icons.group, color: scheme.onTertiaryContainer, size: 18),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: St.blue,
+              shape: BoxShape.circle,
+              border: Border.all(color: St.ink, width: 2.5),
+            ),
+            child: const Center(
+              child: StIcon(Symbols.group_rounded, size: 18, color: St.white),
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: scheme.onTertiaryContainer,
-                fontSize: 13,
-              ),
-            ),
+            child: Text(message, style: St.body(14, weight: FontWeight.w600)),
           ),
           IconButton(
             tooltip: 'Dismiss',
             onPressed: withButtonSound(_dismiss),
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.close, color: scheme.onTertiaryContainer, size: 16),
+            icon: const StIcon(Symbols.close_rounded, size: 20),
           ),
         ],
       ),

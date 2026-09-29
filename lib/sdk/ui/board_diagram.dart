@@ -6,7 +6,7 @@ import '../contract/sim.dart' show PhoneSlice;
 import '../layout/board_links.dart';
 import '../model/world_rect.dart';
 import 'link_palette.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// A to-scale picture of the board the game actually compiled.
 ///
@@ -58,7 +58,9 @@ class BoardDiagram extends StatelessWidget {
     if (slices.isEmpty) {
       return SizedBox(
         height: 60,
-        child: Center(child: Text('No phones yet', style: LobbyText.body)),
+        child: Center(
+          child: Text('No phones yet', style: St.body(14, color: St.muted)),
+        ),
       );
     }
 
@@ -100,9 +102,10 @@ class BoardDiagram extends StatelessWidget {
                 height: board.height * scale,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    // The playfield in the flow's field grey — the same
-                    // grey its text fields are filled with.
-                    color: LobbyFlowColors.field,
+                    // The playfield in a pale grey, dashed out of the white
+                    // page by nothing more than its colour: it is the ground
+                    // the phones stand on, not a sticker of its own.
+                    color: const Color(0xFFEDEDED),
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
@@ -192,24 +195,18 @@ class _Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Your own phone is a yellow plate; everyone else's is paper. One colour
+    // Your own phone is a yellow sticker; everyone else's is white. One colour
     // does the whole job of saying which one you are holding, the way the
-    // lobby's own plates do.
-    final fill = isMe ? LobbyFlowColors.yellow : LobbyFlowColors.paper;
-    final edge = isMe ? LobbyFlowColors.ink : LobbyFlowColors.muted;
+    // lobby's own tiles do.
+    final fill = isMe ? St.bg : St.white;
+    const edge = St.ink;
 
     return Container(
       decoration: BoxDecoration(
         color: fill,
-        border: Border.all(color: edge, width: isMe ? 2 : 1),
+        border: Border.all(color: edge, width: isMe ? 2.5 : 1.5),
         borderRadius: BorderRadius.circular(6),
-        boxShadow: [
-          BoxShadow(
-            color: LobbyFlowColors.shadeOf(fill),
-            offset: const Offset(2, 2),
-            blurRadius: 0,
-          ),
-        ],
+        boxShadow: St.hard(isMe ? 3 : 2),
       ),
       // The chip's own size is the only thing the writing can be measured
       // against, and only the layout knows it.
@@ -252,10 +249,10 @@ class _Screen extends StatelessWidget {
                       Text(_name, style: _nameStyle),
                       if (label.isNotEmpty) Text(label, style: _labelStyle),
                       if (confirmed)
-                        Icon(
-                          Icons.check_circle,
+                        const StIcon(
+                          Symbols.check_circle_rounded,
                           size: _checkSize,
-                          color: LobbyFlowColors.shadeOf(LobbyFlowColors.green),
+                          color: St.go,
                         ),
                     ],
                   ),
@@ -271,11 +268,12 @@ class _Screen extends StatelessWidget {
   /// What this chip is called: YOU, or its place in the board's order.
   String get _name => isMe ? 'YOU' : '${index + 1}';
 
-  static final _nameStyle = LobbyText.button.copyWith(
-    fontSize: 11,
-    fontWeight: FontWeight.w900,
+  static final _nameStyle = St.display(11, height: 1.1);
+  static final _labelStyle = St.body(
+    8,
+    weight: FontWeight.w500,
+    color: St.muted,
   );
-  static final _labelStyle = LobbyText.body.copyWith(fontSize: 8);
   static const _checkSize = 10.0;
 
   /// The largest box the writing may use, measured in the chip's own

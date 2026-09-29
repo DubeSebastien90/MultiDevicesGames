@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
 import 'package:multiscreen_slingshot/sdk/client/interruption_watcher.dart';
 import 'package:multiscreen_slingshot/sdk/host/name_drop_detector.dart';
@@ -45,12 +46,14 @@ void main() {
       expect(await NameDropPref.load(), NameDropStatus.waiting);
     });
 
-    test('is stored by name, so reordering the enum cannot rewrite it',
-        () async {
-      await NameDropPref.save(NameDropStatus.declined);
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('nameDropStatus'), 'declined');
-    });
+    test(
+      'is stored by name, so reordering the enum cannot rewrite it',
+      () async {
+        await NameDropPref.save(NameDropStatus.declined);
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getString('nameDropStatus'), 'declined');
+      },
+    );
   });
 
   group('which pairs are still dangerous', () {
@@ -67,25 +70,33 @@ void main() {
       );
       final fixed = NameDropOptimizer.optimize(plan, lobby);
 
-      expect(NameDropOptimizer.dangerousPairs(plan, lobby), isNotEmpty,
-          reason: 'the raw plan faces both phones the same way — this is the '
-              'arrangement the optimizer exists to fix');
-      expect(NameDropOptimizer.dangerousPairs(fixed, lobby), isEmpty,
-          reason: 'turning one phone around put the two tops apart, so there '
-              'is nothing left for the runtime detector to watch for');
+      expect(
+        NameDropOptimizer.dangerousPairs(plan, lobby),
+        isNotEmpty,
+        reason:
+            'the raw plan faces both phones the same way — this is the '
+            'arrangement the optimizer exists to fix',
+      );
+      expect(
+        NameDropOptimizer.dangerousPairs(fixed, lobby),
+        isEmpty,
+        reason:
+            'turning one phone around put the two tops apart, so there '
+            'is nothing left for the runtime detector to watch for',
+      );
     });
 
     test('pairs read the same from either end', () {
-      expect(NameDropOptimizer.pairKey('p1', 'p2'),
-          NameDropOptimizer.pairKey('p2', 'p1'));
+      expect(
+        NameDropOptimizer.pairKey('p1', 'p2'),
+        NameDropOptimizer.pairKey('p2', 'p1'),
+      );
     });
 
     // A ring of phones around a table never puts two tops together, so a game
     // built that way should hand the detector nothing at all.
     test('a ring leaves none', () {
-      final lobby = LobbyInfo([
-        for (var i = 1; i <= 4; i++) spec('p$i', 68),
-      ]);
+      final lobby = LobbyInfo([for (var i = 1; i <= 4; i++) spec('p$i', 68)]);
       final plan = const HotPotatoGame().planBoard(lobby);
       expect(
         NameDropOptimizer.dangerousPairs(
@@ -117,10 +128,14 @@ void main() {
 
     test('two phones at the same moment is', () {
       final detector = NameDropDetector();
-      expect(detector.report('p1', const Duration(seconds: 1), dangerous),
-          isNull);
-      expect(detector.report('p2', const Duration(seconds: 1), dangerous),
-          pair);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
+      expect(
+        detector.report('p2', const Duration(seconds: 1), dangerous),
+        pair,
+      );
     });
 
     // The two people dismiss the card at their own speed, so the reports reach
@@ -133,72 +148,100 @@ void main() {
 
       // Both cards appeared at t=10s. p1 swipes it away a second later.
       now = const Duration(seconds: 11);
-      expect(detector.report('p1', const Duration(seconds: 1), dangerous),
-          isNull);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
 
       // p2 stares at it for nine, and reports at t=19 an interruption that
       // began nine seconds ago — the same instant p1's did.
       now = const Duration(seconds: 19);
-      expect(detector.report('p2', const Duration(seconds: 9), dangerous),
-          pair);
+      expect(
+        detector.report('p2', const Duration(seconds: 9), dangerous),
+        pair,
+      );
     });
 
     test('forgets a report nobody ever matched', () {
       var now = Duration.zero;
       final detector = NameDropDetector(clock: () => now);
 
-      expect(detector.report('p1', const Duration(seconds: 1), dangerous),
-          isNull);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
       // Well past the memory window, so this is a new event that happens to
       // involve the same two phones, not a partner for the old one.
       now = const Duration(seconds: 90);
-      expect(detector.report('p2', const Duration(seconds: 1), dangerous),
-          isNull);
+      expect(
+        detector.report('p2', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
     });
 
     test('two phones that are not a dangerous pair is not', () {
       final detector = NameDropDetector();
-      expect(detector.report('p1', const Duration(seconds: 1), const {}),
-          isNull);
-      expect(detector.report('p2', const Duration(seconds: 1), const {}),
-          isNull);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), const {}),
+        isNull,
+      );
+      expect(
+        detector.report('p2', const Duration(seconds: 1), const {}),
+        isNull,
+      );
     });
 
     test('two interruptions that began minutes apart is not', () {
       final detector = NameDropDetector();
-      expect(detector.report('p1', const Duration(seconds: 1), dangerous),
-          isNull);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
       // Began 20 seconds before p1's did.
-      expect(detector.report('p2', const Duration(seconds: 21), dangerous),
-          isNull);
+      expect(
+        detector.report('p2', const Duration(seconds: 21), dangerous),
+        isNull,
+      );
     });
 
     test('a nonsense age is ignored', () {
       final detector = NameDropDetector();
-      expect(detector.report('p1', const Duration(seconds: 1), dangerous),
-          isNull);
-      expect(detector.report('p2', const Duration(hours: 3), dangerous),
-          isNull);
-      expect(detector.report('p2', const Duration(seconds: -5), dangerous),
-          isNull);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
+      expect(
+        detector.report('p2', const Duration(hours: 3), dangerous),
+        isNull,
+      );
+      expect(
+        detector.report('p2', const Duration(seconds: -5), dangerous),
+        isNull,
+      );
     });
 
     test('one event is only raised once', () {
       final detector = NameDropDetector();
       detector.report('p1', const Duration(seconds: 1), dangerous);
-      expect(detector.report('p2', const Duration(seconds: 1), dangerous),
-          pair);
+      expect(
+        detector.report('p2', const Duration(seconds: 1), dangerous),
+        pair,
+      );
       // Both entries were spent, so a third report has nothing to pair with.
-      expect(detector.report('p1', const Duration(seconds: 1), dangerous),
-          isNull);
+      expect(
+        detector.report('p1', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
     });
 
     test('rearranging the table forgets what was pending', () {
       final detector = NameDropDetector();
       detector.report('p1', const Duration(seconds: 1), dangerous);
       detector.clear();
-      expect(detector.report('p2', const Duration(seconds: 1), dangerous),
-          isNull);
+      expect(
+        detector.report('p2', const Duration(seconds: 1), dangerous),
+        isNull,
+      );
     });
   });
 
@@ -206,14 +249,16 @@ void main() {
     /// Puts the sheet on screen and hands back whatever it answers.
     Future<NameDropStatus?> show(WidgetTester tester) async {
       NameDropStatus? answer;
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () async => answer = await showNameDropNotice(context),
-            child: const Text('go'),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => answer = await showNameDropNotice(context),
+              child: const Text('go'),
+            ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
       return answer;
@@ -262,15 +307,14 @@ void main() {
     // Somebody who opened the instructions, got lost and came back has not
     // told us anything, and the honest record of that is the unanswered
     // question they were already looking at.
-    testWidgets('backing out of it lands back on the question',
-        (tester) async {
+    testWidgets('backing out of it lands back on the question', (tester) async {
       await show(tester);
       await tester.tap(find.text('How?'));
       await tester.pumpAndSettle();
 
       // The flow's own back pill, not Material's: `pageBack` hunts for an
       // AppBar back button, and this screen wears a coral pill instead.
-      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.tap(find.byIcon(Symbols.arrow_back_rounded));
       await tester.pumpAndSettle();
 
       expect(find.text('How?'), findsOneWidget);
@@ -314,8 +358,10 @@ void main() {
       watcher.didChangeAppLifecycleState(AppLifecycleState.resumed);
 
       expect(reported, hasLength(1));
-      expect(reported.single, greaterThanOrEqualTo(
-          const Duration(milliseconds: 500)));
+      expect(
+        reported.single,
+        greaterThanOrEqualTo(const Duration(milliseconds: 500)),
+      );
     });
 
     test('a second one is judged on its own', () async {
@@ -326,9 +372,13 @@ void main() {
       watcher.didChangeAppLifecycleState(AppLifecycleState.inactive);
       watcher.didChangeAppLifecycleState(AppLifecycleState.resumed);
 
-      expect(reported, hasLength(1),
-          reason: 'the clock has to be let go of after each one, or every '
-              'flicker inherits the last real interruption’s length');
+      expect(
+        reported,
+        hasLength(1),
+        reason:
+            'the clock has to be let go of after each one, or every '
+            'flicker inherits the last real interruption’s length',
+      );
     });
   });
 }

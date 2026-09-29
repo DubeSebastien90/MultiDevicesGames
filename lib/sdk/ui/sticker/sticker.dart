@@ -1,7 +1,6 @@
 /// The "sticker" look: yellow paper, ink outlines, hard shadows.
 ///
-/// Used by the redesigned screens — so far Home. The rest of the flow still
-/// wears [LobbyFlowColors] until it is moved across.
+/// Every screen outside the games wears it. The games draw themselves.
 library;
 
 export 'sticker_background.dart';

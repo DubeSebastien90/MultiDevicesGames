@@ -5,11 +5,6 @@ export 'package:material_symbols_icons/symbols.dart';
 /// Visual tokens for the "sticker" screens: yellow paper, ink outlines, hard
 /// shadows with no blur.
 ///
-/// Sits beside [LobbyFlowColors] rather than replacing it. The screens that
-/// have been redesigned read from here; the ones that have not still read from
-/// there, and the two do not share a value, so moving a screen across is a
-/// change to that screen alone.
-///
 /// Player colours are not here. They already live on [PlayerColor] — the same
 /// eight swatches the design was drawn with — and a second copy is how the
 /// character picker and the character on the board end up two shades apart.
@@ -117,6 +112,52 @@ class St {
     fontWeight: weight,
     color: color,
     height: height,
+  );
+}
+
+/// The app-wide [ThemeData]: the sticker palette, so anything Material draws
+/// on its own — a text-selection handle, a dropdown's menu, a tooltip — looks
+/// like it belongs.
+///
+/// Every screen draws its own stickers and does not lean on this; it is the
+/// floor under them, not the design. The games are drawn under their own dark
+/// theme — see `SessionScreen`.
+ThemeData stickerTheme() {
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: St.bg,
+        brightness: Brightness.light,
+      ).copyWith(
+        primary: St.ink,
+        onPrimary: St.white,
+        secondary: St.blue,
+        surface: St.white,
+        onSurface: St.ink,
+        error: St.back,
+      );
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: St.bg,
+    fontFamily: 'Fredoka',
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: St.ink,
+      selectionColor: St.blue.withValues(alpha: .35),
+      selectionHandleColor: St.ink,
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(
+        color: St.ink,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      textStyle: St.body(13, color: St.bg),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: St.ink,
+      contentTextStyle: St.body(15, color: St.bg),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
   );
 }
 

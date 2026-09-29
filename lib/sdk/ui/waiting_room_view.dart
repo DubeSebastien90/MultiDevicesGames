@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../score/scoreboard.dart';
 import '../model/player_color.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 import 'standings_card.dart';
 
 /// Connected, and sitting this one out.
@@ -41,63 +41,60 @@ class WaitingRoomView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const LobbySpinner(),
-                    const SizedBox(height: 24),
-                    const LobbyTitle('Waiting for the minigame to start'),
-                    const SizedBox(height: 10),
-                    Text(
-                      'You will join in the next one.',
-                      textAlign: TextAlign.center,
-                      style: LobbyText.body,
-                    ),
-
-                    // Which round they are sitting out, when the host has said.
-                    // Otherwise the wait has no shape to it.
-                    if (playing != null) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: LobbyFlowColors.field,
-                          borderRadius: BorderRadius.circular(
-                            LobbyMetrics.pillRadius,
-                          ),
-                        ),
-                        child: Text(
-                          'Now playing: $playing',
-                          style: LobbyText.label,
-                        ),
-                      ),
-                    ],
-
-                    // Proof the seat was kept: their name and their score, in
-                    // the same table everybody else is looking at.
-                    const SizedBox(height: 26),
-                    StandingsCard(
-                      scores: scores,
-                      meId: meId,
-                      colors: colors,
-                      offline: offline,
-                    ),
-                  ],
-                ),
+    return StickerPage(
+      maxWidth: 460,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Center(child: StickerSpinner(size: 44)),
+              const SizedBox(height: 24),
+              Text(
+                'Waiting for the minigame to start',
+                textAlign: TextAlign.center,
+                style: St.display(32, height: 1.05),
               ),
-            ),
+              const SizedBox(height: 10),
+              Text(
+                'You will join in the next one.',
+                textAlign: TextAlign.center,
+                style: St.body(16, color: St.muted),
+              ),
+
+              // Which round they are sitting out, when the host has said.
+              // Otherwise the wait has no shape to it.
+              if (playing != null) ...[
+                const SizedBox(height: 20),
+                Center(
+                  child: StickerCard(
+                    radius: 999,
+                    shadow: 4,
+                    tiltDeg: -2,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      'Now playing: $playing',
+                      style: St.display(18, height: 1),
+                    ),
+                  ),
+                ),
+              ],
+
+              // Proof the seat was kept: their name and their score, in the
+              // same table everybody else is looking at.
+              const SizedBox(height: 26),
+              StandingsCard(
+                scores: scores,
+                meId: meId,
+                colors: colors,
+                offline: offline,
+              ),
+            ],
           ),
         ),
       ),

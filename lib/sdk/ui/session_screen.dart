@@ -15,6 +15,17 @@ import 'standings_card.dart';
 import 'table_change_screen.dart';
 import 'waiting_room_view.dart';
 
+/// The theme the games were built under: dark, around a teal seed.
+final _gameTheme = ThemeData(
+  useMaterial3: true,
+  brightness: Brightness.dark,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color(0xFF4ECDC4),
+    brightness: Brightness.dark,
+  ),
+  scaffoldBackgroundColor: const Color(0xFF0B1020),
+);
+
 /// Routes on the *client* phase, even on the host.
 ///
 /// The host device is a player: it follows the same connect → calibrate →
@@ -118,17 +129,23 @@ class SessionScreen extends StatelessWidget {
         );
 
       case ClientPhase.playing:
-        return GameView(
-          // Keyed on the game and the layout so a new round — or a
-          // re-calibrated board — rebuilds with a fresh camera rather than
-          // reusing a stale one. The game id matters on its own: stacking two
-          // phones can leave phone 1 at the same offset it had in a row.
-          key: ValueKey(
-            '${client.manifest?.id}-${client.phoneId}-'
-            '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}-'
-            '${client.layout?.total}',
+        // Under the dark theme the games were built with, not the stickers'.
+        // The board is drawn on its own dark surface, and the few Material
+        // pieces over it — the debug HUD, its slider — were tuned for that.
+        return Theme(
+          data: _gameTheme,
+          child: GameView(
+            // Keyed on the game and the layout so a new round — or a
+            // re-calibrated board — rebuilds with a fresh camera rather than
+            // reusing a stale one. The game id matters on its own: stacking two
+            // phones can leave phone 1 at the same offset it had in a row.
+            key: ValueKey(
+              '${client.manifest?.id}-${client.phoneId}-'
+              '${client.layout?.worldCenterX}-${client.layout?.worldCenterY}-'
+              '${client.layout?.total}',
+            ),
+            controller: controller,
           ),
-          controller: controller,
         );
 
       case ClientPhase.waiting:
