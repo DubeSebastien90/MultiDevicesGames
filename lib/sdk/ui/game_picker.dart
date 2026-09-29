@@ -186,19 +186,25 @@ class GamePicker extends StatelessWidget {
               // twice, so the two ends of the list are one tap each. Disabled
               // rather than sent to the paywall while pending: we do not yet
               // know whether this host would need one.
-              _EndButton(
-                label: 'All',
-                onPressed: pending
-                    ? null
-                    : (selectionLocked ? onSelectionLockedTap : onAll),
-              ),
-              const SizedBox(width: 8),
-              _EndButton(
-                label: 'None',
-                onPressed: pending
-                    ? null
-                    : (selectionLocked ? onSelectionLockedTap : onNone),
-              ),
+              //
+              // NO-IAP: with no paywall wired up, a locked host's All/None
+              // would be two gray pills that do nothing, so the list is simply
+              // read-only instead.
+              if (!selectionLocked || onSelectionLockedTap != null) ...[
+                _EndButton(
+                  label: 'All',
+                  onPressed: pending
+                      ? null
+                      : (selectionLocked ? onSelectionLockedTap : onAll),
+                ),
+                const SizedBox(width: 8),
+                _EndButton(
+                  label: 'None',
+                  onPressed: pending
+                      ? null
+                      : (selectionLocked ? onSelectionLockedTap : onNone),
+                ),
+              ],
             ],
           ),
         ),
