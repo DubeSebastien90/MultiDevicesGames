@@ -1,8 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../model/age_band.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// Holds the app back until [AgeGatePref] has an answer, then hands the answer
 /// down.
@@ -42,11 +44,9 @@ class _AgeGateState extends State<AgeGate> {
     final band = _band;
     // A bare Scaffold, not a spinner. This is one disk read on a launch that is
     // already loading sprites; a spinner that flashes for 40ms reads as a
-    // fault. Paper rather than the theme's dark default: this is the first
+    // fault. Yellow rather than the theme's dark default: this is the first
     // frame of the app, and it should be the colour the app actually is.
-    if (band == null) {
-      return const Scaffold(backgroundColor: LobbyFlowColors.paper);
-    }
+    if (band == null) return const Scaffold(backgroundColor: St.bg);
     if (band == AgeBand.unknown) {
       return _AgeQuestionScreen(
         onAnswered: (answer) => setState(() => _band = answer),
@@ -139,132 +139,119 @@ class _AgeQuestionScreenState extends State<_AgeQuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final fieldStyle = St.body(20, weight: FontWeight.w700);
+    final hintStyle = fieldStyle.copyWith(
+      color: St.muted.withValues(alpha: .6),
+    );
+
     // No back, no swipe, no skip. There is no path through this screen that
     // does not go past the question.
     return PopScope(
       canPop: false,
-      child: Scaffold(
-        backgroundColor: LobbyFlowColors.paper,
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const LobbyTitle('Before you play'),
-                    const SizedBox(height: 10),
-                    Text(
-                      'When were you born?',
-                      style: LobbyText.label.copyWith(
-                        color: LobbyFlowColors.muted,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Still a [DropdownButtonFormField], wearing the flow's
-                    // field: a month is a closed list of twelve, and a pill you
-                    // type into would invite typing one of them wrong.
-                    DropdownButtonFormField<int>(
-                      initialValue: _month,
-                      isExpanded: true,
-                      decoration: _fieldDecoration,
-                      hint: const Text('Month', style: LobbyText.hint),
-                      style: LobbyText.field,
-                      dropdownColor: LobbyFlowColors.paper,
-                      borderRadius: BorderRadius.circular(24),
-                      icon: const Icon(
-                        Icons.expand_more,
-                        color: LobbyFlowColors.ink,
-                      ),
-                      items: [
-                        for (var i = 0; i < _months.length; i++)
-                          DropdownMenuItem(
-                            value: i + 1,
-                            child: Text(_months[i], style: LobbyText.field),
-                          ),
-                      ],
-                      onChanged: (value) => setState(() {
-                        _month = value;
-                        _showError = false;
-                      }),
-                    ),
-                    const SizedBox(height: 14),
-                    LobbyChipField(
-                      controller: _yearController,
-                      hintText: 'YYYY',
-                      maxLength: 4,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(4),
-                      ],
-                      onChanged: (_) => setState(() => _showError = false),
-                      onSubmitted: (_) {
-                        if (_complete) _submit();
-                      },
-                    ),
-                    if (_showError) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        // Says the date is impossible, not that the person is.
-                        'That date does not look right. Have another look.',
-                        style: LobbyText.body.copyWith(
-                          color: LobbyFlowColors.shadeOf(LobbyFlowColors.coral),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                    const SizedBox(height: 22),
-                    LobbyPillButton(
-                      // Disabled rather than defaulted. The waiting button is
-                      // what keeps the fields empty, and empty fields are what
-                      // keep the screen from suggesting an answer. A dimmed
-                      // plate says so without a word: the flow draws every
-                      // unavailable control this way.
-                      onPressed: _complete ? _submit : null,
-                      label: 'Continue',
-                      background: LobbyFlowColors.green,
-                      foreground: LobbyFlowColors.ink,
-                      fontSize: 17,
-                      radius: LobbyMetrics.bigRadius,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'This stays on your phone, and the date itself is not '
-                      'kept. Nobody else on the network sees it.',
-                      style: LobbyText.body,
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+      child: StickerPage(
+        maxWidth: 460,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.rotate(
+                  angle: -2 * math.pi / 180,
+                  child: Text(
+                    'Before you play',
+                    textAlign: TextAlign.center,
+                    style: St.display(40, height: 1),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 10),
+                Text(
+                  'When were you born?',
+                  style: St.body(18, color: St.muted),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 26),
+
+                // Still a [DropdownButtonFormField], on a sticker: a month is a
+                // closed list of twelve, and a field you type into would invite
+                // typing one of them wrong.
+                StickerCard(
+                  radius: 18,
+                  shadow: 4,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _month,
+                    isExpanded: true,
+                    decoration: const InputDecoration(border: InputBorder.none),
+                    hint: Text('Month', style: hintStyle),
+                    style: fieldStyle,
+                    dropdownColor: St.white,
+                    borderRadius: BorderRadius.circular(18),
+                    icon: const StIcon(Symbols.expand_more_rounded, size: 28),
+                    items: [
+                      for (var i = 0; i < _months.length; i++)
+                        DropdownMenuItem(
+                          value: i + 1,
+                          child: Text(_months[i], style: fieldStyle),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _month = value;
+                      _showError = false;
+                    }),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                StickerField(
+                  controller: _yearController,
+                  hintText: 'YYYY',
+                  maxLength: 4,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(4),
+                  ],
+                  onChanged: (_) => setState(() => _showError = false),
+                  onSubmitted: (_) {
+                    if (_complete) _submit();
+                  },
+                ),
+                if (_showError) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    // Says the date is impossible, not that the person is.
+                    'That date does not look right. Have another look.',
+                    style: St.body(15, color: St.back),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 24),
+                // Disabled rather than defaulted. The waiting button is what
+                // keeps the fields empty, and empty fields are what keep the
+                // screen from suggesting an answer. Half strength says so
+                // without a word: every unavailable button is drawn this way.
+                StickerWideButton(
+                  label: 'Continue',
+                  icon: Symbols.arrow_forward_rounded,
+                  color: St.go,
+                  textColor: St.white,
+                  height: 66,
+                  fontSize: 26,
+                  onTap: _complete ? _submit : null,
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'This stays on your phone, and the date itself is not '
+                  'kept. Nobody else on the network sees it.',
+                  style: St.body(14, weight: FontWeight.w500, color: St.muted),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
-
-  /// The pill the flow's text fields wear, borrowed for the month list so the
-  /// two rows read as one pair of fields rather than a dropdown and a pill.
-  static final _fieldDecoration = InputDecoration(
-    filled: true,
-    fillColor: LobbyFlowColors.field,
-    contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 20),
-    border: _fieldBorder,
-    enabledBorder: _fieldBorder,
-    focusedBorder: _fieldBorder,
-  );
-
-  static final _fieldBorder = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
-    borderSide: BorderSide.none,
-  );
 }

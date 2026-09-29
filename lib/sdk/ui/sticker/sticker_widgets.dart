@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../audio/ui_audio.dart';
+import 'sticker_background.dart';
 import 'sticker_tokens.dart';
 
 /// The sticker button: ink border, hard shadow, and a press that sinks it onto
@@ -12,7 +13,8 @@ import 'sticker_tokens.dart';
 ///
 /// The sink *is* the feedback, so there is no ripple. It also boups, through
 /// [withButtonSound], like every other button in the app — a disabled one
-/// stays silent and sits at half strength.
+/// stays silent and is drawn washed out — solid, so nothing behind it shows
+/// through.
 class StickerButton extends StatefulWidget {
   const StickerButton({
     super.key,
@@ -114,16 +116,19 @@ class _StickerButtonState extends State<StickerButton> {
             : null,
         transform: Matrix4.translationValues(sink, sink, 0),
         decoration: St.sticker(
-          color: w.color,
+          // Blended toward white rather than faded: a translucent button lets
+          // the drifting shapes show through it.
+          color: _enabled
+              ? w.color
+              : Color.alphaBlend(St.white.withValues(alpha: .55), w.color),
           radius: w.radius,
           shadow: w.shadow - sink,
           border: w.border,
         ),
-        child: w.child,
+        child: _enabled ? w.child : Opacity(opacity: .5, child: w.child),
       ),
     );
 
-    if (!_enabled) button = Opacity(opacity: .5, child: button);
     if (w.tooltip != null) {
       button = Tooltip(message: w.tooltip!, child: button);
     }
@@ -324,6 +329,262 @@ class StickerNotice extends StatelessWidget {
             icon: const StIcon(Symbols.close_rounded, size: 20),
           ),
       ],
+    ),
+  );
+}
+
+/// A whole sticker screen: yellow paper, drifting shapes, safe area, and the
+/// content held to a phone's width on a tablet.
+class StickerPage extends StatelessWidget {
+  const StickerPage({
+    super.key,
+    required this.child,
+    this.shapes = lobbyShapes,
+    this.maxWidth = 620,
+  });
+
+  final Widget child;
+  final List<StickerShape> shapes;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: St.bg,
+    body: StickerBackground(
+      shapes: shapes,
+      child: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: child,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// A text field on a white sticker, with an optional label above it.
+///
+/// The label sits outside the field rather than as a hint inside it: a hint
+/// disappears the moment there is a value, which is wrong for fields that all
+/// look alike once filled in.
+class StickerField extends StatelessWidget {
+  const StickerField({
+    super.key,
+    required this.controller,
+    this.label,
+    this.hintText,
+    this.onChanged,
+    this.onSubmitted,
+    this.maxLength,
+    this.autofocus = false,
+    this.keyboardType,
+    this.inputFormatters,
+    this.textCapitalization = TextCapitalization.none,
+    this.size = 20,
+  });
+
+  final TextEditingController controller;
+  final String? label;
+  final String? hintText;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final int? maxLength;
+  final bool autofocus;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextCapitalization textCapitalization;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = St.body(size, weight: FontWeight.w700);
+    final field = StickerCard(
+      radius: 18,
+      shadow: 4,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        onSubmitted: onSubmitted,
+        maxLength: maxLength,
+        autofocus: autofocus,
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
+        textCapitalization: textCapitalization,
+        cursorColor: St.ink,
+        style: style,
+        decoration: InputDecoration(
+          isCollapsed: true,
+          border: InputBorder.none,
+          counterText: '',
+          hintText: hintText,
+          hintStyle: style.copyWith(color: St.muted.withValues(alpha: .6)),
+        ),
+      ),
+    );
+    if (label == null) return field;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 6, bottom: 8),
+          child: Text(label!, style: St.body(14, color: St.muted)),
+        ),
+        field,
+      ],
+    );
+  }
+}
+
+/// A full-width action: an icon and a label in Lilita, on a coloured sticker.
+class StickerWideButton extends StatelessWidget {
+  const StickerWideButton({
+    super.key,
+    required this.label,
+    this.icon,
+    this.onTap,
+    this.color = St.white,
+    this.textColor = St.ink,
+    this.height = 62,
+    this.fontSize = 22,
+    this.trailing,
+  });
+
+  final String label;
+  final IconData? icon;
+  final VoidCallback? onTap;
+  final Color color;
+  final Color textColor;
+  final double height;
+  final double fontSize;
+
+  /// Pins the label to the left and puts this at the far end — a chevron on a
+  /// row that opens a page. Without it, everything is centred.
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Flexible(
+      child: Text(
+        label,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        textAlign: trailing == null ? TextAlign.center : TextAlign.start,
+        style: St.display(fontSize, color: textColor),
+      ),
+    );
+    return StickerButton(
+      height: height,
+      radius: 20,
+      shadow: 5,
+      color: color,
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Row(
+        mainAxisSize: trailing == null ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisAlignment: trailing == null
+            ? MainAxisAlignment.center
+            : MainAxisAlignment.start,
+        children: [
+          if (icon != null) ...[
+            StIcon(icon!, size: fontSize + 6, color: textColor),
+            const SizedBox(width: 10),
+          ],
+          if (trailing == null)
+            text
+          else
+            Expanded(child: Row(children: [text])),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+/// Ink on yellow, at whatever size the caller needs — the sticker screens'
+/// spinner, instead of Material's, which takes the theme's colour.
+class StickerSpinner extends StatelessWidget {
+  const StickerSpinner({super.key, this.size = 36});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: CircularProgressIndicator(
+      strokeWidth: size / 9,
+      color: St.ink,
+      strokeCap: StrokeCap.round,
+    ),
+  );
+}
+
+/// A coloured disc with an icon on it, tilted: the big mark at the top of a
+/// screen that has one thing to say — you won, you lost, the connection went.
+///
+/// One vocabulary for all of them, so a player reads the colour before the
+/// words on any of them.
+class StickerMark extends StatelessWidget {
+  const StickerMark({
+    super.key,
+    required this.icon,
+    required this.color,
+    this.iconColor = St.white,
+    this.size = 96,
+    this.tiltDeg = -8,
+  });
+
+  final IconData icon;
+  final Color color;
+  final Color iconColor;
+  final double size;
+  final double tiltDeg;
+
+  @override
+  Widget build(BuildContext context) => Transform.rotate(
+    angle: tiltDeg * math.pi / 180,
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: St.ink, width: 3),
+        boxShadow: St.hard(size / 16),
+      ),
+      child: Center(
+        child: StIcon(icon, size: size * .55, color: iconColor),
+      ),
+    ),
+  );
+}
+
+/// A whole screen that is only waiting: the spinner, and what it is waiting
+/// for.
+///
+/// Every dead moment lands here rather than on a bare [Scaffold], which would
+/// take the app's dark theme and read as a different app for as long as the
+/// wait lasts.
+class StickerLoadingScreen extends StatelessWidget {
+  const StickerLoadingScreen({super.key, this.message});
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) => StickerPage(
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const StickerSpinner(size: 44),
+          if (message != null) ...[
+            const SizedBox(height: 20),
+            Text(message!, style: St.display(26), textAlign: TextAlign.center),
+          ],
+        ],
+      ),
     ),
   );
 }

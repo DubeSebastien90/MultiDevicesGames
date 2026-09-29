@@ -12,7 +12,7 @@ import '../net/discovery.dart';
 import '../net/discovery_stack.dart';
 import '../net/host_address.dart';
 import '../platform_config.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 import 'scan_sheet.dart';
 import 'settings_screen.dart';
 
@@ -95,9 +95,9 @@ class _JoinSheetState extends State<JoinSheet> {
 
   /// The QR carries the code in its fragment, so a scan needs no keypad.
   Future<void> _scan() async {
-    final raw = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const ScanSheet()),
-    );
+    final raw = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => const ScanSheet()));
     if (raw == null || !mounted) return;
 
     final target = parseHostTarget(raw);
@@ -121,8 +121,8 @@ class _JoinSheetState extends State<JoinSheet> {
   /// because nothing in a release build shows an address to type — the host's
   /// lobby prints one only under [kDebugMode] too.
   Future<void> _typeAddress() async {
-    final raw = await showDialog<String>(
-      context: context,
+    final raw = await showStickerSheet<String>(
+      context,
       builder: (_) => const _AddressDialog(),
     );
     if (raw == null || !mounted) return;
@@ -161,102 +161,98 @@ class _JoinSheetState extends State<JoinSheet> {
   //   builder: (_) => _CodeDialog(gameName: gameName),
   // );
 
-  void _snack(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-  }
+  void _snack(String text) => showStickerToast(context, text);
 
   @override
   Widget build(BuildContext context) {
     final games = _listener.games;
 
-    return Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: Column(
+    return StickerPage(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: StickerHeader(
+              'Find Lobby',
+              onBack: () => Navigator.of(context).pop(),
+              trailing: StickerButton(
+                width: 52,
+                height: 52,
+                radius: 16,
+                tooltip: 'Settings',
+                onTap: _openSettings,
+                child: const StIcon(Symbols.settings_rounded, size: 28),
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
               children: [
-                LobbyHeader(
-                  title: 'Find Lobby',
-                  onBack: () => Navigator.of(context).pop(),
-                  onSettings: _openSettings,
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                    children: [
-                      if (games.isEmpty)
-                        _Searching(failure: _listener.failure)
-                      else
-                        for (final game in games)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: _GameTile(
-                              game: game,
-                              mine: _hasASeatIn(game),
-                              // A game under way is worth tapping only if this
-                              // phone left a seat in it. Letting anyone tap
-                              // meant strangers walked into a rejection screen;
-                              // refusing everyone meant somebody whose battery
-                              // died could not get back to their own game.
-                              onTap: game.open || _hasASeatIn(game)
-                                  ? () => _joinDiscovered(game)
-                                  : null,
-                            ),
-                          ),
-                    ],
-                  ),
-                ),
-                if (qrScanSupported || PlatformConfig.showDebugUi)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    child: Row(
-                      children: [
-                        if (qrScanSupported)
-                          Expanded(
-                            child: LobbyPillButton.big(
-                              label: 'Scan QR Code',
-                              icon: Icons.qr_code_2,
-                              background: LobbyFlowColors.yellow,
-                              onPressed: _scan,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 22,
-                                horizontal: 16,
-                              ),
-                            ),
-                          ),
-                        if (qrScanSupported && PlatformConfig.showDebugUi)
-                          const SizedBox(width: 14),
-                        if (PlatformConfig.showDebugUi)
-                          Expanded(
-                            child: LobbyPillButton.big(
-                              label: 'Type Address',
-                              icon: Icons.keyboard,
-                              background: LobbyFlowColors.cyan,
-                              onPressed: _typeAddress,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 22,
-                                horizontal: 16,
-                              ),
-                            ),
-                          ),
-                      ],
+                if (games.isEmpty)
+                  _Searching(failure: _listener.failure)
+                else
+                  for (final (i, game) in games.indexed)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _GameTile(
+                        game: game,
+                        tiltDeg: i.isEven ? -1 : 1,
+                        mine: _hasASeatIn(game),
+                        // A game under way is worth tapping only if this phone
+                        // left a seat in it. Letting anyone tap meant strangers
+                        // walked into a rejection screen; refusing everyone
+                        // meant somebody whose battery died could not get back
+                        // to their own game.
+                        onTap: game.open || _hasASeatIn(game)
+                            ? () => _joinDiscovered(game)
+                            : null,
+                      ),
                     ),
-                  ),
               ],
             ),
           ),
-        ),
+          if (qrScanSupported || PlatformConfig.showDebugUi)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (qrScanSupported)
+                    StickerWideButton(
+                      label: 'Scan QR Code',
+                      icon: Symbols.qr_code_scanner_rounded,
+                      color: St.blue,
+                      textColor: St.white,
+                      height: 72,
+                      fontSize: 26,
+                      onTap: _scan,
+                    ),
+                  if (qrScanSupported && PlatformConfig.showDebugUi)
+                    const SizedBox(height: 14),
+                  if (PlatformConfig.showDebugUi)
+                    StickerWideButton(
+                      label: 'Type Address',
+                      icon: Symbols.keyboard_rounded,
+                      fontSize: 20,
+                      onTap: _typeAddress,
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
+/// One game on the network, as a coloured sticker you tap to join.
 class _GameTile extends StatelessWidget {
   const _GameTile({
     required this.game,
     required this.onTap,
+    required this.tiltDeg,
     this.mine = false,
   });
 
@@ -265,22 +261,38 @@ class _GameTile extends StatelessWidget {
 
   final GameBeacon game;
   final VoidCallback? onTap;
+  final double tiltDeg;
+
+  /// A game's colour, fixed by its name rather than its place in the list, so
+  /// it neither changes as other games come and go nor differs between
+  /// phones. Spelled out rather than leaning on [String.hashCode], which
+  /// promises nothing across runs or platforms.
+  static Color _colorFor(String name) {
+    final hash = name.codeUnits.fold<int>(
+      0,
+      (h, unit) => (h * 31 + unit) & 0x7fffffff,
+    );
+    return St.tileBands[hash % St.tileBands.length];
+  }
 
   @override
   Widget build(BuildContext context) {
     // A game under way that isn't this phone's cannot be tapped, and says so by
-    // going gray rather than by wearing a colour it cannot deliver on.
+    // going grey rather than by wearing a colour it cannot deliver on.
     final locked = !game.open && !mine;
     // Somebody is hosting it, so somebody is in it — a beacon that says
     // otherwise is stale, not empty.
     final players = math.max(1, game.players);
+    final fg = locked ? St.ink : St.white;
 
-    return LobbyCard(
+    return StickerButton(
+      height: 76,
+      radius: 22,
+      shadow: 5,
+      tiltDeg: locked ? 0 : tiltDeg,
+      color: locked ? const Color(0xFFE4E4E4) : _colorFor(game.name),
       onTap: onTap,
-      dimmed: locked,
-      color: locked
-          ? LobbyFlowColors.field
-          : LobbyFlowColors.colorForLobby(game.name),
+      padding: const EdgeInsets.fromLTRB(18, 0, 14, 0),
       child: Row(
         children: [
           Expanded(
@@ -288,21 +300,21 @@ class _GameTile extends StatelessWidget {
               game.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: LobbyText.label,
+              style: St.display(22, color: fg),
             ),
           ),
           if (!game.open && mine) ...[
-            Text(
-              'Join Back Lobby',
-              style: LobbyText.button.copyWith(fontSize: 12),
+            const StickerPill(
+              'Join back',
+              icon: Symbols.refresh_rounded,
+              color: St.white,
+              textColor: St.ink,
+              size: 14,
+              border: 2,
             ),
-            const SizedBox(width: 6),
-            const Icon(Icons.refresh, size: 17, color: LobbyFlowColors.ink),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
           ],
-          Text('$players', style: LobbyText.count),
-          const SizedBox(width: 4),
-          const Icon(Icons.person, size: 20, color: LobbyFlowColors.ink),
+          StickerPill('$players', icon: Symbols.person_rounded, size: 16),
         ],
       ),
     );
@@ -318,12 +330,6 @@ class _Searching extends StatefulWidget {
   State<_Searching> createState() => _SearchingState();
 }
 
-const _searchingStyle = TextStyle(
-  color: LobbyFlowColors.muted,
-  fontSize: 19,
-  fontWeight: FontWeight.w800,
-);
-
 class _SearchingState extends State<_Searching> {
   static const _kDots = 3;
 
@@ -333,7 +339,7 @@ class _SearchingState extends State<_Searching> {
   @override
   void initState() {
     super.initState();
-    if (widget.failure == null) {
+    if (widget.failure == null && StickerMotion.loops) {
       _timer = Timer.periodic(const Duration(milliseconds: 450), (_) {
         setState(() => _dots = _dots % _kDots + 1);
       });
@@ -348,14 +354,20 @@ class _SearchingState extends State<_Searching> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final failure = widget.failure;
+    final big = St.display(26);
+    final note = St.body(15, weight: FontWeight.w500, color: St.muted);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 120),
+      padding: const EdgeInsets.symmetric(vertical: 90),
       child: Column(
         children: [
           if (failure == null) ...[
+            const Pulse(
+              scale: 1.12,
+              child: StIcon(Symbols.wifi_find_rounded, size: 56),
+            ),
+            const SizedBox(height: 16),
             // All three dots are always laid out; only their opacity changes.
             // The line's width never moves, so it can neither reflow nor
             // shuffle as the animation runs.
@@ -363,41 +375,28 @@ class _SearchingState extends State<_Searching> {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Flexible(
-                  child: Text(
-                    'Searching for lobbies',
-                    style: _searchingStyle,
-                    maxLines: 1,
-                  ),
+                Flexible(
+                  child: Text('Searching for lobbies', style: big, maxLines: 1),
                 ),
                 for (var i = 1; i <= _kDots; i++)
                   Opacity(
                     opacity: i <= _dots ? 1 : 0,
-                    child: const Text('.', style: _searchingStyle),
+                    child: Text('.', style: big),
                   ),
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Ask your friend to tap “Create a Lobby”.',
-              style: LobbyText.body,
+              style: note,
               textAlign: TextAlign.center,
             ),
           ] else ...[
-            Icon(Icons.wifi_find, size: 30, color: theme.colorScheme.error),
-            const SizedBox(height: 12),
-            Text(
-              'This device cannot search the network.',
-              style: theme.textTheme.titleSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Scan the QR code on the host screen instead.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
+            const StickerNotice(
+              icon: Symbols.wifi_off_rounded,
+              message:
+                  'This device cannot search the network. Scan the QR code '
+                  'on the host screen instead.',
             ),
           ],
         ],
@@ -496,8 +495,6 @@ class _CodeDialogState extends State<_CodeDialog> {
 }
 */
 
-
-
 /// Type where the host is. Debug builds only — see [_JoinSheetState._typeAddress].
 ///
 /// [parseHostAddress] is forgiving about what goes in here: a bare IP, a
@@ -524,54 +521,44 @@ class _AddressDialogState extends State<_AddressDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: LobbyFlowColors.paper,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const LobbyTitle('Type Address', fontSize: 22),
-            const SizedBox(height: 18),
-            LobbyChipField(
-              controller: _controller,
-              autofocus: true,
-              hintText: '192.168.1.42',
-              onSubmitted: _submit,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'The host shows this under its QR code in debug builds.',
-              style: LobbyText.body,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: LobbyPillButton(
-                    label: 'Cancel',
-                    background: LobbyFlowColors.field,
-                    foreground: LobbyFlowColors.ink,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: LobbyPillButton(
-                    label: 'Join',
-                    background: LobbyFlowColors.green,
-                    foreground: LobbyFlowColors.ink,
-                    onPressed: _submit,
-                  ),
-                ),
-              ],
-            ),
-          ],
+    return StickerSheetShell(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text('Type Address', style: St.display(28))),
+                  const SheetCloseButton(),
+                ],
+              ),
+              const SizedBox(height: 16),
+              StickerField(
+                controller: _controller,
+                autofocus: true,
+                hintText: '192.168.1.42',
+                onSubmitted: _submit,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'The host shows this under its QR code in debug builds.',
+                style: St.body(14, weight: FontWeight.w500, color: St.muted),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 18),
+              StickerWideButton(
+                label: 'Join',
+                icon: Symbols.arrow_forward_rounded,
+                color: St.go,
+                textColor: St.white,
+                onTap: _submit,
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

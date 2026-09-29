@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import '../client/client_session.dart';
 import 'game_view.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 import 'lobby_view.dart';
 import 'name_drop_notice.dart';
 import 'intro_animation.dart';
@@ -78,7 +78,7 @@ class SessionScreen extends StatelessWidget {
   Widget _screenFor(BuildContext context, ClientSession client) {
     switch (client.phase) {
       case ClientPhase.connecting:
-        return const LobbyLoadingScreen(message: 'Connecting…');
+        return const StickerLoadingScreen(message: 'Connecting…');
 
       case ClientPhase.lobby:
         // The NameDrop question belongs to *arriving at* the lobby, which is a
@@ -176,10 +176,10 @@ class SessionScreen extends StatelessWidget {
 
 /// The connection is gone, or was never granted.
 ///
-/// Dressed like the rest of the flow rather than like an error dialog: a coral
-/// mark, the reason in plain words, and the same pill every other screen ends
-/// with. Coral because this is the one screen in the flow you cannot carry on
-/// from — it is the back button's colour, and back is the only thing left.
+/// Dressed like the rest of the app rather than like an error dialog: a red
+/// mark, the reason in plain words, and a way back. Red because this is the
+/// one screen you cannot carry on from — it is the back button's colour, and
+/// back is the only thing left.
 class _Problem extends StatelessWidget {
   const _Problem({
     required this.title,
@@ -193,48 +193,54 @@ class _Problem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const LobbyMark(
-                    icon: Icons.wifi_tethering_off,
-                    color: LobbyFlowColors.coral,
+    return StickerPage(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Center(
+                  child: StickerMark(
+                    icon: Symbols.wifi_off_rounded,
+                    color: St.back,
                   ),
-                  const SizedBox(height: 18),
-                  LobbyTitle(title),
-                  const SizedBox(height: 10),
-                  // What the host actually said, under the headline rather
-                  // than instead of it: 'Lobby is full' is the useful half, and
-                  // a headline alone is not enough to act on.
-                  Text(
+                ),
+                const SizedBox(height: 26),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: St.display(36, height: 1),
+                ),
+                const SizedBox(height: 14),
+                // What the host actually said, under the headline rather than
+                // instead of it: 'Lobby is full' is the useful half, and a
+                // headline alone is not enough to act on.
+                StickerCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
+                  child: Text(
                     message,
                     textAlign: TextAlign.center,
-                    style: LobbyText.body,
+                    style: St.body(17, weight: FontWeight.w500),
                   ),
-                  const SizedBox(height: 24),
-                  LobbyPillButton(
-                    onPressed: onBack,
-                    icon: Icons.arrow_back,
-                    label: 'Back',
-                    background: LobbyFlowColors.coral,
-                    fontSize: 17,
-                    iconSize: 20,
-                    radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 28,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 26),
+                StickerWideButton(
+                  onTap: onBack,
+                  icon: Symbols.arrow_back_rounded,
+                  label: 'Back',
+                  color: St.back,
+                  textColor: St.white,
+                  height: 66,
+                  fontSize: 26,
+                ),
+              ],
             ),
           ),
         ),
