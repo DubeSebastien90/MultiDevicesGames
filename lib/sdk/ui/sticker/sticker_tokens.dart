@@ -41,6 +41,18 @@ class St {
   static const join = Color(0xFFFF4F9E);
   static const dice = Color(0xFF3AA8FF);
 
+  /// A game tile's ribbon when it is in the run, cycling by position.
+  static const tileBands = [
+    Color(0xFFFB48C4),
+    Color(0xFF14AEEF),
+    Color(0xFF31B83C),
+    Color(0xFFFE7013),
+    Color(0xFFF3C61A),
+    Color(0xFF8D13FF),
+    Color(0xFFD23131),
+    Color(0xFFBA6C24),
+  ];
+
   /// The floating shapes behind every screen, in the characters' own colours.
   static const shapeColors = [
     Color(0xFF14AEEF),
@@ -59,6 +71,7 @@ class St {
   /// tap lifts before [press] has drawn anything.
   static const minPress = Duration(milliseconds: 140);
 
+  static const quick = Duration(milliseconds: 150);
   static const sheet = Duration(milliseconds: 280);
 
   /// Hard offset shadow, no blur. [o] is the offset: 3 small, 5 medium,
@@ -105,6 +118,18 @@ class St {
     color: color,
     height: height,
   );
+}
+
+/// The colour matrix for CSS's `grayscale(amount)`: 0 leaves the picture
+/// alone, 1 takes all its colour out.
+List<double> greyscaleMatrix(double amount) {
+  final s = 1 - amount;
+  return [
+    0.2126 + 0.7874 * s, 0.7152 - 0.7152 * s, 0.0722 - 0.0722 * s, 0, 0, //
+    0.2126 - 0.2126 * s, 0.7152 + 0.2848 * s, 0.0722 - 0.0722 * s, 0, 0, //
+    0.2126 - 0.2126 * s, 0.7152 - 0.7152 * s, 0.0722 + 0.9278 * s, 0, 0, //
+    0, 0, 0, 1, 0,
+  ];
 }
 
 /// A Material Symbol, rounded, filled, at weight 600 — how the designs draw

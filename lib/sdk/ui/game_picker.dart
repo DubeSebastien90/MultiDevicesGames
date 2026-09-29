@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../audio/ui_audio.dart';
@@ -6,7 +9,7 @@ import '../contract/game.dart';
 import '../host/host_session.dart';
 import '../monetization/paywall_view.dart';
 import '../monetization/premium_status.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// Open the run's game list, as a screen of its own.
 ///
@@ -14,9 +17,8 @@ import 'lobby_flow_style.dart';
 /// sheet spent its height pretending to be one, and a drag down its middle
 /// closed it instead of scrolling it — a modal sheet reads that gesture as
 /// dismissal, which is exactly the gesture somebody makes to see game eleven.
-/// Find Lobby and Settings are full screens with a back pill on them, so this
-/// is one too, and the heading and the All/None pair stay put while the list
-/// moves under them.
+/// So this is a full screen with a back button, and the heading and the
+/// All/None pair stay put while the grid moves under them.
 ///
 /// Host-only by construction — it takes a [HostSession], and joiners do not
 /// have one. Choosing is not a democracy: whoever set the table decides what
@@ -26,8 +28,8 @@ import 'lobby_flow_style.dart';
 /// this screen and on the lobby underneath at the same instant.
 ///
 /// Also the one place a non-Premium host runs into the paywall by picking
-/// games at all: choosing the lineup is itself a Premium feature, so a locked
-/// row's tap opens [showPaywall] instead of ticking a box that [HostSession]
+/// games at all: choosing the lineup is itself a Premium feature, so a free
+/// host's tap opens [showPaywall] instead of ticking a box that [HostSession]
 /// would have refused anyway.
 Future<void> showGamesScreen(
   BuildContext context,
@@ -35,49 +37,54 @@ Future<void> showGamesScreen(
   PremiumStatus premium,
 ) => Navigator.of(context).push<void>(
   MaterialPageRoute(
-    builder: (_) => Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: Column(
-              children: [
-                Builder(
-                  builder: (context) => LobbyHeader(
-                    title: 'Games in the run',
-                    onBack: () => Navigator.of(context).pop(),
+    builder: (context) => Scaffold(
+      backgroundColor: St.bg,
+      body: StickerBackground(
+        shapes: pickerShapes,
+        child: SafeArea(
+          bottom: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: StickerHeader(
+                      'Games in the run',
+                      size: 30,
+                      onBack: () => Navigator.of(context).pop(),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: ListenableBuilder(
-                    listenable: Listenable.merge([host, premium]),
-                    builder: (context, _) => GamePicker(
-                      offers: host.offers,
-                      // Not `!premium.isPremium`: that reads an unanswered
-                      // fetch as a refusal, and sends somebody who has paid to
-                      // the paywall.
-                      selectionLocked: premium.isReady && !premium.isPremium,
-                      premiumError: premium.error,
-                      onRetryPremium: premium.retry,
-                      onChoose: (game, chosen) =>
-                          host.chooseGame(game, chosen: chosen),
-                      onAll: host.chooseAllGames,
-                      onNone: host.chooseNoGames,
-                      onSelectionLockedTap: () => showPaywall(
-                        context,
-                        premium,
-                        trigger: 'Unlock game selection',
-                      ),
-                      onLockedTap: (game) => showPaywall(
-                        context,
-                        premium,
-                        trigger: 'Unlock ${game.manifest.title}',
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: ListenableBuilder(
+                      listenable: Listenable.merge([host, premium]),
+                      builder: (context, _) => GamePicker(
+                        offers: host.offers,
+                        // Not `!premium.isPremium`: that reads an unanswered
+                        // fetch as a refusal, and sends somebody who has paid
+                        // to the paywall.
+                        selectionLocked: premium.isReady && !premium.isPremium,
+                        premiumError: premium.error,
+                        onRetryPremium: premium.retry,
+                        onChoose: (game, chosen) =>
+                            host.chooseGame(game, chosen: chosen),
+                        onAll: host.chooseAllGames,
+                        onNone: host.chooseNoGames,
+                        onSelectionLockedTap: () =>
+                            showPaywall(context, premium),
+                        onLockedTap: (offer) => showPaywall(
+                          context,
+                          premium,
+                          game: offer.manifest.title,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -86,38 +93,27 @@ Future<void> showGamesScreen(
   ),
 );
 
-/// Which games the evening consists of: tick the ones you want, in the order
-/// they will be played.
+/// Which games the evening consists of: tap the ones you want, hold one to
+/// read what it is.
 ///
 /// The body of [showGamesScreen], and sized like one: the controls hold still
-/// and the rows scroll, so this wants a bounded height rather than a place in
+/// and the tiles scroll, so this wants a bounded height rather than a place in
 /// somebody else's scroll view.
 ///
 /// Everything starts ticked. A table that never opens this plays the whole
 /// catalogue, which is exactly what it did before there was anything to open.
 ///
-/// Games this table cannot play stay in the list, faded and saying what they
-/// need. "Hot Potato, 3+ phones" tells you to fetch another person; a game
-/// silently missing from the list tells you nothing at all.
+/// Games this table cannot play stay in the grid, faded, with their phone
+/// count turned red. "Hot Potato, 3+" tells you to fetch another person; a
+/// game silently missing from the list tells you nothing at all.
 ///
-/// They stay tickable, though, and the greying is not a refusal. Two reasons:
-/// the list is usually opened while people are still arriving — with nobody
-/// calibrated yet *every* row is the wrong size, and a settings screen where
-/// nothing can be set is not a settings screen — and a tick is about the
-/// evening rather than about this minute, so it survives a phone going flat.
-/// Playing a game that does not fit is refused where it matters, at the
-/// session: the run steps over it and [HostSession.startGame] declines it.
-///
-/// The list says all of this by how it looks. It used to say it again in words:
-/// a line under the heading explaining what Play would do and why it would not,
-/// and a tally under the rows counting what was in the run. Both were a caption
-/// for a picture the reader was already looking at — a bright icon with a tick
-/// on it is in the run, a faded one saying '3+' is not, and counting them is
-/// something you do by looking rather than by reading.
-///
-/// So the games are icons in a grid, and nothing else: no plate under each one
-/// and no tagline beside it. The picture says which game; the tick, the fade
-/// and the tag under it say everything this screen has to say about it.
+/// They stay tickable, though, and the fading is not a refusal. The list is
+/// usually opened while people are still arriving — with nobody calibrated yet
+/// *every* game is the wrong size, and a settings screen where nothing can be
+/// set is not a settings screen — and a tick is about the evening rather than
+/// about this minute, so it survives a phone going flat. Playing a game that
+/// does not fit is refused where it matters, at the session: the run steps
+/// over it and [HostSession.startGame] declines it.
 class GamePicker extends StatelessWidget {
   const GamePicker({
     super.key,
@@ -142,85 +138,129 @@ class GamePicker extends StatelessWidget {
   final bool selectionLocked;
   final VoidCallback? onSelectionLockedTap;
 
-  /// A locked Premium row was tapped. Opens the paywall — the row itself has
+  /// A locked Premium game was tapped. Opens the paywall — the tile itself has
   /// no tick to toggle, since [HostSession.chooseGame] refuses it anyway.
   final void Function(GameOffer offer)? onLockedTap;
 
   /// Why the Premium state could not be established, if it could not.
   ///
-  /// Shown as a banner above the list, because the padlocks underneath it may
-  /// be wrong: a host who bought Premium last week and opened the app somewhere
-  /// with no signal sees exactly what a host who never paid sees, and only one
-  /// of them is being told the truth. Saying so costs a line and turns "my
-  /// purchase vanished" into "it will check again in a moment".
+  /// Shown above the grid, because the padlocks in it may be wrong: a host who
+  /// bought Premium last week and opened the app somewhere with no signal sees
+  /// exactly what a host who never paid sees, and only one of them is being
+  /// told the truth. Saying so costs a line and turns "my purchase vanished"
+  /// into "it will check again in a moment".
   final String? premiumError;
 
   /// Look again. Wired to [PremiumStatus.retry].
   final Future<void> Function()? onRetryPremium;
 
+  static const _pad = 20.0;
+  static const _gapX = 14.0;
+
+  /// How far a tile's name ribbon hangs above the tile.
+  static const _ribbon = 14.0;
+
+  /// What a tap on this game does, or null for a tap that does nothing yet.
+  ///
+  /// One answer for the tile and for the info sheet's button, so the two
+  /// cannot disagree about whether a game is for sale.
+  VoidCallback? _actionFor(GameOffer offer) {
+    if (offer.lockPending) return null;
+    if (offer.isLocked) {
+      return onLockedTap == null ? null : () => onLockedTap!(offer);
+    }
+    if (selectionLocked) return onSelectionLockedTap;
+    return () => onChoose(offer.game, !offer.chosen);
+  }
+
+  void _showInfo(BuildContext context, GameOffer offer, Color color) {
+    HapticFeedback.mediumImpact();
+    final action = _actionFor(offer);
+    showStickerSheet<void>(
+      context,
+      builder: (sheet) => _GameInfoSheet(
+        offer: offer,
+        color: color,
+        selectionLocked: selectionLocked,
+        onPrimary: action == null
+            ? null
+            : () {
+                Navigator.of(sheet).pop();
+                action();
+              },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Still waiting on the store. Derived from the rows rather than passed
-    // alongside them, so the sheet and its rows cannot disagree about it.
+    // Still waiting on the store. Derived from the tiles rather than passed
+    // alongside them, so the controls and the tiles cannot disagree about it.
     final pending = offers.any((o) => o.lockPending);
+    final inRun = offers
+        .where((o) => o.chosen && !o.isLocked && !o.lockPending)
+        .length;
+
+    // Twelve taps to play one game is not a choice anybody makes twice, so the
+    // two ends of the list are one tap each. Disabled rather than sent to the
+    // paywall while pending: we do not yet know whether this host would need
+    // one.
+    VoidCallback? end(VoidCallback? action) =>
+        pending ? null : (selectionLocked ? onSelectionLockedTap : action);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+          padding: const EdgeInsets.symmetric(horizontal: _pad),
           child: Row(
             children: [
-              // A free host cannot pick, so telling them to tap one to add it
-              // promises something the tap will not do.
+              StickerPill('$inRun/${offers.length}', size: 18),
+              const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  selectionLocked
-                      ? 'Games included in the run'
-                      : 'Tap a game to add it',
-                  style: LobbyText.body,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(text: 'in the run\n'),
+                      TextSpan(
+                        text: 'Hold a game for info',
+                        style: St.body(13, weight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: St.body(13, color: St.muted, height: 1.15),
                 ),
               ),
-              // Twelve taps to play one game is not a choice anybody makes
-              // twice, so the two ends of the list are one tap each. Disabled
-              // rather than sent to the paywall while pending: we do not yet
-              // know whether this host would need one.
-              _EndButton(
-                label: 'All',
-                onPressed: pending
-                    ? null
-                    : (selectionLocked ? onSelectionLockedTap : onAll),
-              ),
-              const SizedBox(width: 8),
-              _EndButton(
-                label: 'None',
-                onPressed: pending
-                    ? null
-                    : (selectionLocked ? onSelectionLockedTap : onNone),
-              ),
+              _EndButton(label: 'All', onTap: end(onAll)),
+              const SizedBox(width: 10),
+              _EndButton(label: 'None', onTap: end(onNone)),
             ],
           ),
         ),
         if (premiumError != null)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.fromLTRB(_pad, 16, _pad, 0),
             child: _PremiumTrouble(onRetry: onRetryPremium),
           )
         else if (pending)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(_pad, 12, _pad, 0),
             child: Row(
               children: [
-                SizedBox(
-                  width: 12,
-                  height: 12,
+                const SizedBox.square(
+                  dimension: 14,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: LobbyFlowColors.muted,
+                    strokeWidth: 2.5,
+                    color: St.ink,
                   ),
                 ),
-                SizedBox(width: 10),
-                Text('Checking your purchase…', style: LobbyText.body),
+                const SizedBox(width: 10),
+                Text(
+                  'Checking your purchase…',
+                  style: St.body(14, color: St.muted),
+                ),
               ],
             ),
           ),
@@ -228,23 +268,59 @@ class GamePicker extends StatelessWidget {
         // control, and a control that scrolls away is one you have to go and
         // find again.
         Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-            // Two across on a phone, three on anything wider: big enough that
-            // the picture is the game's name.
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 190,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-            ),
-            itemCount: offers.length,
-            itemBuilder: (context, i) => _Tile(
-              offer: offers[i],
-              selectionLocked: selectionLocked,
-              onChoose: onChoose,
-              onSelectionLockedTap: onSelectionLockedTap,
-              onLockedTap: onLockedTap,
-            ),
+          child: Stack(
+            children: [
+              LayoutBuilder(
+                builder: (context, box) {
+                  final tile = (box.maxWidth - _pad * 2 - _gapX * 2) / 3;
+                  return GridView.builder(
+                    padding: EdgeInsets.fromLTRB(
+                      _pad,
+                      10,
+                      _pad,
+                      40 + MediaQuery.paddingOf(context).bottom,
+                    ),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: _gapX,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: tile / (tile + _ribbon),
+                    ),
+                    itemCount: offers.length,
+                    itemBuilder: (context, i) {
+                      final offer = offers[i];
+                      final color = St.tileBands[i % St.tileBands.length];
+                      return _Tile(
+                        offer: offer,
+                        color: color,
+                        tiltRight: i.isOdd,
+                        onTap: _actionFor(offer),
+                        onLongPress: () => _showInfo(context, offer, color),
+                      );
+                    },
+                  );
+                },
+              ),
+              // The last row fades into the paper rather than being cut off by
+              // the screen's edge.
+              const Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 40,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0x00FFD23F), St.bg],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -252,25 +328,25 @@ class GamePicker extends StatelessWidget {
   }
 }
 
-/// All, None — the two ends of the list, as small gray pills.
+/// All, None — the two ends of the list.
 class _EndButton extends StatelessWidget {
-  const _EndButton({required this.label, required this.onPressed});
+  const _EndButton({required this.label, required this.onTap});
 
   final String label;
-  final VoidCallback? onPressed;
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => LobbyPillButton(
-    label: label,
-    onPressed: onPressed,
-    background: LobbyFlowColors.field,
-    foreground: LobbyFlowColors.ink,
-    fontSize: 13,
-    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 16),
+  Widget build(BuildContext context) => StickerButton(
+    height: 42,
+    radius: 14,
+    shadow: 3,
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    onTap: onTap,
+    child: Text(label, style: St.display(18)),
   );
 }
 
-/// Shown when the store could not be reached, above rows that may be lying.
+/// Shown when the store could not be reached, above tiles that may be lying.
 ///
 /// The wording is the point. "Couldn't check your purchase" says the app failed
 /// at something; "you have not bought this" — which is what a padlock says
@@ -299,52 +375,48 @@ class _PremiumTroubleState extends State<_PremiumTrouble> {
     try {
       await onRetry();
     } finally {
-      // The sheet rebuilds off PremiumStatus, so a success simply replaces this
-      // widget; this only matters when it failed again.
+      // The screen rebuilds off PremiumStatus, so a success simply replaces
+      // this widget; this only matters when it failed again.
       if (mounted) setState(() => _retrying = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-      decoration: BoxDecoration(
-        color: LobbyFlowColors.field,
-        borderRadius: BorderRadius.circular(18),
-      ),
+    return StickerCard(
+      radius: 18,
+      shadow: 4,
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off, size: 18, color: LobbyFlowColors.muted),
+          const StIcon(Symbols.cloud_off_rounded, size: 22, color: St.muted),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Text(
               // Deliberately not the exception text. "PlatformException(23, …)"
               // tells the reader nothing they can act on and reads like the
               // purchase itself broke.
               'Could not check your purchase. If you have bought Premium, it '
               'will unlock once this device can reach the store.',
-              style: LobbyText.body,
+              style: St.body(13, weight: FontWeight.w500),
             ),
           ),
           const SizedBox(width: 8),
           if (_retrying)
             const Padding(
               padding: EdgeInsets.all(10),
-              child: SizedBox(
-                width: 16,
-                height: 16,
+              child: SizedBox.square(
+                dimension: 18,
                 child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: LobbyFlowColors.ink,
+                  strokeWidth: 2.5,
+                  color: St.ink,
                 ),
               ),
             )
           else
             _EndButton(
               label: 'Retry',
-              onPressed: widget.onRetry == null ? null : _retry,
+              onTap: widget.onRetry == null ? null : _retry,
             ),
         ],
       ),
@@ -352,303 +424,476 @@ class _PremiumTroubleState extends State<_PremiumTrouble> {
   }
 }
 
-/// One game, as its icon and nothing else.
+/// One game: its art, its name on a ribbon, and whatever it has earned.
 ///
-/// Bright with a tick on its corner means it is in the run; faded means it is
-/// not. The corner says whether it is ticked, and the tag under it, when there
-/// is one, says why a ticked game still is not going to be played. That is the
-/// whole state of this screen, which is why there is no plate under the icon,
-/// no line of prose under the heading and no tally under the grid.
+/// The whole state of this screen is drawn on the tiles, which is why there is
+/// no line of prose under the heading:
+///
+/// - **In the run**: the ribbon in colour, tilted, a shadow, full-colour art
+///   and a tick.
+/// - **Ticked, but the table is the wrong size**: the ribbon and the tick stay
+///   — it *is* ticked — but the art fades and the phone count turns red. A
+///   bright tile promising a game that will not be played tonight is a lie.
+/// - **Not ticked**: a white ribbon and grey art.
+/// - **Premium, not bought**: a padlock and a PREMIUM tag, and nothing to tick.
+/// - **Waiting on the store**: grey and inert, with no claim about money
+///   either way.
 class _Tile extends StatelessWidget {
   const _Tile({
     required this.offer,
-    required this.selectionLocked,
-    required this.onChoose,
-    this.onSelectionLockedTap,
-    this.onLockedTap,
+    required this.color,
+    required this.tiltRight,
+    required this.onTap,
+    required this.onLongPress,
   });
 
   final GameOffer offer;
-  final bool selectionLocked;
-  final void Function(MultiscreenGame game, bool chosen) onChoose;
-  final VoidCallback? onSelectionLockedTap;
-  final void Function(GameOffer offer)? onLockedTap;
+  final Color color;
+  final bool tiltRight;
+  final VoidCallback? onTap;
+  final VoidCallback onLongPress;
 
-  /// How far the icon sits in from its cell, which is how far the corner mark
-  /// and the tag under it hang off the icon without leaving the cell.
-  static const _inset = 10.0;
-
-  static const _animation = Duration(milliseconds: 160);
+  static const _fade = Duration(milliseconds: 200);
 
   @override
   Widget build(BuildContext context) {
     final locked = offer.isLocked;
     final pending = offer.lockPending;
+    final ticked = offer.chosen && !locked && !pending;
+    final live = ticked && offer.fitsTable;
 
-    // Ticked *and* playable is the only state that gets the full colour. A game
-    // the table is the wrong size for is not going to be played tonight, and a
-    // bright icon promising otherwise is the lie the old footer went out of its
-    // way to correct in words.
-    final live = offer.chosen && offer.fitsTable && !locked && !pending;
-    // Unticked, rather than merely unplayable, also steps back: a tap on a
-    // game already faded because the table is short still visibly does
-    // something.
-    final unticked = !offer.chosen && !locked && !pending;
-    final tag = _tag();
+    final opacity = live
+        ? 1.0
+        : ticked
+        ? .6
+        : (locked || pending)
+        ? .45
+        : .6;
+    final grey = live ? 0.0 : (ticked ? .3 : .7);
 
-    return GestureDetector(
-      // The whole cell, not just the picture: the gaps around a big icon are
-      // where a thumb lands half the time.
-      behavior: HitTestBehavior.opaque,
-      onTap: withButtonSound(
-        pending
-            ? null
-            : locked
-            ? (onLockedTap == null ? null : () => onLockedTap!(offer))
-            : () {
-                if (selectionLocked) {
-                  onSelectionLockedTap?.call();
-                  return;
-                }
-                onChoose(offer.game, !offer.chosen);
-              },
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(_inset),
-        child: AnimatedScale(
-          scale: unticked ? 0.9 : 1,
-          duration: _animation,
-          curve: Curves.easeOut,
+    return Semantics(
+      button: true,
+      selected: ticked,
+      child: GestureDetector(
+        // The whole cell, not just the picture: the gap above a tile is where
+        // a thumb lands half the time.
+        behavior: HitTestBehavior.opaque,
+        onTap: withButtonSound(onTap),
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.only(top: GamePicker._ribbon),
           child: Stack(
-            fit: StackFit.expand,
             clipBehavior: Clip.none,
             children: [
-              AnimatedOpacity(
-                opacity: live ? 1 : 0.4,
-                duration: _animation,
-                child: _GameIcon(manifest: offer.manifest),
+              AspectRatio(
+                aspectRatio: 1,
+                child: AnimatedContainer(
+                  duration: St.quick,
+                  decoration: St.sticker(radius: 24, shadow: ticked ? 5 : 0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(21),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        AnimatedOpacity(
+                          duration: _fade,
+                          opacity: opacity,
+                          child: ColorFiltered(
+                            colorFilter: ColorFilter.matrix(
+                              greyscaleMatrix(grey),
+                            ),
+                            child: _GameArt(manifest: offer.manifest),
+                          ),
+                        ),
+                        if (locked) const Center(child: _LockBadge()),
+                        if (pending)
+                          const Center(
+                            child: SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: St.ink,
+                              ),
+                            ),
+                          ),
+                        Positioned(
+                          left: 6,
+                          bottom: 6,
+                          child: _PlayersBadge(
+                            manifest: offer.manifest,
+                            // Only a game that could otherwise be played is
+                            // flagged: red on a padlocked tile would be two
+                            // reasons shouting at once.
+                            short: !offer.fitsTable && !locked && !pending,
+                          ),
+                        ),
+                        Positioned(
+                          right: 6,
+                          bottom: 6,
+                          child: AnimatedScale(
+                            scale: ticked ? 1 : 0,
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOutBack,
+                            child: ticked ? const _Check() : const SizedBox(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
               Positioned(
-                top: -_inset,
-                right: -_inset,
-                child: _Mark(offer: offer),
-              ),
-              if (tag != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: -_inset,
-                  child: Center(child: tag),
+                top: -GamePicker._ribbon,
+                left: -6,
+                right: -6,
+                child: Center(
+                  child: AnimatedRotation(
+                    turns: ticked ? (tiltRight ? 4 : -4) / 360 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: AnimatedContainer(
+                      duration: St.quick,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: St.sticker(
+                        color: ticked
+                            ? color
+                            : (locked ? St.premiumTint : St.white),
+                        radius: 10,
+                        shadow: 2,
+                        border: 2.5,
+                      ),
+                      child: ExcludeSemantics(
+                        child: Text(
+                          offer.manifest.title,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: St.display(
+                            13,
+                            color: ticked
+                                ? St.white
+                                : (locked ? St.lockedText : St.ink),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
+              ),
+              if (locked)
+                const Positioned(right: -6, bottom: -10, child: _PremiumPill()),
             ],
           ),
         ),
       ),
     );
   }
-
-  Widget? _tag() {
-    if (offer.lockPending) return null;
-    if (offer.isLocked) return const _PremiumTag();
-    // Only on a game that does not fit: on every other one it would be twelve
-    // repetitions of a number nobody is currently blocked by.
-    if (offer.fitsTable) return null;
-    return _NeedsTag(
-      phones: offer.manifest.smallestTable,
-      pairs: offer.manifest.players.pairsOnly,
-    );
-  }
 }
 
-/// The game's icon, rounded the way a home screen rounds one.
+/// The game's picture, full-bleed.
 ///
-/// Labelled with the title, so a screen reader still says the game's name.
-/// A game nobody has drawn yet is its title on the same shape, so it takes the
-/// same place in the grid.
-class _GameIcon extends StatelessWidget {
-  const _GameIcon({required this.manifest});
+/// Labelled with the title, so a screen reader still says the game's name. A
+/// game nobody has drawn yet is its title on white, so it takes the same
+/// place in the grid.
+class _GameArt extends StatelessWidget {
+  const _GameArt({required this.manifest});
 
   final GameManifest manifest;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final radius = BorderRadius.circular(
-        constraints.biggest.shortestSide * 0.22,
-      );
-      final asset = manifest.icon;
-      if (asset == null) {
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: LobbyFlowColors.field,
-            borderRadius: radius,
-          ),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                manifest.title,
-                textAlign: TextAlign.center,
-                style: LobbyText.label.copyWith(fontWeight: FontWeight.w800),
-              ),
+  Widget build(BuildContext context) {
+    final asset = manifest.icon;
+    if (asset == null) {
+      return ColoredBox(
+        color: St.white,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Text(
+              manifest.title,
+              textAlign: TextAlign.center,
+              style: St.display(16),
             ),
           ),
-        );
-      }
-      return ClipRRect(
-        borderRadius: radius,
-        child: SvgPicture.asset(
-          asset,
-          fit: BoxFit.cover,
-          semanticsLabel: manifest.title,
-        ),
-      );
-    },
-  );
-}
-
-/// The tick, the ring, the padlock, or the spinner — whichever this game has
-/// earned — as a disc on the icon's corner.
-///
-/// Rimmed in the page's white, so it reads as sitting on the icon rather than
-/// as a spot painted into the picture.
-class _Mark extends StatelessWidget {
-  const _Mark({required this.offer});
-
-  final GameOffer offer;
-
-  static const _size = 32.0;
-  static const _rim = BorderSide(color: LobbyFlowColors.paper, width: 3);
-
-  @override
-  Widget build(BuildContext context) {
-    // Says nothing about money, because nothing is known about money yet. No
-    // padlock, no tick and no ring: an inert game that is plainly not ready,
-    // rather than a claim that turns out to be wrong half a second later.
-    if (offer.lockPending) {
-      return _disc(
-        color: LobbyFlowColors.paper,
-        child: const Padding(
-          padding: EdgeInsets.all(6),
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: LobbyFlowColors.muted,
-          ),
         ),
       );
     }
-
-    // A locked game has nothing a tap could toggle, so it gets no tick to
-    // toggle. The padlock and the tag are its whole answer.
-    //
-    // The padlock means Premium and nothing else. A free game on a host that
-    // cannot customise the run keeps its tick — the tap is what sends that
-    // host to the paywall, not the icon.
-    if (offer.isLocked) {
-      return _disc(
-        color: LobbyFlowColors.purple,
-        child: const Icon(
-          Icons.lock_outline,
-          size: 16,
-          color: LobbyFlowColors.ink,
-        ),
-      );
-    }
-
-    if (offer.chosen) {
-      return _disc(
-        color: LobbyFlowColors.ink,
-        child: const Icon(Icons.check, size: 18, color: LobbyFlowColors.paper),
-      );
-    }
-
-    return _disc(
-      color: LobbyFlowColors.paper,
-      border: const BorderSide(color: LobbyFlowColors.muted, width: 2.5),
+    return SvgPicture.asset(
+      asset,
+      fit: BoxFit.cover,
+      semanticsLabel: manifest.title,
     );
   }
-
-  Widget _disc({
-    required Color color,
-    BorderSide border = _rim,
-    Widget? child,
-  }) => Container(
-    width: _size,
-    height: _size,
-    decoration: BoxDecoration(
-      color: color,
-      shape: BoxShape.circle,
-      border: Border.fromBorderSide(border),
-    ),
-    child: child,
-  );
 }
 
-/// A small pill hung off the bottom of an icon, rimmed like [_Mark].
-class _Tag extends StatelessWidget {
-  const _Tag({required this.color, required this.child});
-
-  final Color color;
-  final Widget child;
+class _Check extends StatelessWidget {
+  const _Check();
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
-      border: Border.all(color: LobbyFlowColors.paper, width: 3),
+    width: 28,
+    height: 28,
+    decoration: const BoxDecoration(color: St.ink, shape: BoxShape.circle),
+    child: const Center(
+      child: StIcon(Symbols.check_rounded, size: 18, color: St.white),
     ),
-    child: child,
   );
 }
 
-class _PremiumTag extends StatelessWidget {
-  const _PremiumTag();
+class _LockBadge extends StatelessWidget {
+  const _LockBadge();
 
   @override
-  Widget build(BuildContext context) => _Tag(
-    color: LobbyFlowColors.purple,
+  Widget build(BuildContext context) => Container(
+    width: 40,
+    height: 40,
+    decoration: BoxDecoration(
+      color: St.premium,
+      shape: BoxShape.circle,
+      border: Border.all(color: St.ink, width: 3),
+      boxShadow: St.hard(3),
+    ),
+    child: const Center(
+      child: StIcon(Symbols.lock_rounded, size: 22, color: St.white),
+    ),
+  );
+}
+
+class _PremiumPill extends StatelessWidget {
+  const _PremiumPill();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+    decoration: BoxDecoration(
+      color: St.premium,
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: St.ink, width: 2),
+    ),
     child: Text(
       'PREMIUM',
-      style: LobbyText.button.copyWith(fontSize: 10, letterSpacing: 0.4),
+      style: St.display(
+        10,
+        color: St.white,
+        height: 1,
+      ).copyWith(letterSpacing: .4),
     ),
   );
 }
 
-/// The fewest phones a game needs, on a game this table is too small for.
+/// The fewest phones a game needs, on every tile — red on a game this table
+/// is too small for.
 ///
-/// A phone and a number rather than the sentence: "3+" alone could be players
-/// or rounds, and the whole requirement would not fit under an icon.
-class _NeedsTag extends StatelessWidget {
-  const _NeedsTag({required this.phones, this.pairs = false});
+/// A number rather than the sentence: "3+" is the whole requirement, and the
+/// sentence would not fit on a tile. A game played in pairs carries a second
+/// mark after it, for "and an even count".
+class _PlayersBadge extends StatelessWidget {
+  const _PlayersBadge({required this.manifest, this.short = false});
 
-  final int phones;
-
-  /// Played in pairs: two people after the number, for "and an even count".
-  final bool pairs;
+  final GameManifest manifest;
+  final bool short;
 
   @override
-  Widget build(BuildContext context) => _Tag(
-    color: LobbyFlowColors.field,
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.smartphone, size: 12, color: LobbyFlowColors.ink),
-        const SizedBox(width: 2),
-        Text('$phones+', style: LobbyText.button.copyWith(fontSize: 12)),
-        if (pairs) ...[
-          const SizedBox(width: 4),
-          Semantics(
-            label: 'even number of phones',
-            child: const Icon(
-              Icons.people,
-              size: 14,
-              color: LobbyFlowColors.ink,
+  Widget build(BuildContext context) {
+    final fg = short ? St.white : St.ink;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 2, 7, 2),
+      decoration: BoxDecoration(
+        color: short ? St.back : St.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: St.ink, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StIcon(Symbols.group_rounded, size: 14, color: fg),
+          const SizedBox(width: 3),
+          Text(
+            '${manifest.smallestTable}+',
+            style: St.display(13, color: fg, height: 1),
+          ),
+          if (manifest.players.pairsOnly) ...[
+            const SizedBox(width: 3),
+            Semantics(
+              label: 'even number of phones',
+              child: StIcon(Symbols.counter_2_rounded, size: 14, color: fg),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// What a game is, on a long press: its art, its name, what you do and how it
+/// ends, and the one thing you can do about it from here.
+class _GameInfoSheet extends StatelessWidget {
+  const _GameInfoSheet({
+    required this.offer,
+    required this.color,
+    required this.selectionLocked,
+    required this.onPrimary,
+  });
+
+  final GameOffer offer;
+  final Color color;
+  final bool selectionLocked;
+  final VoidCallback? onPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final manifest = offer.manifest;
+    final locked = offer.isLocked;
+    final pending = offer.lockPending;
+    // A free host's tap sells the lineup, so the button says so rather than
+    // promising to add a game it cannot.
+    final sells = locked || (selectionLocked && !pending);
+
+    final (label, icon, bg, fg) = pending
+        ? ('Checking…', Symbols.hourglass_rounded, St.white, St.ink)
+        : sells
+        ? (
+            'Unlock with Premium',
+            Symbols.lock_open_rounded,
+            St.premium,
+            St.white,
+          )
+        : offer.chosen
+        ? ('Remove from run', Symbols.remove_rounded, St.white, St.ink)
+        : ('Add to run', Symbols.add_rounded, St.go, St.white);
+
+    final players =
+        '${manifest.smallestTable}+ phones'
+        '${manifest.players.pairsOnly ? ', in pairs' : ''}';
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      child: StickerSheetShell(
+        children: [
+          SizedBox(
+            height: 190,
+            child: Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  position: DecorationPosition.foreground,
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: St.ink, width: 3)),
+                  ),
+                  child: _GameArt(manifest: manifest),
+                ),
+                const Positioned(top: 12, right: 12, child: SheetCloseButton()),
+                Positioned(
+                  left: 16,
+                  right: 64,
+                  bottom: -20,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Transform.rotate(
+                      angle: -3 * math.pi / 180,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 7,
+                        ),
+                        decoration: St.sticker(
+                          color: color,
+                          radius: 14,
+                          shadow: 3,
+                        ),
+                        child: Text(
+                          manifest.title,
+                          style: St.display(26, color: St.white, height: 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 34, 20, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      StickerPill(
+                        players,
+                        icon: Symbols.group_rounded,
+                        color: offer.fitsTable ? St.white : St.back,
+                        textColor: offer.fitsTable ? St.ink : St.white,
+                        size: 15,
+                        border: 2.5,
+                      ),
+                      if (locked)
+                        const StickerPill(
+                          'Premium',
+                          icon: Symbols.lock_rounded,
+                          color: St.premium,
+                          size: 15,
+                          border: 2.5,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    manifest.tagline,
+                    style: St.body(
+                      17,
+                      weight: FontWeight.w600,
+                      color: const Color(0xFF222222),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    manifest.goal,
+                    style: St.body(
+                      16,
+                      weight: FontWeight.w500,
+                      color: const Color(0xFF444444),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  StickerButton(
+                    height: 62,
+                    radius: 22,
+                    shadow: 5,
+                    color: bg,
+                    onTap: onPrimary,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        StIcon(icon, size: 28, color: fg),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: St.display(24, color: fg),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
