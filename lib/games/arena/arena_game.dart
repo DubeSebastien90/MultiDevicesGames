@@ -21,6 +21,7 @@ class ArenaGame implements MultiscreenGame {
     title: 'Arena',
     tagline: 'Fight to be the last one standing.',
     goal: 'Eliminate everyone. Drag, tap, hold.',
+    icon: 'assets/icons/icones_minijeux/arena.svg',
     players: PlayerCount.range(min: 2, max: 8),
   );
 

@@ -22,6 +22,7 @@ class HungryHipposGame implements MultiscreenGame {
     title: 'Marbles Madness',
     tagline: 'Marbles in the middle. Tap to lunge. No manners required.',
     goal: 'Swallow more marbles than you have any right to.',
+    icon: 'assets/icons/icones_minijeux/hungryhippos.svg',
     // Two, four or six, and nothing between: each is a different arrangement
     // that keeps the board square enough for a dish, and there is no sensible
     // block of three or five. Said as a list because that is the truth — a

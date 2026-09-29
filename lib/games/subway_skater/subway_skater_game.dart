@@ -26,6 +26,7 @@ class SubwaySkaterGame implements MultiscreenGame {
         'Swipe to dodge. The front of the line scores most and gets hit '
         'first.',
     goal: 'Spend as much of the round as far up the line as you can.',
+    icon: 'assets/icons/icones_minijeux/subway_skater.svg',
     // Two is a line, barely — one hit and you have swapped ends. Beyond about
     // eight the corridor is longer than anybody can watch at once.
     players: PlayerCount.range(min: 2, max: 8),

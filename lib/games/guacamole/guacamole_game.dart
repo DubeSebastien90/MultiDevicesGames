@@ -28,6 +28,7 @@ class GuacamoleGame implements MultiscreenGame {
     title: 'Guac-a-Mole',
     tagline: 'Avocados pop up everywhere. Squish the ones wearing your colour.',
     goal: 'Most points when the minute is up.',
+    icon: 'assets/icons/icones_minijeux/guacamole.svg',
     // Three is the fewest that still makes it a reach across the table for
     // somebody else's colour. The ceiling is the palette.
     //

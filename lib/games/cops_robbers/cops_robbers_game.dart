@@ -20,6 +20,7 @@ class CopsRobbersGame implements MultiscreenGame {
     title: 'Cops & Robbers',
     tagline: 'Grab the cash, or catch the robbers. Then swap.',
     goal: 'Your team grabs more cash in its turn than theirs.',
+    icon: 'assets/icons/icones_minijeux/copsrobbers.svg',
     // Two equal teams, so an even table: one against one up to four a side.
     players: PlayerCount.range(min: 2, max: 8, parity: CountParity.even),
     tier: GameTier.premium,

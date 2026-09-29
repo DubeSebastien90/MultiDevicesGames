@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../audio/ui_audio.dart';
 import '../contract/game.dart';
@@ -95,8 +96,8 @@ Future<void> showGamesScreen(
 /// Everything starts ticked. A table that never opens this plays the whole
 /// catalogue, which is exactly what it did before there was anything to open.
 ///
-/// Games this table cannot play stay in the list, greyed and saying what they
-/// need. "Hot Potato needs 3+ phones" tells you to fetch another person; a game
+/// Games this table cannot play stay in the list, faded and saying what they
+/// need. "Hot Potato, 3+ phones" tells you to fetch another person; a game
 /// silently missing from the list tells you nothing at all.
 ///
 /// They stay tickable, though, and the greying is not a refusal. Two reasons:
@@ -110,9 +111,13 @@ Future<void> showGamesScreen(
 /// The list says all of this by how it looks. It used to say it again in words:
 /// a line under the heading explaining what Play would do and why it would not,
 /// and a tally under the rows counting what was in the run. Both were a caption
-/// for a picture the reader was already looking at — a green row with a tick in
-/// it is in the run, a grey one saying '3+' is not, and counting them is
+/// for a picture the reader was already looking at — a bright icon with a tick
+/// on it is in the run, a faded one saying '3+' is not, and counting them is
 /// something you do by looking rather than by reading.
+///
+/// So the games are icons in a grid, and nothing else: no plate under each one
+/// and no tagline beside it. The picture says which game; the tick, the fade
+/// and the tag under it say everything this screen has to say about it.
 class GamePicker extends StatelessWidget {
   const GamePicker({
     super.key,
@@ -219,15 +224,21 @@ class GamePicker extends StatelessWidget {
               ],
             ),
           ),
-        // The list, and only the list, is what moves. Everything above it is a
+        // The grid, and only the grid, is what moves. Everything above it is a
         // control, and a control that scrolls away is one you have to go and
         // find again.
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            // Two across on a phone, three on anything wider: big enough that
+            // the picture is the game's name.
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 190,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+            ),
             itemCount: offers.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, i) => _Row(
+            itemBuilder: (context, i) => _Tile(
               offer: offers[i],
               selectionLocked: selectionLocked,
               onChoose: onChoose,
@@ -341,14 +352,15 @@ class _PremiumTroubleState extends State<_PremiumTrouble> {
   }
 }
 
-/// One game, as a plate you tap.
+/// One game, as its icon and nothing else.
 ///
-/// Green with a filled tick means it is in the run; gray with an empty ring
-/// means it is not. That pair is the whole state of this screen, which is why
-/// there is no longer a line of prose under the heading explaining it or a
-/// tally under the rows counting it.
-class _Row extends StatelessWidget {
-  const _Row({
+/// Bright with a tick on its corner means it is in the run; faded means it is
+/// not. The corner says whether it is ticked, and the tag under it, when there
+/// is one, says why a ticked game still is not going to be played. That is the
+/// whole state of this screen, which is why there is no plate under the icon,
+/// no line of prose under the heading and no tally under the grid.
+class _Tile extends StatelessWidget {
+  const _Tile({
     required this.offer,
     required this.selectionLocked,
     required this.onChoose,
@@ -362,22 +374,32 @@ class _Row extends StatelessWidget {
   final VoidCallback? onSelectionLockedTap;
   final void Function(GameOffer offer)? onLockedTap;
 
+  /// How far the icon sits in from its cell, which is how far the corner mark
+  /// and the tag under it hang off the icon without leaving the cell.
+  static const _inset = 10.0;
+
+  static const _animation = Duration(milliseconds: 160);
+
   @override
   Widget build(BuildContext context) {
     final locked = offer.isLocked;
     final pending = offer.lockPending;
-    final fits = offer.fitsTable;
 
-    // Ticked *and* playable is the only state that gets the colour. A game the
-    // table is the wrong size for is not going to be played tonight, and a
-    // green plate promising otherwise is the lie the old footer went out of its
+    // Ticked *and* playable is the only state that gets the full colour. A game
+    // the table is the wrong size for is not going to be played tonight, and a
+    // bright icon promising otherwise is the lie the old footer went out of its
     // way to correct in words.
-    final live = offer.chosen && fits && !locked && !pending;
-    final ink = fits && !locked && !pending
-        ? LobbyFlowColors.ink
-        : LobbyFlowColors.muted;
+    final live = offer.chosen && offer.fitsTable && !locked && !pending;
+    // Unticked, rather than merely unplayable, also steps back: a tap on a
+    // game already faded because the table is short still visibly does
+    // something.
+    final unticked = !offer.chosen && !locked && !pending;
+    final tag = _tag();
 
     return GestureDetector(
+      // The whole cell, not just the picture: the gaps around a big icon are
+      // where a thumb lands half the time.
+      behavior: HitTestBehavior.opaque,
       onTap: withButtonSound(
         pending
             ? null
@@ -391,92 +413,120 @@ class _Row extends StatelessWidget {
                 onChoose(offer.game, !offer.chosen);
               },
       ),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-        decoration: BoxDecoration(
-          color: live ? LobbyFlowColors.green : LobbyFlowColors.field,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          children: [
-            _Mark(offer: offer),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    offer.manifest.title,
-                    style: LobbyText.label.copyWith(
-                      color: ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    // The requirement replaces the tagline when it is the
-                    // reason you cannot play — that is the more useful
-                    // sentence at that moment.
-                    offer.reason ?? offer.manifest.tagline,
-                    style: LobbyText.body.copyWith(
-                      color: live
-                          ? LobbyFlowColors.ink.withValues(alpha: 0.7)
-                          : LobbyFlowColors.muted,
-                      fontStyle: offer.reason == null ? null : FontStyle.italic,
-                    ),
-                  ),
-                ],
+      child: Padding(
+        padding: const EdgeInsets.all(_inset),
+        child: AnimatedScale(
+          scale: unticked ? 0.9 : 1,
+          duration: _animation,
+          curve: Curves.easeOut,
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedOpacity(
+                opacity: live ? 1 : 0.4,
+                duration: _animation,
+                child: _GameIcon(manifest: offer.manifest),
               ),
-            ),
-            ..._trailing(),
-          ],
+              Positioned(
+                top: -_inset,
+                right: -_inset,
+                child: _Mark(offer: offer),
+              ),
+              if (tag != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: -_inset,
+                  child: Center(child: tag),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  List<Widget> _trailing() {
-    if (offer.lockPending) return const [];
-    if (offer.isLocked) {
-      return const [SizedBox(width: 10), _PremiumTag()];
-    }
-    // Only on a row that does not fit: on every other row it would be twelve
+  Widget? _tag() {
+    if (offer.lockPending) return null;
+    if (offer.isLocked) return const _PremiumTag();
+    // Only on a game that does not fit: on every other one it would be twelve
     // repetitions of a number nobody is currently blocked by.
-    if (offer.fitsTable) return const [];
-    return [
-      const SizedBox(width: 10),
-      Text(
-        '${offer.manifest.smallestTable}+',
-        style: LobbyText.button.copyWith(
-          color: LobbyFlowColors.muted,
-          fontSize: 12,
-        ),
-      ),
-    ];
+    if (offer.fitsTable) return null;
+    return _NeedsTag(phones: offer.manifest.smallestTable);
   }
 }
 
-/// The tick, the padlock, or the spinner — whichever this row has earned.
+/// The game's icon, rounded the way a home screen rounds one.
+///
+/// Labelled with the title, so a screen reader still says the game's name.
+/// A game nobody has drawn yet is its title on the same shape, so it takes the
+/// same place in the grid.
+class _GameIcon extends StatelessWidget {
+  const _GameIcon({required this.manifest});
+
+  final GameManifest manifest;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final radius = BorderRadius.circular(
+        constraints.biggest.shortestSide * 0.22,
+      );
+      final asset = manifest.icon;
+      if (asset == null) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: LobbyFlowColors.field,
+            borderRadius: radius,
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                manifest.title,
+                textAlign: TextAlign.center,
+                style: LobbyText.label.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        );
+      }
+      return ClipRRect(
+        borderRadius: radius,
+        child: SvgPicture.asset(
+          asset,
+          fit: BoxFit.cover,
+          semanticsLabel: manifest.title,
+        ),
+      );
+    },
+  );
+}
+
+/// The tick, the ring, the padlock, or the spinner — whichever this game has
+/// earned — as a disc on the icon's corner.
+///
+/// Rimmed in the page's white, so it reads as sitting on the icon rather than
+/// as a spot painted into the picture.
 class _Mark extends StatelessWidget {
   const _Mark({required this.offer});
 
   final GameOffer offer;
 
-  static const _size = 24.0;
+  static const _size = 32.0;
+  static const _rim = BorderSide(color: LobbyFlowColors.paper, width: 3);
 
   @override
   Widget build(BuildContext context) {
     // Says nothing about money, because nothing is known about money yet. No
-    // padlock, no tick and no ring: an inert row that is plainly not ready,
+    // padlock, no tick and no ring: an inert game that is plainly not ready,
     // rather than a claim that turns out to be wrong half a second later.
     if (offer.lockPending) {
-      return const SizedBox(
-        width: _size,
-        height: _size,
-        child: Padding(
-          padding: EdgeInsets.all(4),
+      return _disc(
+        color: LobbyFlowColors.paper,
+        child: const Padding(
+          padding: EdgeInsets.all(6),
           child: CircularProgressIndicator(
             strokeWidth: 2,
             color: LobbyFlowColors.muted,
@@ -485,55 +535,103 @@ class _Mark extends StatelessWidget {
       );
     }
 
-    // A locked row has nothing a tap could toggle, so it gets no tick to
-    // toggle. The padlock and the badge are the row's whole answer.
+    // A locked game has nothing a tap could toggle, so it gets no tick to
+    // toggle. The padlock and the tag are its whole answer.
     //
     // The padlock means Premium and nothing else. A free game on a host that
     // cannot customise the run keeps its tick — the tap is what sends that
     // host to the paywall, not the icon.
     if (offer.isLocked) {
-      return const SizedBox(
-        width: _size,
-        height: _size,
-        child: Icon(
+      return _disc(
+        color: LobbyFlowColors.purple,
+        child: const Icon(
           Icons.lock_outline,
-          size: 19,
-          color: LobbyFlowColors.muted,
+          size: 16,
+          color: LobbyFlowColors.ink,
         ),
       );
     }
 
-    return Container(
-      width: _size,
-      height: _size,
-      decoration: BoxDecoration(
-        color: offer.chosen ? LobbyFlowColors.ink : Colors.transparent,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: offer.chosen ? LobbyFlowColors.ink : LobbyFlowColors.muted,
-          width: 2,
-        ),
-      ),
-      child: offer.chosen
-          ? const Icon(Icons.check, size: 15, color: LobbyFlowColors.paper)
-          : null,
+    if (offer.chosen) {
+      return _disc(
+        color: LobbyFlowColors.ink,
+        child: const Icon(Icons.check, size: 18, color: LobbyFlowColors.paper),
+      );
+    }
+
+    return _disc(
+      color: LobbyFlowColors.paper,
+      border: const BorderSide(color: LobbyFlowColors.muted, width: 2.5),
     );
   }
+
+  Widget _disc({
+    required Color color,
+    BorderSide border = _rim,
+    Widget? child,
+  }) => Container(
+    width: _size,
+    height: _size,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+      border: Border.fromBorderSide(border),
+    ),
+    child: child,
+  );
+}
+
+/// A small pill hung off the bottom of an icon, rimmed like [_Mark].
+class _Tag extends StatelessWidget {
+  const _Tag({required this.color, required this.child});
+
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
+      border: Border.all(color: LobbyFlowColors.paper, width: 3),
+    ),
+    child: child,
+  );
 }
 
 class _PremiumTag extends StatelessWidget {
   const _PremiumTag();
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-    decoration: BoxDecoration(
-      color: LobbyFlowColors.purple,
-      borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
-    ),
+  Widget build(BuildContext context) => _Tag(
+    color: LobbyFlowColors.purple,
     child: Text(
       'PREMIUM',
       style: LobbyText.button.copyWith(fontSize: 10, letterSpacing: 0.4),
+    ),
+  );
+}
+
+/// The fewest phones a game needs, on a game this table is too small for.
+///
+/// A phone and a number rather than the sentence: "3+" alone could be players
+/// or rounds, and the whole requirement would not fit under an icon.
+class _NeedsTag extends StatelessWidget {
+  const _NeedsTag({required this.phones});
+
+  final int phones;
+
+  @override
+  Widget build(BuildContext context) => _Tag(
+    color: LobbyFlowColors.field,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.smartphone, size: 12, color: LobbyFlowColors.ink),
+        const SizedBox(width: 2),
+        Text('$phones+', style: LobbyText.button.copyWith(fontSize: 12)),
+      ],
     ),
   );
 }

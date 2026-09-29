@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:multiscreen_slingshot/sdk/ui/lobby_flow_style.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
@@ -71,9 +71,17 @@ void main() {
     ),
   );
 
-  /// The plate a title sits on: the row, as one widget.
-  Finder rowOf(String title) =>
-      find.ancestor(of: find.text(title), matching: find.byType(Container)).first;
+  /// A game on the list. Its icon stands where its title was, and carries the
+  /// title as its label — which is what a screen reader says, and what these
+  /// tests look it up by.
+  Finder game(String title) => find.byWidgetPredicate(
+    (widget) => widget is SvgPicture && widget.semanticsLabel == title,
+  );
+
+  /// The cell a game sits in: its icon and the marks on it, as one widget.
+  Finder rowOf(String title) => find
+      .ancestor(of: game(title), matching: find.byType(GestureDetector))
+      .first;
 
   /// Whether that row is ticked. Asked of the row rather than of the screen,
   /// because the list is lazy — off-screen rows are not built, which is the
@@ -84,16 +92,16 @@ void main() {
       .evaluate()
       .isNotEmpty;
 
-  /// The colour of the plate a title sits on. Green is in the run, gray is not,
-  /// and that pair replaced the tally the sheet used to print under the rows.
-  Color plateOf(WidgetTester tester, String title) {
-    final plate = tester
-        .widgetList<Container>(
-          find.ancestor(of: find.text(title), matching: find.byType(Container)),
-        )
-        .first;
-    return (plate.decoration! as BoxDecoration).color!;
-  }
+  /// How brightly a game's icon is drawn. Full colour is in the run, faded is
+  /// not, and that pair replaced the tally the sheet used to print under the
+  /// rows — and then the green plates that replaced the tally.
+  double fadeOf(WidgetTester tester, String title) => tester
+      .widget<AnimatedOpacity>(
+        find.ancestor(of: game(title), matching: find.byType(AnimatedOpacity)),
+      )
+      .opacity;
+
+  bool lit(WidgetTester tester, String title) => fadeOf(tester, title) == 1;
 
   testWidgets('every game is listed with its tick', (tester) async {
     await show(tester, [
@@ -101,41 +109,42 @@ void main() {
       offer(const DodgeballGame(), chosen: false),
     ]);
 
-    expect(find.text('Arena'), findsOneWidget);
-    expect(find.text('Dodgeball'), findsOneWidget);
+    expect(game('Arena'), findsOneWidget);
+    expect(game('Dodgeball'), findsOneWidget);
 
     // One tick, for the one game that is in the run.
     expect(find.byIcon(Icons.check), findsOneWidget);
-    expect(plateOf(tester, 'Arena'), LobbyFlowColors.green);
-    expect(plateOf(tester, 'Dodgeball'), LobbyFlowColors.field);
+    expect(lit(tester, 'Arena'), isTrue);
+    expect(lit(tester, 'Dodgeball'), isFalse);
   });
 
   testWidgets('a ticked game the table cannot play does not look like one it '
       'can', (tester) async {
     // Ticked is not the same as in the run. Flood is ticked and will not be
-    // played tonight, and a plate the same colour as Arena's would be telling
-    // the host they are about to play a game they are not. The sheet used to
-    // correct that in a footer; now the plate simply does not make the claim.
+    // played tonight, and an icon as bright as Arena's would be telling the
+    // host they are about to play a game they are not. The sheet used to
+    // correct that in a footer; now the icon simply does not make the claim.
     await show(tester, [
       offer(const ArenaGame()),
       offer(const FloodGame(), fits: false),
     ]);
 
-    expect(plateOf(tester, 'Arena'), LobbyFlowColors.green);
-    expect(plateOf(tester, 'Flood'), LobbyFlowColors.field);
+    expect(lit(tester, 'Arena'), isTrue);
+    expect(lit(tester, 'Flood'), isFalse);
+    expect(ticked('Flood'), isTrue);
   });
 
   testWidgets('tapping a row takes it out of the run', (tester) async {
     await show(tester, [offer(const ArenaGame())]);
 
-    await tester.tap(find.text('Arena'));
+    await tester.tap(game('Arena'));
     expect(toggles, [('arena', false)]);
   });
 
   testWidgets('tapping an unticked row puts it back', (tester) async {
     await show(tester, [offer(const ArenaGame(), chosen: false)]);
 
-    await tester.tap(find.text('Arena'));
+    await tester.tap(game('Arena'));
     expect(toggles, [('arena', true)]);
   });
 
@@ -151,26 +160,25 @@ void main() {
       offer(const FloodGame(), fits: false),
     ]);
 
-    final playable = tester.widget<Text>(find.text('Arena'));
-    final greyed = tester.widget<Text>(find.text('Flood'));
     expect(
-      greyed.style!.color,
-      isNot(playable.style?.color),
+      fadeOf(tester, 'Flood'),
+      lessThan(fadeOf(tester, 'Arena')),
       reason: 'a game this table cannot play looked like one it can',
     );
 
-    await tester.tap(find.text('Flood'));
+    await tester.tap(game('Flood'));
     expect(toggles, [
       ('flood', false),
     ], reason: 'a run could not be shaped before the table filled up');
   });
 
-  testWidgets('a game that does not fit says what it needs instead of its '
-      'tagline', (tester) async {
+  testWidgets('a game that does not fit says how many phones it needs', (
+    tester,
+  ) async {
     await show(tester, [offer(const FloodGame(), fits: false)]);
 
-    // The requirement is the more useful sentence at that moment, and the
-    // smallest table it would take is on the row as well.
+    // The smallest table it would take, under the icon — and nothing else:
+    // the grid is pictures, not a page of taglines.
     expect(
       find.textContaining(const FloodGame().manifest.smallestTable.toString()),
       findsWidgets,
@@ -196,14 +204,14 @@ void main() {
       ),
     );
 
-    expect(find.text('Hot Potato'), findsOneWidget);
+    expect(game('Hot Potato'), findsOneWidget);
     expect(find.text('PREMIUM'), findsOneWidget);
     // One tick only — Arena's. A locked row has nothing to tick, and shows a
     // padlock where the ring would be.
     expect(find.byIcon(Icons.check), findsOneWidget);
     expect(find.byIcon(Icons.lock_outline), findsOneWidget);
 
-    await tester.tap(find.text('Hot Potato'));
+    await tester.tap(game('Hot Potato'));
     expect(lockedTaps, ['hotpotato']);
     expect(
       toggles,
@@ -234,7 +242,7 @@ void main() {
     expect(find.byIcon(Icons.lock_outline), findsNothing);
     expect(find.text('Tap a game to add it'), findsNothing);
 
-    await tester.tap(find.text('Arena'));
+    await tester.tap(game('Arena'));
     await tester.tap(find.text('None'));
     await tester.tap(find.text('All'));
 
@@ -261,10 +269,10 @@ void main() {
       expect(find.byIcon(Icons.check), findsOneWidget);
       expect(find.text('Checking your purchase…'), findsOneWidget);
 
-      // The rest of the list still works while one row waits: Flood keeps its
-      // plate, its tick and its tap.
-      expect(plateOf(tester, 'Flood'), LobbyFlowColors.green);
-      await tester.tap(find.text('Flood'));
+      // The rest of the list still works while one game waits: Flood keeps its
+      // colour, its tick and its tap.
+      expect(lit(tester, 'Flood'), isTrue);
+      await tester.tap(game('Flood'));
       expect(toggles, [('flood', false)]);
     });
 
@@ -293,16 +301,17 @@ void main() {
   });
 
   group('when the store cannot be reached', () {
-    testWidgets('it says so, instead of letting padlocks speak',
-        (tester) async {
-      await show(
-        tester,
-        [offer(const HotPotatoGame(), locked: true)],
-        premiumError: 'PlatformException(23, no connection, null, null)',
-      );
+    testWidgets('it says so, instead of letting padlocks speak', (
+      tester,
+    ) async {
+      await show(tester, [
+        offer(const HotPotatoGame(), locked: true),
+      ], premiumError: 'PlatformException(23, no connection, null, null)');
 
-      expect(find.textContaining('Could not check your purchase'),
-          findsOneWidget);
+      expect(
+        find.textContaining('Could not check your purchase'),
+        findsOneWidget,
+      );
       // The raw exception is for logs, not for a player.
       expect(find.textContaining('PlatformException'), findsNothing);
       expect(find.text('Retry'), findsOneWidget);
@@ -398,15 +407,15 @@ void main() {
     await tester.tap(find.byIcon(Icons.settings));
     await tester.pumpAndSettle();
     expect(find.text('Games in the run'), findsOneWidget);
-    expect(find.text('Arena'), findsOneWidget);
+    expect(game('Arena'), findsOneWidget);
     // Nobody has connected, so nothing fits: every game is ticked and none of
-    // them is in the run, which is a screen of gray plates rather than green
+    // them is in the run, which is a screen of faded icons rather than bright
     // ones.
     expect(ticked('Arena'), isTrue);
-    expect(plateOf(tester, 'Arena'), LobbyFlowColors.field);
+    expect(lit(tester, 'Arena'), isFalse);
     expect(host.chosenGames.length, total);
 
-    await tester.tap(find.text('Arena'));
+    await tester.tap(game('Arena'));
     await tester.pumpAndSettle();
     expect(host.chosenGames.length, total - 1);
     expect(
