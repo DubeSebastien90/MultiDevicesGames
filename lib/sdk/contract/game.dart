@@ -26,6 +26,7 @@ class GameManifest {
     required this.title,
     required this.tagline,
     required this.goal,
+    this.icon,
     this.players = const PlayerCount.range(min: 1),
     this.supportsIpad = false,
     this.tier = GameTier.free,
@@ -42,6 +43,13 @@ class GameManifest {
 
   /// How it ends, in the player's words: 'Hit the tower to win.'
   final String goal;
+
+  /// The game's picture in the game list: an SVG asset path, square and
+  /// full-bleed — the list rounds the corners itself.
+  ///
+  /// It is the game's whole entry in the list, so a game without one is listed
+  /// by its title on the same rounded square instead.
+  final String? icon;
 
   /// How many phones this can be played with. The platform skips the game when
   /// the table does not fit.

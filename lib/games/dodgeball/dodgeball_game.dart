@@ -21,6 +21,7 @@ class DodgeballGame implements MultiscreenGame {
     title: 'Dodgeball',
     tagline: 'Dodge the bouncing balls!',
     goal: 'Be the last one standing. Drag to move, tap to dash.',
+    icon: 'assets/icons/icones_minijeux/dodgeball.svg',
     players: PlayerCount.range(min: 2, max: 8),
     tier: GameTier.premium,
   );

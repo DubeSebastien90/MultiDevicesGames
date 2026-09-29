@@ -23,6 +23,7 @@ class HotPotatoGame implements MultiscreenGame {
     title: 'Hot Potato',
     tagline: 'Swipe it to a neighbour before the fuse runs out.',
     goal: "Don't be holding it — or next to it — when it blows.",
+    icon: 'assets/icons/icones_minijeux/hotpotato.svg',
     // Two phones would just be passing it back and forth across a table.
     players: PlayerCount.range(min: 3, max: 8),
   );

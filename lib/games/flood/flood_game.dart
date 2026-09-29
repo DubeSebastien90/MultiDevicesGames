@@ -25,6 +25,7 @@ class FloodGame implements MultiscreenGame {
     title: 'Flood',
     tagline: 'Two teams, one waterline. Tap to push it onto their screens.',
     goal: 'Flood the other team off the board.',
+    icon: 'assets/icons/icones_minijeux/flood.svg',
     // Two equal teams, so an odd table cannot play at all. The lobby filters
     // on this and never offers the game at three phones.
     players: PlayerCount.range(

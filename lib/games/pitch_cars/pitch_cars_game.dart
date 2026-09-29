@@ -17,6 +17,7 @@ class PitchCarsGame implements MultiscreenGame {
     title: 'Pitch Cars',
     tagline: 'Flick your car around a randomized track.',
     goal: 'First past the finish line.',
+    icon: 'assets/icons/icones_minijeux/pitch_cars.svg',
     players: PlayerCount.range(min: 2, max: 8),
   );
 
