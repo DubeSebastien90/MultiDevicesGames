@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
 import '../client/client_session.dart' show RoundVerdict;
+import 'join_code.dart';
 import 'lobby_flow_style.dart';
 import 'standings_card.dart';
 
@@ -128,32 +129,43 @@ class ResultsView extends StatelessWidget {
                   // The host drives what happens next, and the button no longer
                   // names the game — announcing it here was the same spoiler the
                   // "Up next" card was.
+                  // The join code beside it, for somebody whose phone dropped
+                  // out of the run and no longer finds the game in its join
+                  // list: a scan takes them back to their seat.
                   if (host != null)
-                    LobbyPillButton(
-                      onPressed: hasNext
-                          ? host.advanceToNextGame
-                          : runIsOver
-                          ? host.showScoreboard
-                          : host.returnToLobby,
-                      icon: hasNext
-                          ? Icons.arrow_forward
-                          : runIsOver
-                          ? Icons.emoji_events
-                          : Icons.list,
-                      label: hasNext
-                          ? 'Next game'
-                          : runIsOver
-                          ? 'Score board'
-                          : 'Back to the games',
-                      background: LobbyFlowColors.green,
-                      foreground: LobbyFlowColors.ink,
-                      fontSize: 18,
-                      iconSize: 22,
-                      radius: LobbyMetrics.bigRadius,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 18,
-                        horizontal: 20,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: LobbyPillButton(
+                            onPressed: hasNext
+                                ? host.advanceToNextGame
+                                : runIsOver
+                                ? host.showScoreboard
+                                : host.returnToLobby,
+                            icon: hasNext
+                                ? Icons.arrow_forward
+                                : runIsOver
+                                ? Icons.emoji_events
+                                : Icons.list,
+                            label: hasNext
+                                ? 'Next game'
+                                : runIsOver
+                                ? 'Score board'
+                                : 'Back to the games',
+                            background: LobbyFlowColors.green,
+                            foreground: LobbyFlowColors.ink,
+                            fontSize: 18,
+                            iconSize: 22,
+                            radius: LobbyMetrics.bigRadius,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 18,
+                              horizontal: 20,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        JoinCodeStamp(host: host, size: 40),
+                      ],
                     )
                   else
                     Text(
