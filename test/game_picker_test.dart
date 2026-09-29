@@ -186,18 +186,24 @@ void main() {
     expect(find.text(const FloodGame().manifest.tagline), findsNothing);
   });
 
-  testWidgets("a game played in pairs wears two people, and the others do not", (
+  testWidgets("a game played in pairs shows two people next to its phone count, until it fits", (
     tester,
   ) async {
-    await show(tester, [offer(const FloodGame()), offer(const ArenaGame())]);
-
     bool team(String title) => find
         .descendant(of: rowOf(title), matching: find.byIcon(Icons.people))
         .evaluate()
         .isNotEmpty;
 
+    await show(tester, [
+      offer(const FloodGame(), fits: false),
+      offer(const ArenaGame(), fits: false),
+    ]);
     expect(team(const FloodGame().manifest.title), isTrue);
     expect(team(const ArenaGame().manifest.title), isFalse);
+
+    // Gone with the phone count once the table can play it.
+    await show(tester, [offer(const FloodGame())]);
+    expect(team(const FloodGame().manifest.title), isFalse);
   });
 
   test("only the even-table games are marked as played in pairs", () {
