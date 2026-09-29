@@ -721,17 +721,24 @@ class ArenaView extends GameView {
   void _drawCentered(Canvas canvas, Frame frame, String text, double size) {
     final me = frame.me;
     final width = me.halfWidth * 2;
+    // Laid out in logical pixels, at the size it is actually seen, and drawn
+    // with the canvas scaled back down to world units — Flood's way. Laid out
+    // in world units the line was a sub-point font magnified fifty-fold by the
+    // camera: Skia redraws glyphs at the final size, but Impeller on iOS
+    // rasterises them near the laid-out size and stretches the result, which
+    // is what made every briefing blurry on an iPhone.
+    final px = me.logicalPxPerWorldUnit;
 
     final builder =
         ui.ParagraphBuilder(
-            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size),
+            ui.ParagraphStyle(textAlign: TextAlign.center, fontSize: size * px),
           )
           ..pushStyle(ui.TextStyle(color: _ink, fontWeight: FontWeight.w900))
           ..addText(text);
     final paragraph = builder.build()
-      ..layout(ui.ParagraphConstraints(width: width));
+      ..layout(ui.ParagraphConstraints(width: width * px));
 
-    final half = paragraph.height / 2;
+    final half = paragraph.height / px / 2;
     final margin = me.halfHeight * _messageMargin;
 
     // All of this is now measured from the middle of the glass, down it.
@@ -750,7 +757,11 @@ class ArenaView extends GameView {
     canvas.save();
     canvas.translate(me.worldCenterX, me.worldCenterY);
     canvas.rotate(me.turnRadians);
-    canvas.drawParagraph(paragraph, Offset(-width / 2, centre - half));
+    canvas.scale(1 / px);
+    canvas.drawParagraph(
+      paragraph,
+      Offset(-width / 2 * px, (centre - half) * px),
+    );
     canvas.restore();
   }
 
