@@ -186,6 +186,28 @@ void main() {
     expect(find.text(const FloodGame().manifest.tagline), findsNothing);
   });
 
+  testWidgets("a game played in pairs wears two people, and the others do not", (
+    tester,
+  ) async {
+    await show(tester, [offer(const FloodGame()), offer(const ArenaGame())]);
+
+    bool team(String title) => find
+        .descendant(of: rowOf(title), matching: find.byIcon(Icons.people))
+        .evaluate()
+        .isNotEmpty;
+
+    expect(team(const FloodGame().manifest.title), isTrue);
+    expect(team(const ArenaGame().manifest.title), isFalse);
+  });
+
+  test("only the even-table games are marked as played in pairs", () {
+    final pairs = [
+      for (final game in GameCatalog.playlist)
+        if (game.manifest.players.pairsOnly) game.manifest.id,
+    ];
+    expect(pairs, unorderedEquals(['flood', 'hungryhippos', 'copsrobbers']));
+  });
+
   testWidgets('a locked Premium game has no checkbox and opens the paywall '
       'on tap', (tester) async {
     var lockedTaps = <String>[];

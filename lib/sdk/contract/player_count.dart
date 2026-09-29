@@ -93,6 +93,14 @@ class PlayerCount {
     return _max;
   }
 
+  /// Whether every count that works is even: the game is played in pairs,
+  /// so an odd table always leaves somebody out. What the game list's
+  /// two-people badge says.
+  bool get pairsOnly {
+    final counts = playableCounts();
+    return counts.isNotEmpty && counts.every((n) => n.isEven);
+  }
+
   /// Every count that works, up to [ceiling]. Handy for a picker, and for
   /// tests that want to check the whole set rather than the endpoints.
   List<int> playableCounts({int ceiling = 8}) =>

@@ -433,6 +433,12 @@ class _Tile extends StatelessWidget {
                 right: -_inset,
                 child: _Mark(offer: offer),
               ),
+              if (offer.manifest.players.pairsOnly)
+                const Positioned(
+                  top: -_inset,
+                  left: -_inset,
+                  child: _TeamBadge(),
+                ),
               if (tag != null)
                 Positioned(
                   left: 0,
@@ -578,6 +584,28 @@ class _Mark extends StatelessWidget {
       border: Border.fromBorderSide(border),
     ),
     child: child,
+  );
+}
+
+/// Two people side by side on the icon's other top corner: a game played in
+/// pairs, so it needs an even number of phones. Shown whether or not the game
+/// fits, since it describes the game rather than this table.
+class _TeamBadge extends StatelessWidget {
+  const _TeamBadge();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Needs an even number of phones',
+    child: Container(
+      width: _Mark._size,
+      height: _Mark._size,
+      decoration: const BoxDecoration(
+        color: LobbyFlowColors.field,
+        shape: BoxShape.circle,
+        border: Border.fromBorderSide(_Mark._rim),
+      ),
+      child: const Icon(Icons.people, size: 17, color: LobbyFlowColors.ink),
+    ),
   );
 }
 
