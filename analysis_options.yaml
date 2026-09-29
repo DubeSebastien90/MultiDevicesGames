@@ -14,6 +14,7 @@ analyzer:
     # Retired games. Not compiled, not tested, not shipped — and their imports
     # no longer resolve from where they sit. See archive/README.md.
     - archive/**
+    - design_handoff_bubble_games/**
     - build/**
     - android/**
     - ios/**
