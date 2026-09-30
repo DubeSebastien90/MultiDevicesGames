@@ -236,7 +236,7 @@ class _Row extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           if (art != null) ...[
-            PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
+            PlayerArt.of(art, PlayerArtSlot.face).widget(size: _art),
             const SizedBox(width: 8),
           ],
           Expanded(

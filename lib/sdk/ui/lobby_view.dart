@@ -826,7 +826,7 @@ class _StandingRow extends StatelessWidget {
                 ? null
                 : PlayerArt.of(
                     art,
-                    PlayerArtSlot.topdown,
+                    PlayerArtSlot.face,
                   ).widget(size: portrait),
           ),
           const SizedBox(width: 10),
