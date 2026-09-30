@@ -89,4 +89,21 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.textContaining("'s board"), findsOneWidget);
   });
+
+  testWidgets('a title letter changes shape every time it is tapped',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await pumpRole(tester, AgeBand.adult);
+
+    // A handful of random shapes: every morph,
+    // mid-flight and settled, paints without complaint.
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(find.text('U'));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+    }
+    expect(tester.takeException(), isNull);
+    expect(find.text('U'), findsOneWidget);
+  });
 }

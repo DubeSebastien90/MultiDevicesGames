@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../model/age_band.dart';
@@ -482,20 +483,9 @@ class _BubbleTitle extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 2),
                     child: Transform.rotate(
                       angle: _tilts[i] * math.pi / 180,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: St.sticker(
-                          color: _colors[i],
-                          radius: 14,
-                          shadow: 4,
-                        ),
-                        child: Text(
-                          _letters[i],
-                          style: St.display(52, color: St.white, height: 1),
-                        ),
+                      child: _MorphLetter(
+                        letter: _letters[i],
+                        color: _colors[i],
                       ),
                     ),
                   ),
@@ -511,6 +501,244 @@ class _BubbleTitle extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// One letter of the title — and a small secret: tap it and its sticker turns
+/// into another shape, squashing and popping as it goes.
+///
+/// Rounded square, circle, triangle or hexagon, picked at random — never the
+/// one it already is. Nothing marks it as tappable; it is there for whoever
+/// prods the title while waiting.
+class _MorphLetter extends StatefulWidget {
+  const _MorphLetter({required this.letter, required this.color});
+
+  final String letter;
+  final Color color;
+
+  @override
+  State<_MorphLetter> createState() => _MorphLetterState();
+}
+
+class _MorphLetterState extends State<_MorphLetter>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _morph = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 560),
+  );
+
+  /// The shape being left and the shape being become.
+  _LetterShape _from = _LetterShape.square;
+  _LetterShape _to = _LetterShape.square;
+
+  static final _dice = math.Random();
+
+  void _tap() {
+    // Any shape but the one it already is, so every tap visibly changes it.
+    final others = [
+      for (final shape in _LetterShape.values)
+        if (shape != _to) shape,
+    ];
+    final next = others[_dice.nextInt(others.length)];
+    setState(() {
+      _from = _to;
+      _to = next;
+    });
+    HapticFeedback.selectionClick();
+    _morph.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _morph.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _tap,
+      child: AnimatedBuilder(
+        animation: _morph,
+        builder: (context, child) {
+          final t = _morph.value;
+          // Squash on the way down, overshoot on the way up, settle: the
+          // letter ducks into the change and bounces out of it.
+          final pop = t < .25
+              ? 1 - .22 * Curves.easeOut.transform(t / .25)
+              : .78 + .22 * Curves.elasticOut.transform((t - .25) / .75);
+          // And a small wobble, gone by the time it settles.
+          final wobble = math.sin(t * math.pi * 3) * (1 - t) * .18;
+          return Transform.rotate(
+            angle: wobble,
+            child: Transform.scale(
+              scale: pop,
+              child: CustomPaint(
+                painter: _LetterShapePainter(
+                  from: _from,
+                  to: _to,
+                  t: Curves.easeInOutBack.transform(t),
+                  color: widget.color,
+                ),
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Text(
+            widget.letter,
+            style: St.display(52, color: St.white, height: 1),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _LetterShape { square, circle, triangle, hexagon }
+
+/// The letter's sticker: fill, 3px ink outline, hard shadow — the same recipe
+/// as [St.sticker], drawn as a path so it can change shape.
+///
+/// Every shape is described the same way — how far its edge is from the centre
+/// in each direction — so two of them blend by mixing those distances, and the
+/// outline flows from one into the other instead of cross-fading.
+class _LetterShapePainter extends CustomPainter {
+  _LetterShapePainter({
+    required this.from,
+    required this.to,
+    required this.t,
+    required this.color,
+  });
+
+  final _LetterShape from;
+  final _LetterShape to;
+
+  /// 0 is [from], 1 is [to]; a little either side of that while it
+  /// overshoots.
+  final double t;
+  final Color color;
+
+  static const _samples = 120;
+  static const _radius = 14.0;
+  static const _shadow = 4.0;
+  static const _border = 3.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hx = size.width / 2;
+    final hy = size.height / 2;
+    final centre = size.center(Offset.zero);
+
+    final path = Path();
+    for (var i = 0; i < _samples; i++) {
+      final theta = i / _samples * 2 * math.pi;
+      final a = _reach(from, theta, hx, hy);
+      final b = _reach(to, theta, hx, hy);
+      final r = math.max(a + (b - a) * t, 1.0);
+      final p = centre + Offset(math.cos(theta), math.sin(theta)) * r;
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        path.lineTo(p.dx, p.dy);
+      }
+    }
+    path.close();
+
+    canvas.drawPath(
+      path.shift(const Offset(_shadow, _shadow)),
+      Paint()..color = St.ink,
+    );
+    canvas.drawPath(path, Paint()..color = color);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _border
+        ..strokeJoin = StrokeJoin.round
+        ..color = St.ink,
+    );
+  }
+
+  /// How far [shape]'s outline is from the centre along [theta], for a letter
+  /// box of half-size [hx] by [hy].
+  ///
+  /// The shapes other than the square are sized to keep the letter inside
+  /// them, which is why the triangle is so much bigger than the box.
+  static double _reach(_LetterShape shape, double theta, double hx, double hy) {
+    final big = math.max(hx, hy);
+    return switch (shape) {
+      _LetterShape.square => _roundedRect(theta, hx, hy, _radius),
+      _LetterShape.circle => big * 1.06,
+      // Point up.
+      _LetterShape.triangle => _polygon(
+        theta,
+        3,
+        -math.pi / 2,
+        big * 1.6,
+        big * 0.32,
+      ),
+      // Flat top and bottom.
+      _LetterShape.hexagon => _polygon(theta, 6, 0, big * 1.12, big * 0.2),
+    };
+  }
+
+  /// A regular [sides]-gon with a vertex at [start] and circumradius [r],
+  /// its corners rounded off to radius [rc].
+  ///
+  /// The sides stay where the sharp polygon's were; only the corners are cut.
+  /// That shape is a smaller polygon grown by [rc] all round, so a ray either
+  /// meets one of its flat sides or one of the corner circles.
+  static double _polygon(
+    double theta,
+    int sides,
+    double start,
+    double r,
+    double rc,
+  ) {
+    final wedge = 2 * math.pi / sides;
+    final half = wedge / 2;
+    // The angle from the middle of the nearest side, in -half..half.
+    final local = ((theta - start) % wedge + wedge) % wedge - half;
+
+    final apothem = r * math.cos(half);
+    // The inner polygon whose corners are the rounding circles' centres.
+    final inner = r - rc / math.cos(half);
+
+    final c = math.cos(local);
+    final s = math.sin(local);
+    final t = apothem / c;
+    final corner = inner * math.sin(half);
+    if ((t * s).abs() <= corner) return t;
+
+    // Past the flat part: meet the corner circle on that side.
+    final vx = inner * math.cos(half);
+    final vy = s < 0 ? -corner : corner;
+    final dot = c * vx + s * vy;
+    return dot + math.sqrt(dot * dot - (vx * vx + vy * vy) + rc * rc);
+  }
+
+  /// Where a ray from the centre leaves a rounded rectangle.
+  static double _roundedRect(double theta, double hx, double hy, double rc) {
+    final c = math.cos(theta).abs();
+    final s = math.sin(theta).abs();
+    final t = math.min(
+      c < 1e-9 ? double.infinity : hx / c,
+      s < 1e-9 ? double.infinity : hy / s,
+    );
+    if (c * t <= hx - rc || s * t <= hy - rc) return t;
+    // Inside a corner: meet the corner's circle instead.
+    final cx = hx - rc;
+    final cy = hy - rc;
+    final dot = c * cx + s * cy;
+    return dot + math.sqrt(dot * dot - (cx * cx + cy * cy) + rc * rc);
+  }
+
+  @override
+  bool shouldRepaint(_LetterShapePainter old) =>
+      old.from != from || old.to != to || old.t != t || old.color != color;
 }
 
 /// The player's name on a white pill, with the dice beside it.
