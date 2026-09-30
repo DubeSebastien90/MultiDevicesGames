@@ -128,6 +128,9 @@ void main() {
   testWidgets('the host button is the way back to the lobby', (tester) async {
     await show(tester);
 
+    // Under the podium and the list, so it can be below the fold: the page
+    // scrolls, and so does whoever is holding it.
+    await tester.ensureVisible(find.text('Back to lobby'));
     await tester.tap(find.text('Back to lobby'));
     expect(backs, 1);
   });

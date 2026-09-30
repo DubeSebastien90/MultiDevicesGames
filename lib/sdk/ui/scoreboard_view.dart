@@ -324,9 +324,18 @@ class _Podium extends StatelessWidget {
   final Widget? Function(String phoneId, double size, PlayerMotion motion)
   runner;
 
-  /// Block heights and runner sizes by podium slot — first, second, third.
+  /// Block heights by podium slot — first, second, third.
   static const _heights = [124.0, 96.0, 80.0];
-  static const _runners = [78.0, 60.0, 54.0];
+
+  /// The winner's block a little wider, as drawn.
+  static int _flex(int slot) => slot == 0 ? 11 : 10;
+
+  /// How much of its block's width each character fills, by slot. The podium
+  /// is what this screen is for, so the characters are sized off the blocks
+  /// rather than fixed: a fixed size that looked right on one phone left the
+  /// cheering too small to read on the rest. Second and third a little under
+  /// their blocks, so the step down in place is also a step down in size.
+  static const _fills = [1.0, .86, .8];
 
   @override
   Widget build(BuildContext context) {
@@ -334,29 +343,38 @@ class _Podium extends StatelessWidget {
     // the missing blocks out rather than drawing an empty step.
     final order = [1, 0, 2].where((i) => i < entries.length).toList();
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        for (final i in order)
-          Expanded(
-            // The winner's block a little wider, as drawn.
-            flex: i == 0 ? 11 : 10,
-            child: _Step(
-              entry: entries[i],
-              place: places[i],
-              slot: i,
-              me: entries[i].phoneId == meId,
-              away: offline.contains(entries[i].phoneId),
-              // Everybody in first place cheers, so a tie at the top is two
-              // winners rather than one of them told off by list order.
-              runner: runner(
-                entries[i].phoneId,
-                _runners[i],
-                places[i] == 1 ? PlayerMotion.win : PlayerMotion.lose,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Sized as if all three blocks were there, so one or two players get
+        // the same characters as three rather than giants a block wide.
+        final unit = constraints.maxWidth / (_flex(0) + _flex(1) + _flex(2));
+        double art(int slot) => unit * _flex(slot) * _fills[slot];
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (final i in order)
+              Expanded(
+                flex: _flex(i),
+                child: _Step(
+                  entry: entries[i],
+                  place: places[i],
+                  slot: i,
+                  me: entries[i].phoneId == meId,
+                  away: offline.contains(entries[i].phoneId),
+                  art: art(i),
+                  // Everybody in first place cheers, so a tie at the top is
+                  // two winners rather than one of them told off by list
+                  // order.
+                  runner: runner(
+                    entries[i].phoneId,
+                    art(i),
+                    places[i] == 1 ? PlayerMotion.win : PlayerMotion.lose,
+                  ),
+                ),
               ),
-            ),
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
@@ -368,6 +386,7 @@ class _Step extends StatelessWidget {
     required this.slot,
     required this.me,
     required this.away,
+    required this.art,
     required this.runner,
   });
 
@@ -378,6 +397,9 @@ class _Step extends StatelessWidget {
   final int slot;
   final bool me;
   final bool away;
+
+  /// The side of the square the character stands in.
+  final double art;
   final Widget? runner;
 
   @override
@@ -412,9 +434,7 @@ class _Step extends StatelessWidget {
               children: [
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child:
-                      runner ??
-                      SizedBox.square(dimension: _Podium._runners[slot]),
+                  child: runner ?? SizedBox.square(dimension: art),
                 ),
                 Container(
                   height: _Podium._heights[slot],
@@ -452,7 +472,7 @@ class _Step extends StatelessWidget {
             ),
             if (me)
               Positioned(
-                top: _Podium._runners[slot] + 4 - 10,
+                top: art + 4 - 10,
                 child: StickerPill(
                   'YOU',
                   color: St.ink,
