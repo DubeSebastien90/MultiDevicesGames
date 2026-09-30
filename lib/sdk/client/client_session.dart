@@ -394,7 +394,7 @@ class ClientSession extends ChangeNotifier {
     // — unless the widget never mounts at all, which is what this is for. A
     // result nobody can see is worse than a swap nobody watched.
     _wipeGuard?.cancel();
-    _wipeGuard = Timer(const Duration(seconds: 4), () {
+    _wipeGuard = Timer(const Duration(seconds: 6), () {
       if (_wipe != WipePhase.none) revealResult();
     });
   }

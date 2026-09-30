@@ -1,18 +1,18 @@
 /// The wipe between a finished round and its result.
 ///
-/// Balls pour down until they have covered the screen completely, the screen
-/// underneath is swapped from the game to the score, and then they fall away
-/// again. Nobody sees the swap, which is the entire point: a round should not
-/// end by the game vanishing mid-frame.
+/// Balls drop in one after another, bouncing, until they have covered the
+/// screen completely; the screen underneath is swapped from the game to the
+/// score, and then they fall away again. Nobody sees the swap, which is the
+/// entire point: a round should not end by the game vanishing mid-frame.
 ///
-/// **It is one grid sliding, not a screen filling in.** The balls are laid out
-/// in a block taller than the screen, and the whole block travels down: in from
-/// above, a beat with the screen hidden, then on out of the bottom. Each ball
-/// is drawn wide enough to cover its own cell corner to corner, so there is no
-/// gap anywhere at the moment it matters — whatever the screen's shape. Only
-/// the *colour* is random. Scattering positions and hoping would leave holes on
-/// some phones and not others, and the one frame that matters is the frame the
-/// game is supposed to be hidden.
+/// **Every ball lands on a fixed grid.** Each one falls from above the screen
+/// to its own cell — the bottom rows first, loosely shuffled — with a bounce
+/// and a size of its own, and is drawn wide enough to cover that cell corner
+/// to corner — so once the last one has settled there is no gap anywhere,
+/// whatever the screen's shape. The swap waits for that moment. Only the
+/// order, the bounce, the size and the colour are random: scattering *positions* and hoping would leave holes on some phones
+/// and not others, and the one frame that matters is the frame the game is
+/// supposed to be hidden. On the way out the whole grid slides down together.
 library;
 
 import 'dart:math' as math;
@@ -30,7 +30,7 @@ class BallWipe extends StatefulWidget {
     required this.onCovered,
     this.onDone,
     this.columns = 4,
-    this.cover = const Duration(milliseconds: 1100),
+    this.cover = const Duration(milliseconds: 2500),
     this.hold = const Duration(milliseconds: 220),
     this.reveal = const Duration(milliseconds: 800),
   });
@@ -51,6 +51,8 @@ class BallWipe extends StatefulWidget {
   /// How many balls across. Fewer means bigger balls.
   final int columns;
 
+  /// How long the balls take to drop in. The last one has settled when this
+  /// is up, and that is when [onCovered] is called.
   final Duration cover;
   final Duration hold;
   final Duration reveal;
@@ -249,32 +251,59 @@ class _WipePainter extends CustomPainter {
   final double coverEnds;
   final double revealBegins;
 
-  /// How far above the screen the grid waits, in screen heights, on top of its
-  /// own height.
-  ///
-  /// Head start rather than decoration: the first stretch of the slide happens
-  /// where nobody can see it, so a phone that is still finishing something —
-  /// the last frame of a round, a decode — has somewhere to do it.
-  static const _lead = 0.45;
+  /// A ball's first fall, as a fraction of the cover, rolled per ball between
+  /// these two.
+  static const _fallMin = 0.09;
+  static const _fallMax = 0.12;
+
+  /// How much of its speed a ball keeps on each bounce, rolled per ball.
+  static const _bounceMin = 0.30;
+  static const _bounceMax = 0.50;
+
+  /// Two or three bounces, then it sits still.
+  static const _bouncesMax = 3;
+
+  /// The longest a ball can take from first moving to sitting still, as a
+  /// fraction of the cover: the first fall, then two flights per bounce, each
+  /// shorter than the last by the bounce factor. The drops are spread over
+  /// what is left, so the last ball has settled exactly when the cover ends.
+  static final double _dropMax = () {
+    var d = _fallMax;
+    var e = 1.0;
+    for (var i = 0; i < _bouncesMax; i++) {
+      e *= _bounceMax;
+      d += 2 * _fallMax * e;
+    }
+    return d;
+  }();
 
   /// How far a ball may sit from the middle of its cell, as a fraction of one.
   ///
   /// Rolled per ball and per wipe, so the pattern is never quite the same twice
   /// and the grid stops reading as a grid.
-  static const _jitter = 0.15;
+  static const _jitter = 0.10;
 
-  /// How wide a ball is drawn, as a fraction of its cell.
+  /// How wide a ball is drawn, as a fraction of its cell — rolled per ball
+  /// between these two, so the balls come in different sizes.
   ///
-  /// **This is a guarantee, not a look.** A circle that covers a square of side
-  /// c needs a diameter of at least c·√2 — and once the ball may be up to
-  /// [_jitter] out of place in both directions, the square it has to reach the
-  /// corners of is effectively (1 + 2·jitter) wide. That puts the floor at
-  /// 1.838; the rest is margin so antialiased edges never show a seam.
+  /// **The smallest is a guarantee, not a look.** A circle that covers a
+  /// square of side c needs a diameter of at least c·√2 — and once the ball
+  /// may be up to [_jitter] out of place in both directions, the square it has
+  /// to reach the corners of is effectively (1 + 2·jitter) wide. That puts the
+  /// floor at 1.697; the rest is margin so antialiased edges never show a
+  /// seam. Only ever larger than that, so every size still covers its cell.
   ///
-  /// Shrink this or grow [_jitter] without redoing that arithmetic and the wipe
-  /// develops holes — on some screen sizes and not others, for one frame, which
-  /// is the frame the finished game is meant to be hidden behind.
-  static const _spread = 1.90;
+  /// Shrink [_spreadMin] or grow [_jitter] without redoing that arithmetic and
+  /// the wipe develops holes — on some screen sizes and not others, for one
+  /// frame, which is the frame the finished game is meant to be hidden behind.
+  static const _spreadMin = 1.76;
+  static const _spreadMax = 2.35;
+
+  /// How many rows the drop order may reach across. Zero would drop the
+  /// screen strictly row by row from the bottom; this lets a ball from the
+  /// row above slip in ahead of a few from the row below, so it fills from the
+  /// bottom up without looking like a printer.
+  static const _rowMix = 1.5;
 
   /// Deterministic per cell, so a ball keeps its colour, its place and its
   /// turn in the stack on every frame — without storing a grid that would have
@@ -301,68 +330,17 @@ class _WipePainter extends CustomPainter {
     if (images.isEmpty) return;
 
     final cell = size.width / columns;
-    // A row past the bottom, so the grid is always taller than the screen and
-    // there is something to cover the last pixel with as it slides.
+    // A row past the bottom, so the jittered grid always reaches the last
+    // pixel of the screen.
     final rows = (size.height / cell).ceil() + 1;
-    final gridHeight = rows * cell;
-    final side = cell * _spread;
-
-    // Where the grid sits before it has entered.
-    //
-    // Not simply `-gridHeight`: that puts the bottom row's *centre* level with
-    // the top edge, so a quarter of it was already on screen at rest — the
-    // wipe began with a strip of balls visible, then jumped. A whole ball's
-    // width clears that, and [_lead] on top of it buys the first frames
-    // off-screen, which is where any remaining work belongs.
-    final start = -(gridHeight + side + size.height * _lead);
-
-    // The grid moves as one piece: down from above the screen until it covers
-    // everything, a beat, then on down and out of the bottom. Nothing fills in
-    // place — every ball keeps its neighbours for the whole slide.
-    final double offset;
-    if (t < coverEnds) {
-      offset = start - _ease(t / coverEnds) * start;
-    } else if (t < revealBegins) {
-      offset = 0;
-    } else {
-      final p = _ease((t - revealBegins) / (1 - revealBegins));
-      offset = p * (size.height + side);
-    }
-
-    // Collected first, then drawn in a shuffled order.
-    //
-    // The order is **hashed, not scanned**: it comes from the cell and this
-    // wipe's seed, so it differs every time the animation plays and is
-    // identical on every frame of one. That distinction is the whole lesson
-    // here. An earlier version grouped balls by colour and drew a batch each,
-    // so the order depended on which colour was met first while scanning — and
-    // as rows scrolled past the cull that changed mid-slide, and overlapping
-    // balls visibly swapped places. Random is fine. Random *per frame* is what
-    // looked broken.
-    //
-    // About forty balls on a phone screen, so collecting and sorting them each
-    // frame costs nothing worth measuring.
-    final cells = <(double, double, int, int)>[];
-    for (var row = 0; row < rows; row++) {
-      final y = offset + (row + 0.5) * cell;
-      if (y < -side || y > size.height + side) continue;
-
-      for (var col = 0; col < columns; col++) {
-        cells.add((
-          (col + 0.5) * cell + _signed(col, row, 3) * _jitter * cell,
-          y + _signed(col, row, 4) * _jitter * cell,
-          _hash(col, row, 1) % images.length,
-          _hash(col, row, 2),
-        ));
-      }
-    }
-    cells.sort((a, b) => a.$4.compareTo(b.$4));
+    // The biggest a ball can be: what a cull has to allow for.
+    final most = cell * _spreadMax;
 
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.medium;
 
-    for (final (x, y, index, _) in cells) {
+    void draw(double x, double y, double side, int index) {
       final image = images[index];
       canvas.drawImageRect(
         image,
@@ -371,11 +349,159 @@ class _WipePainter extends CustomPainter {
         paint,
       );
     }
+
+    // On the way out the grid moves as one piece, down and off the bottom.
+    // Until then it sits where it lands.
+    final offset = t < revealBegins
+        ? 0.0
+        : _ease((t - revealBegins) / (1 - revealBegins)) * (size.height + most);
+
+    // Every cell, with its landing spot, size, colour and place in the order.
+    //
+    // The order fills the screen **from the bottom up**, loosely: by row, with
+    // a hashed nudge of up to [_rowMix] rows so neighbouring rows interleave.
+    // It comes from the cell and this wipe's seed, so it differs every time the
+    // animation plays and is identical on every frame of one.
+    //
+    // **Depth is separate from the order.** Each ball has its own hashed layer,
+    // so a late ball may fall in front of the ones already down or slip in
+    // behind them. The layer is the same in the drop and the slide, so nothing
+    // visibly swaps places when one turns into the other.
+    //
+    // About forty balls on a phone screen, so collecting and sorting them each
+    // frame costs nothing worth measuring.
+    final cells = <_Ball>[];
+    for (var row = 0; row < rows; row++) {
+      final y = (row + 0.5) * cell;
+      for (var col = 0; col < columns; col++) {
+        final side = cell * _lerp(_spreadMin, _spreadMax, _unit(col, row, 9));
+        final ty = y + _signed(col, row, 4) * _jitter * cell;
+        // A cell whose ball would not reach the screen once landed has no
+        // part in covering it, and dropping it would only leave a gap in the
+        // rhythm where nothing seems to fall.
+        if (ty - side / 2 > size.height) continue;
+        cells.add(
+          _Ball(
+            x: (col + 0.5) * cell + _signed(col, row, 3) * _jitter * cell,
+            y: ty,
+            side: side,
+            image: _hash(col, row, 1) % images.length,
+            order: (rows - 1 - row) + _unit(col, row, 2) * _rowMix,
+            depth: _hash(col, row, 10),
+            col: col,
+            row: row,
+          ),
+        );
+      }
+    }
+    // Timing is read off the drop order; drawing goes back to front by depth.
+    cells.sort((a, b) => a.order.compareTo(b.order));
+    final begins = <_Ball, double>{
+      for (final (i, ball) in cells.indexed)
+        ball: cells.length > 1 ? i / (cells.length - 1) * (1 - _dropMax) : 0.0,
+    };
+    cells.sort((a, b) => a.depth.compareTo(b.depth));
+
+    if (t >= coverEnds) {
+      for (final ball in cells) {
+        final at = ball.y + offset;
+        if (at < -most || at > size.height + most) continue;
+        draw(ball.x, at, ball.side, ball.image);
+      }
+      return;
+    }
+
+    // Dropping in: one ball after another, each starting a little after the
+    // one before it, falling from just above the screen and bouncing to a stop
+    // on its cell.
+    final u = t / coverEnds;
+    for (final ball in cells) {
+      final since = u - begins[ball]!;
+      if (since < 0) continue;
+
+      final col = ball.col;
+      final row = ball.row;
+      final fall = _lerp(_fallMin, _fallMax, _unit(col, row, 5));
+      final bounce = _lerp(_bounceMin, _bounceMax, _unit(col, row, 6));
+      final bounces = 2 + _hash(col, row, 7) % (_bouncesMax - 1);
+      // Out of sight when it starts, from a little higher for some than
+      // others, so they do not all arrive on the same arc.
+      final from = -ball.side / 2 - _unit(col, row, 8) * cell;
+
+      draw(
+        ball.x,
+        _dropY(since, fall, bounce, bounces, from, ball.y),
+        ball.side,
+        ball.image,
+      );
+    }
   }
+
+  /// Where a ball dropped from [from] onto [to] is, [since] after it let go.
+  ///
+  /// Real enough to read as a bounce: constant gravity, chosen so the first
+  /// fall takes exactly [fall]; each bounce leaves the ground at [bounce] times
+  /// the speed it arrived with; after [bounces] of them it stays put.
+  static double _dropY(
+    double since,
+    double fall,
+    double bounce,
+    int bounces,
+    double from,
+    double to,
+  ) {
+    final height = to - from;
+    final g = 2 * height / (fall * fall);
+    if (since < fall) return from + 0.5 * g * since * since;
+
+    var tau = since - fall;
+    var speed = g * fall;
+    for (var i = 0; i < bounces; i++) {
+      speed *= bounce;
+      final flight = 2 * speed / g;
+      if (tau < flight) return to - (speed * tau - 0.5 * g * tau * tau);
+      tau -= flight;
+    }
+    return to;
+  }
+
+  /// A hashed value in 0..1.
+  double _unit(int col, int row, int salt) =>
+      (_hash(col, row, salt) % 1000) / 999;
+
+  static double _lerp(double a, double b, double t) => a + (b - a) * t;
 
   /// Slows as it arrives, so the grid settles rather than snapping into place.
   static double _ease(double p) => 1 - math.pow(1 - p, 3).toDouble();
 
   @override
   bool shouldRepaint(_WipePainter old) => old.t != t || old.seed != seed;
+}
+
+/// One ball of the wipe: where it lands, how big it is, which picture, and
+/// its place in the drop order.
+class _Ball {
+  const _Ball({
+    required this.x,
+    required this.y,
+    required this.side,
+    required this.image,
+    required this.order,
+    required this.depth,
+    required this.col,
+    required this.row,
+  });
+
+  final double x;
+  final double y;
+  final double side;
+  final int image;
+
+  /// When it drops, bottom rows first.
+  final double order;
+
+  /// Which layer it is drawn on, independent of when it drops.
+  final int depth;
+  final int col;
+  final int row;
 }
