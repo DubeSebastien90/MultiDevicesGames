@@ -93,3 +93,14 @@ key.properties
 # these catch one kept anywhere else in the project, the root included.
 *.jks
 *.keystore
+
+# Other secrets that must never become public: local env files, Apple keys
+# (App Store Connect / APNs .p8, certificates), and any service-account JSON.
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.pem
+*.mobileprovision
+**/service-account*.json
