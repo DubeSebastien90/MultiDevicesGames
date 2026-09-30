@@ -267,29 +267,29 @@ class _HoldRing extends StatelessWidget {
         animation: Listenable.merge([progress, spin]),
         builder: (context, _) {
           final value = progress.value;
-          // Green once the promise is made, ink while it is being made: the
-          // same pair the results screen uses for a round won and a round
-          // merely played.
-          final arc = done ? St.go : St.ink;
+          // Green once the promise is made, purple while it is being made —
+          // the purple of the standings card, so the one thing on this screen
+          // that moves under your finger wears the flow's accent.
+          final arc = done ? St.go : St.premium;
           return CustomPaint(
             painter: _HoldRingPainter(
               progress: value,
               spin: spin.value,
-              track: const Color(0xFFEDEDED),
               arc: arc,
-              // The idle sweep in the premium purple, fading out as the hold
-              // takes over so the two never read as one arc changing colour.
-              idle: St.premium.withValues(alpha: 0.9 * (1 - value)),
+              // The idle sweep in the same purple, washed out and fading as the
+              // hold takes over, so a comet going round never reads as the
+              // hold itself.
+              idle: St.premium.withValues(alpha: 0.3 * (1 - value)),
             ),
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 26),
+                padding: const EdgeInsets.symmetric(horizontal: 30),
                 child: Text(
                   label,
                   textAlign: TextAlign.center,
                   style: done
                       ? St.display(26, height: 1.1)
-                      : St.body(15, weight: FontWeight.w700, height: 1.15),
+                      : St.display(15, height: 1.15),
                 ),
               ),
             ),
@@ -300,11 +300,12 @@ class _HoldRing extends StatelessWidget {
   }
 }
 
+/// A round white sticker — ink rim, hard shadow — with the gauge running in a
+/// band between two ink rings.
 class _HoldRingPainter extends CustomPainter {
   _HoldRingPainter({
     required this.progress,
     required this.spin,
-    required this.track,
     required this.arc,
     required this.idle,
   });
@@ -315,42 +316,40 @@ class _HoldRingPainter extends CustomPainter {
   /// 0 to 1, looping: where the idle sweep has got to.
   final double spin;
 
-  final Color track;
   final Color arc;
   final Color idle;
 
-  /// Matches the edge stripes' new width, so the ring and the bands on the
-  /// glass are strokes of one weight rather than two.
-  static const _stroke = 18.0;
+  /// Matches the edge stripes' width, so the ring and the bands on the glass
+  /// are strokes of one weight rather than two.
+  static const _band = 18.0;
+
+  /// The sticker outline, as thick as every other sticker's.
+  static const _rim = 3.0;
+
+  static const _shadow = 5.0;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
-    final radius = (size.shortestSide - _stroke) / 2;
-    final box = Rect.fromCircle(center: center, radius: radius);
+    final outer = size.shortestSide / 2;
+    final bandRadius = outer - _rim - _band / 2;
+    final box = Rect.fromCircle(center: center, radius: bandRadius);
 
     canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _stroke
-        ..color = track,
+      center + const Offset(_shadow, _shadow),
+      outer,
+      Paint()..color = St.ink,
     );
+    canvas.drawCircle(center, outer, Paint()..color = St.white);
+
+    final gauge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _band
+      ..strokeCap = StrokeCap.round;
 
     // The idle sweep — a comet chasing the ring, fading as the hold fills.
     if (idle.a > 0.01) {
-      canvas.drawArc(
-        box,
-        spin * 2 * math.pi,
-        1.1,
-        false,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = _stroke
-          ..strokeCap = StrokeCap.round
-          ..color = idle,
-      );
+      canvas.drawArc(box, spin * 2 * math.pi, 1.1, false, gauge..color = idle);
     }
 
     // The hold itself, from the top, clockwise.
@@ -360,13 +359,18 @@ class _HoldRingPainter extends CustomPainter {
         -math.pi / 2,
         2 * math.pi * progress,
         false,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = _stroke
-          ..strokeCap = StrokeCap.round
-          ..color = arc,
+        gauge..color = arc,
       );
     }
+
+    // The rims last, so the gauge sits in a channel rather than over its
+    // edges.
+    final rim = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _rim
+      ..color = St.ink;
+    canvas.drawCircle(center, outer - _rim / 2, rim);
+    canvas.drawCircle(center, outer - _rim - _band - _rim / 2, rim);
   }
 
   @override
@@ -374,6 +378,5 @@ class _HoldRingPainter extends CustomPainter {
       old.progress != progress ||
       old.spin != spin ||
       old.arc != arc ||
-      old.idle != idle ||
-      old.track != track;
+      old.idle != idle;
 }

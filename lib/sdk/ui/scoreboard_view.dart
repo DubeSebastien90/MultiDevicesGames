@@ -1,12 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../model/player_color.dart';
-import '../render/player_art.dart';
+import '../render/player_animation.dart';
 import '../score/scoreboard.dart';
 import 'sticker/sticker.dart';
-import 'results_view.dart' show VerdictMark;
 
 /// The end of the run: who won the whole evening.
 ///
@@ -19,7 +17,12 @@ import 'results_view.dart' show VerdictMark;
 /// rather than to the device running the session. Only the host is given a way
 /// off it: the way out is the same as everywhere else, one person deciding for
 /// the room.
-class ScoreboardView extends StatelessWidget {
+///
+/// The characters run on the spot — on the podium and down the list — the
+/// same walk they did round the boards all evening. Where Rive cannot run,
+/// they stand still as [PlayerArt] geometry, which is what
+/// [PlayerAnimations.none] draws.
+class ScoreboardView extends StatefulWidget {
   const ScoreboardView({
     super.key,
     required this.scores,
@@ -43,18 +46,115 @@ class ScoreboardView extends StatelessWidget {
   /// Wind the session back to the lobby, or null on a phone that cannot.
   final VoidCallback? onBackToLobby;
 
+  /// The standings list, for tests that need to look inside it rather than at
+  /// the podium above, which repeats the top three.
+  static const listKey = ValueKey('scoreboard-list');
+
+  @override
+  State<ScoreboardView> createState() => _ScoreboardViewState();
+}
+
+class _ScoreboardViewState extends State<ScoreboardView>
+    with SingleTickerProviderStateMixin {
+  /// Geometry until the file has loaded, then the running cast.
+  PlayerAnimations _cast = PlayerAnimations.none;
+
+  /// The colour ids [_cast] was loaded for, to notice a new one arriving.
+  Set<String> _castIds = const {};
+
+  /// Bumped to drop a load that finished after a newer one was asked for.
+  int _loadGen = 0;
+
+  /// Every runner on the screen paints off this one clock, so a character
+  /// drawn twice — on the podium and in the list — advances once per frame.
+  final _clock = _RunClock();
+  late final Ticker _ticker = createTicker(_clock.tick);
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final moving = StickerMotion.of(context);
+    if (!moving && _ticker.isActive) _ticker.stop();
+    if (moving && !_ticker.isActive) _ticker.start();
+  }
+
+  @override
+  void didUpdateWidget(ScoreboardView old) {
+    super.didUpdateWidget(old);
+    final wanted = _wantedColors();
+    if (!wanted.keys.toSet().containsAll(_castIds) ||
+        !_castIds.containsAll(wanted.keys)) {
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _loadGen++;
+    _ticker.dispose();
+    _clock.dispose();
+    _cast.dispose();
+    super.dispose();
+  }
+
+  /// Every colour a runner on this screen will wear, by id.
+  Map<String, PlayerColor> _wantedColors() {
+    final wanted = <String, PlayerColor>{};
+    for (final e in widget.scores.ranked) {
+      final color = _artFor(e.phoneId);
+      if (color != null) wanted[color.id] = color;
+    }
+    return wanted;
+  }
+
+  Future<void> _load() async {
+    final gen = ++_loadGen;
+    final wanted = _wantedColors();
+    final cast = await PlayerAnimations.load(wanted.values);
+    if (!mounted || gen != _loadGen) {
+      cast.dispose();
+      return;
+    }
+    final old = _cast;
+    setState(() {
+      _cast = cast;
+      _castIds = wanted.keys.toSet();
+    });
+    old.dispose();
+  }
+
+  /// Somebody who is not here is the grey character, whatever colour they
+  /// last wore: between rounds that colour has gone back to the palette and
+  /// may be on somebody else by now, and mid-round it is only being kept for
+  /// the game's sake.
+  PlayerColor? _artFor(String phoneId) => widget.offline.contains(phoneId)
+      ? PlayerPalette.away
+      : widget.colors[phoneId];
+
+  Widget? _runner(String phoneId, double size) {
+    final color = _artFor(phoneId);
+    if (color == null) return null;
+    return _Runner(
+      animation: _cast.of(color)..start(),
+      clock: _clock,
+      size: size,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final scores = widget.scores;
     final ranked = scores.ranked;
 
     // Ties share a place, so two people level on 40 are both second rather than
     // one of them being told they came third by the order of a list.
     final places = _places(ranked);
-
-    // Whether this phone is the one being congratulated. The mark is the same
-    // one the results screen uses, and it should not be celebrating at somebody
-    // who came fourth.
-    final won = scores.isUsed && scores.leader?.phoneId == meId;
 
     return StickerPage(
       maxWidth: 520,
@@ -65,25 +165,31 @@ class ScoreboardView extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Bob(child: VerdictMark(won: won)),
+              Text(
+                _headline(scores, widget.meId),
+                textAlign: TextAlign.center,
+                style: St.display(40, height: 1),
               ),
-              const SizedBox(height: 20),
-              Transform.rotate(
-                angle: -2 * math.pi / 180,
-                child: Text(
-                  _headline(scores, meId),
-                  textAlign: TextAlign.center,
-                  style: St.display(40, height: 1),
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 'Final standings',
                 style: St.body(15, color: St.muted).copyWith(letterSpacing: 2),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 18),
+
+              // A podium means nothing on a board nobody scored on: there is
+              // no order to stand anyone in.
+              if (scores.isUsed && ranked.isNotEmpty) ...[
+                _Podium(
+                  entries: ranked.take(3).toList(),
+                  places: places.take(3).toList(),
+                  meId: widget.meId,
+                  offline: widget.offline,
+                  runner: _runner,
+                ),
+                const SizedBox(height: 22),
+              ],
 
               // Deliberately not a [StandingsCard]: that one draws nothing at
               // all until somebody scores, which is right where it sits —
@@ -91,6 +197,7 @@ class ScoreboardView extends StatelessWidget {
               // screen. A co-operative run that ended level still has to show
               // the table its own names.
               StickerCard(
+                key: ScoreboardView.listKey,
                 padding: const EdgeInsets.all(10),
                 child: Column(
                   children: [
@@ -98,21 +205,21 @@ class ScoreboardView extends StatelessWidget {
                       _Row(
                         place: places[i],
                         entry: entry,
-                        me: entry.phoneId == meId,
-                        away: offline.contains(entry.phoneId),
-                        color: colors[entry.phoneId],
+                        me: entry.phoneId == widget.meId,
+                        away: widget.offline.contains(entry.phoneId),
+                        color: widget.colors[entry.phoneId],
+                        runner: _runner(entry.phoneId, _Row._art),
                         // Medals mean nothing on a board nobody scored on.
                         medals: scores.isUsed,
-                        odd: i.isOdd,
                       ),
                   ],
                 ),
               ),
 
               const SizedBox(height: 26),
-              if (onBackToLobby != null)
+              if (widget.onBackToLobby != null)
                 StickerWideButton(
-                  onTap: onBackToLobby,
+                  onTap: widget.onBackToLobby,
                   icon: Symbols.meeting_room_rounded,
                   label: 'Back to lobby',
                   color: St.go,
@@ -166,6 +273,176 @@ class ScoreboardView extends StatelessWidget {
   }
 }
 
+/// Gold, silver, bronze. Fixed rather than themed: a medal that changes colour
+/// with the theme is not a medal.
+const _medal = <int, Color>{1: St.gold, 2: St.silver, 3: St.bronze};
+
+/// The same three, dark enough to be read as numbers on a white block.
+const _medalText = <int, Color>{
+  1: Color(0xFFE0A800),
+  2: Color(0xFF9A9A9A),
+  3: St.bronze,
+};
+
+/// The top three on their blocks: second on the left, first raised in the
+/// middle, third on the right.
+class _Podium extends StatelessWidget {
+  const _Podium({
+    required this.entries,
+    required this.places,
+    required this.meId,
+    required this.offline,
+    required this.runner,
+  });
+
+  final List<ScoreEntry> entries;
+  final List<int> places;
+  final String? meId;
+  final Set<String> offline;
+  final Widget? Function(String phoneId, double size) runner;
+
+  /// Block heights and runner sizes by podium slot — first, second, third.
+  static const _heights = [124.0, 96.0, 80.0];
+  static const _runners = [78.0, 60.0, 54.0];
+
+  @override
+  Widget build(BuildContext context) {
+    // Left to right: second, first, third. Fewer than three players leaves
+    // the missing blocks out rather than drawing an empty step.
+    final order = [1, 0, 2].where((i) => i < entries.length).toList();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (final i in order)
+          Expanded(
+            // The winner's block a little wider, as drawn.
+            flex: i == 0 ? 11 : 10,
+            child: _Step(
+              entry: entries[i],
+              place: places[i],
+              slot: i,
+              me: entries[i].phoneId == meId,
+              away: offline.contains(entries[i].phoneId),
+              runner: runner(entries[i].phoneId, _runners[i]),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _Step extends StatelessWidget {
+  const _Step({
+    required this.entry,
+    required this.place,
+    required this.slot,
+    required this.me,
+    required this.away,
+    required this.runner,
+  });
+
+  final ScoreEntry entry;
+  final int place;
+
+  /// 0 for the middle block, 1 left, 2 right.
+  final int slot;
+  final bool me;
+  final bool away;
+  final Widget? runner;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = slot == 0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            entry.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: St.body(
+              13,
+              weight: FontWeight.w700,
+              color: away ? const Color(0xFF777777) : St.ink,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        // One stack round the character and the block, so the YOU tag is
+        // painted over the block's top edge rather than tucked under it.
+        Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child:
+                      runner ??
+                      SizedBox.square(dimension: _Podium._runners[slot]),
+                ),
+                Container(
+                  height: _Podium._heights[slot],
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: first ? const Color(0xFFFFF3C4) : St.white,
+                    border: Border.all(color: St.ink, width: 3),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(14),
+                    ),
+                    boxShadow: St.hard(5),
+                  ),
+                  padding: EdgeInsets.only(top: me ? 14 : 10),
+                  child: Column(
+                    children: [
+                      Text(
+                        '$place',
+                        style: St.display(
+                          first ? 46 : 36,
+                          color: _medalText[place] ?? St.ink,
+                          height: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${entry.total}',
+                        style: St.display(first ? 20 : 17, height: 1).copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (me)
+              Positioned(
+                top: _Podium._runners[slot] + 4 - 10,
+                child: StickerPill(
+                  'YOU',
+                  color: St.ink,
+                  textColor: St.white,
+                  size: 11,
+                  border: 2,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _Row extends StatelessWidget {
   const _Row({
     required this.place,
@@ -173,8 +450,8 @@ class _Row extends StatelessWidget {
     required this.me,
     required this.away,
     required this.color,
+    required this.runner,
     required this.medals,
-    required this.odd,
   });
 
   final int place;
@@ -182,71 +459,61 @@ class _Row extends StatelessWidget {
   final bool me;
   final bool away;
   final PlayerColor? color;
+  final Widget? runner;
   final bool medals;
-  final bool odd;
 
-  /// The character, where a ten-pixel dot of their colour used to be — the
-  /// same picture they have been chasing round the board all evening.
-  static const _art = 38.0;
-
-  /// Gold, silver, bronze. Fixed rather than themed: a medal that changes
-  /// colour with the theme is not a medal.
-  static const _medal = <int, Color>{1: St.gold, 2: St.silver, 3: St.bronze};
+  /// The character, running, where a ten-pixel dot of their colour used to
+  /// be — the same walk they have been doing round the board all evening.
+  static const _art = 36.0;
 
   static const _awayText = Color(0xFF999999);
 
   @override
   Widget build(BuildContext context) {
     final badge = medals ? _medal[place] : null;
-    // Somebody who is not here is the grey character, whatever colour they
-    // last wore: between rounds that colour has gone back to the palette and
-    // may be on somebody else by now, and mid-round it is only being kept for
-    // the game's sake.
-    final art = away ? PlayerPalette.away : color;
+    final art = runner;
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      constraints: const BoxConstraints(minHeight: 54),
-      padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      constraints: const BoxConstraints(minHeight: 50),
+      padding: const EdgeInsets.fromLTRB(8, 3, 12, 3),
       decoration: BoxDecoration(
         color: me && color != null
             ? Color.alphaBlend(
                 color!.skinLight.withValues(alpha: .33),
                 St.white,
               )
-            : (odd ? St.white : const Color(0xFFFAF6E8)),
+            : St.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: me ? St.ink : Colors.transparent, width: 3),
       ),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 30,
+            height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: badge ?? St.white,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: badge == null ? const Color(0x33000000) : St.ink,
-                width: 2,
-              ),
+              border: Border.all(color: St.ink, width: 2),
             ),
-            child: Text('$place', style: St.display(16, height: 1)),
+            child: Text('$place', style: St.display(15, height: 1)),
           ),
           const SizedBox(width: 10),
-          if (art != null) ...[
-            PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
-            const SizedBox(width: 10),
-          ],
+          if (art != null) ...[art, const SizedBox(width: 10)],
           Expanded(
             child: Text(
               me ? '${entry.label} (you)' : entry.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: me
-                  ? St.display(18)
-                  : St.body(16, color: away ? _awayText : St.ink),
+                  ? St.display(17)
+                  : St.body(
+                      16,
+                      weight: FontWeight.w700,
+                      color: away ? _awayText : St.ink,
+                    ),
             ),
           ),
           if (away) ...[
@@ -260,7 +527,7 @@ class _Row extends StatelessWidget {
           Text(
             '${entry.total}',
             style: St.display(
-              24,
+              22,
               color: away ? const Color(0xFFAAAAAA) : St.ink,
               height: 1,
             ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
@@ -269,4 +536,73 @@ class _Row extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The screen's one clock: a frame counter every runner repaints off, and the
+/// per-character bookkeeping that keeps a character shown twice from walking
+/// at double speed.
+class _RunClock extends ChangeNotifier {
+  Duration _now = Duration.zero;
+
+  /// When each character was last advanced to, so the second picture of it in
+  /// the same frame draws with no time passed.
+  final _advancedTo = Expando<Duration>();
+
+  void tick(Duration elapsed) {
+    _now = elapsed;
+    notifyListeners();
+  }
+
+  /// Seconds [animation] has to catch up by this frame — once per frame,
+  /// however many times it is drawn.
+  double dtFor(PlayerAnimation animation) {
+    final last = _advancedTo[animation];
+    _advancedTo[animation] = _now;
+    if (last == null || last >= _now) return 0;
+    return (_now - last).inMicroseconds / 1e6;
+  }
+}
+
+/// One character running on the spot, facing the reader.
+class _Runner extends StatelessWidget {
+  const _Runner({
+    required this.animation,
+    required this.clock,
+    required this.size,
+  });
+
+  final PlayerAnimation animation;
+  final _RunClock clock;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: RepaintBoundary(
+      child: CustomPaint(painter: _RunnerPainter(animation, clock)),
+    ),
+  );
+}
+
+class _RunnerPainter extends CustomPainter {
+  _RunnerPainter(this.animation, this.clock) : super(repaint: clock);
+
+  final PlayerAnimation animation;
+  final _RunClock clock;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    animation.draw(
+      canvas,
+      size.center(Offset.zero),
+      worldSize: size.shortestSide,
+      dt: clock.dtFor(animation),
+      // Down the screen: running at whoever is holding the phone.
+      angle: 1.5707963267948966,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RunnerPainter old) =>
+      old.animation != animation || old.clock != clock;
 }

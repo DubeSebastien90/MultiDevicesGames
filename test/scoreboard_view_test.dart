@@ -14,6 +14,12 @@ void main() {
     ScoreEntry(phoneId: 'p3', label: 'Cy', total: 7, roundDelta: 0),
   ]);
 
+  // The podium repeats the top three, so counts are taken inside the list.
+  Finder inList(String text) => find.descendant(
+    of: find.byKey(ScoreboardView.listKey),
+    matching: find.text(text),
+  );
+
   var backs = 0;
   setUp(() => backs = 0);
 
@@ -41,10 +47,19 @@ void main() {
     expect(find.text('Final standings'), findsOneWidget);
     // Every player, in order, with their totals — this is the whole point of
     // the screen, so nobody is left off it.
-    expect(find.text('Ada (you)'), findsOneWidget);
-    expect(find.text('Cy'), findsOneWidget);
-    expect(find.text('40'), findsOneWidget);
-    expect(find.text('7'), findsOneWidget);
+    expect(inList('Ada (you)'), findsOneWidget);
+    expect(inList('Cy'), findsOneWidget);
+    expect(inList('40'), findsOneWidget);
+    expect(inList('7'), findsOneWidget);
+  });
+
+  testWidgets('the top three stand on a podium', (tester) async {
+    await show(tester);
+
+    // Once on the podium, once in the list.
+    expect(find.text('Bob'), findsNWidgets(2));
+    expect(find.text('40'), findsNWidgets(2));
+    expect(find.text('YOU'), findsOneWidget);
   });
 
   testWidgets('the winner is told so in the second person', (tester) async {
@@ -69,8 +84,8 @@ void main() {
     expect(find.text('It is a tie!'), findsOneWidget);
     // Both are second-equal by count, so neither is shown a place above the
     // other: two firsts, no second.
-    expect(find.text('1'), findsNWidgets(2));
-    expect(find.text('2'), findsNothing);
+    expect(inList('1'), findsNWidgets(2));
+    expect(inList('2'), findsNothing);
   });
 
   testWidgets('a run where nobody scored still lists the table', (
@@ -90,6 +105,8 @@ void main() {
     expect(find.text('Ada (you)'), findsOneWidget);
     expect(find.text('Bob'), findsOneWidget);
     expect(find.text('That is the lot'), findsOneWidget);
+    // Nobody scored, so nobody is stood on a step.
+    expect(find.text('YOU'), findsNothing);
   });
 
   testWidgets('a player who left keeps the place they played for', (

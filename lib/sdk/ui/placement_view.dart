@@ -76,58 +76,61 @@ class PlacementView extends StatelessWidget {
           );
 
     return Scaffold(
-      // White, where every other screen is yellow — on purpose. The stripes on
-      // the glass are this screen's whole instruction, and one of their colours
-      // is a yellow that would vanish into the page. The stickers on it are the
-      // same as everywhere else; only the paper differs.
-      backgroundColor: St.white,
+      // The flow's own yellow paper and dot grid. The stripes on the glass are
+      // outlined in ink, so the one yellow among them still reads against it.
+      backgroundColor: St.bg,
       // Deliberately not turned: you read your own phone the way you hold it,
       // whatever angle its slot in the board happens to be.
-      body: Stack(
-        children: [
-          // The stripes hug the real glass edges, so this fills the screen.
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _EdgeStripePainter(
-                layout: layout,
-                links: client.myLinks,
-              ),
-            ),
-          ),
-
-          // The hold target is the whole screen, and now the only thing on it:
-          // no button to find, and nothing to hit by accident while your hands
-          // are busy holding phones against each other.
-          HoldToConfirm(
-            confirmed: confirmedIds.contains(client.phoneId),
-            onConfirmed: client.confirmPlacement,
-            audio: client.audio,
-            // Two stripe widths of air all round, so a board drawn as large as
-            // it can be still never runs under the bands on the glass.
-            padding: const EdgeInsets.all(kEdgeStripeWidth * 2),
-            content: diagram,
-            // Under the ring rather than under the picture, and outside the
-            // hold: these are buttons now, and a button inside the hold target
-            // would fill the ring every time it was pressed.
-            footer: legend,
-          ),
-
-          // Debug builds only, and outside the hold target above so reaching
-          // for it cannot confirm a position on the way out. Players get out of
-          // a round by finishing it or closing the app; this is for whoever is
-          // working on the platform and needs to leave twenty times an hour.
-          if (PlatformConfig.showDevChrome)
-            Positioned(
-              right: 4,
-              bottom: 4,
-              child: SafeArea(
-                child: TextButton(
-                  onPressed: controller.leave,
-                  child: const Text('Leave'),
+      body: StickerBackground(
+        // Home's floating shapes. They drift under everything — the stripes,
+        // the card, the ring — so they never cover the instruction.
+        shapes: homeShapes,
+        child: Stack(
+          children: [
+            // The stripes hug the real glass edges, so this fills the screen.
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _EdgeStripePainter(
+                  layout: layout,
+                  links: client.myLinks,
                 ),
               ),
             ),
-        ],
+
+            // The hold target is the whole screen, and now the only thing on it:
+            // no button to find, and nothing to hit by accident while your hands
+            // are busy holding phones against each other.
+            HoldToConfirm(
+              confirmed: confirmedIds.contains(client.phoneId),
+              onConfirmed: client.confirmPlacement,
+              audio: client.audio,
+              // Two stripe widths of air all round, so a board drawn as large as
+              // it can be still never runs under the bands on the glass.
+              padding: const EdgeInsets.all(kEdgeStripeWidth * 2),
+              content: diagram,
+              // Under the ring rather than under the picture, and outside the
+              // hold: these are buttons now, and a button inside the hold target
+              // would fill the ring every time it was pressed.
+              footer: legend,
+            ),
+
+            // Debug builds only, and outside the hold target above so reaching
+            // for it cannot confirm a position on the way out. Players get out of
+            // a round by finishing it or closing the app; this is for whoever is
+            // working on the platform and needs to leave twenty times an hour.
+            if (PlatformConfig.showDevChrome)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: SafeArea(
+                  child: TextButton(
+                    onPressed: controller.leave,
+                    child: Text('Leave', style: St.body(14)),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -148,8 +151,6 @@ class _EdgeStripePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = St.white);
-
     /// Where a world point lands on this screen, turn included.
     Offset toScreen(double wx, double wy) {
       final px = layout.worldToPhysicalPx(wx, wy);
@@ -165,6 +166,15 @@ class _EdgeStripePainter extends CustomPainter {
       ..strokeWidth = kEdgeStripeWidth
       ..strokeCap = StrokeCap.round;
 
+    // An ink rim round each band, the sticker outline: it is what lets the
+    // yellow join stand out on the yellow page. Wider than the band by the
+    // rim on each side, on the same line, so the band itself has not moved.
+    final outline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = kEdgeStripeWidth + _rim * 2
+      ..strokeCap = StrokeCap.round
+      ..color = St.ink;
+
     for (final link in links) {
       final a = toScreen(link.x1, link.y1);
       final b = toScreen(link.x2, link.y2);
@@ -174,9 +184,12 @@ class _EdgeStripePainter extends CustomPainter {
       stripe.color = link.isJoin
           ? LinkPalette.of(link.colorIndex)
           : LinkPalette.inward;
+      canvas.drawLine(a + inset, b + inset, outline);
       canvas.drawLine(a + inset, b + inset, stripe);
     }
   }
+
+  static const _rim = 3.0;
 
   /// A small nudge from a screen-edge segment toward the middle of the screen,
   /// so a stroke centred on the very edge is not half invisible.
@@ -237,8 +250,8 @@ class _LinkLegend extends StatelessWidget {
                 ? LinkPalette.of(link.colorIndex)
                 : LinkPalette.inward,
             label: link.partnerId == null
-                ? 'the middle'
-                : 'phone ${_positionOf(link.partnerId!) ?? "?"}',
+                ? 'The middle'
+                : 'Phone ${_positionOf(link.partnerId!) ?? "?"}',
             // The stripe pointing at the middle of the table has no phone
             // behind it, so there is nothing there to make a noise. That chip
             // stays a label.

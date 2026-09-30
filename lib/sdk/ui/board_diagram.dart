@@ -100,13 +100,16 @@ class BoardDiagram extends StatelessWidget {
                 top: (board.top - top) * scale,
                 width: board.width * scale,
                 height: board.height * scale,
+                // The playfield as a white sticker: the card the phones are
+                // laid on, the same card every other screen puts its content
+                // on. Drawn exactly over the board's own rectangle, so the
+                // picture's proportions are untouched by the dressing.
                 child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    // The playfield in a pale grey, dashed out of the white
-                    // page by nothing more than its colour: it is the ground
-                    // the phones stand on, not a sticker of its own.
-                    color: const Color(0xFFEDEDED),
-                    borderRadius: BorderRadius.circular(6),
+                  decoration: St.sticker(
+                    radius: math.min(
+                      22,
+                      math.min(board.width, board.height) * scale * 0.08,
+                    ),
                   ),
                 ),
               ),
@@ -195,18 +198,17 @@ class _Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Your own phone is a yellow sticker; everyone else's is white. One colour
-    // does the whole job of saying which one you are holding, the way the
-    // lobby's own tiles do.
-    final fill = isMe ? St.bg : St.white;
+    // Your own phone is blue; everyone else's a pale pink. One colour does
+    // the whole job of saying which one you are holding. Both are flat — the
+    // card under them carries the shadow.
+    final fill = isMe ? St.blue : _otherFill;
     const edge = St.ink;
 
     return Container(
       decoration: BoxDecoration(
         color: fill,
-        border: Border.all(color: edge, width: isMe ? 2.5 : 1.5),
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: St.hard(isMe ? 3 : 2),
+        border: Border.all(color: edge, width: 2.5),
+        borderRadius: BorderRadius.circular(_radius),
       ),
       // The chip's own size is the only thing the writing can be measured
       // against, and only the layout knows it.
@@ -246,8 +248,19 @@ class _Screen extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(_name, style: _nameStyle),
-                      if (label.isNotEmpty) Text(label, style: _labelStyle),
+                      Text(
+                        _name,
+                        style: isMe
+                            ? _nameStyle.copyWith(color: St.white)
+                            : _nameStyle,
+                      ),
+                      if (label.isNotEmpty)
+                        Text(
+                          label,
+                          style: isMe
+                              ? _labelStyle.copyWith(color: St.white)
+                              : _labelStyle,
+                        ),
                       if (confirmed)
                         const StIcon(
                           Symbols.check_circle_rounded,
@@ -268,10 +281,13 @@ class _Screen extends StatelessWidget {
   /// What this chip is called: YOU, or its place in the board's order.
   String get _name => isMe ? 'YOU' : '${index + 1}';
 
+  static const _otherFill = Color(0xFFFFE4F2);
+  static const _radius = 10.0;
+
   static final _nameStyle = St.display(11, height: 1.1);
   static final _labelStyle = St.body(
     8,
-    weight: FontWeight.w500,
+    weight: FontWeight.w700,
     color: St.muted,
   );
   static const _checkSize = 10.0;
@@ -364,16 +380,22 @@ class _LinkPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
+    // Outlined in ink like every sticker, which is also what keeps the pale
+    // colours — the yellow above all — from melting into the card.
+    final outline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6 + 2 * 2
+      ..strokeCap = StrokeCap.round
+      ..color = St.ink;
 
     for (final link in links) {
+      final a = Offset((link.x1 - left) * scale, (link.y1 - top) * scale);
+      final b = Offset((link.x2 - left) * scale, (link.y2 - top) * scale);
       stroke.color = link.isJoin
           ? LinkPalette.of(link.colorIndex)
           : LinkPalette.inward;
-      canvas.drawLine(
-        Offset((link.x1 - left) * scale, (link.y1 - top) * scale),
-        Offset((link.x2 - left) * scale, (link.y2 - top) * scale),
-        stroke,
-      );
+      canvas.drawLine(a, b, outline);
+      canvas.drawLine(a, b, stroke);
     }
   }
 
