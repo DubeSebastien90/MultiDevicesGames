@@ -35,7 +35,7 @@ enum PlayerArtSlot {
   /// From above: the piece on the board. Small, rotated, read from two metres.
   topdown,
 
-  /// From the side: a portrait. Upright, larger, has a face.
+  /// From the front: a portrait. Upright, larger, has a face.
   face,
 }
 
@@ -55,11 +55,11 @@ abstract class PlayerArt {
   factory PlayerArt.of(PlayerColor color, PlayerArtSlot slot) {
     final key = '${color.id}/${slot.name}';
     return _cache[key] ??= switch (slot) {
-      // The piece on the board is one vector character, coloured per player
-      // from its view model — see [_TopdownArt]. The portrait is still one
-      // drawn image per colour.
-      PlayerArtSlot.topdown => _TopdownArt(color),
-      PlayerArtSlot.face => _ShapeArt(color, slot),
+      // Each view is one vector character, coloured per player from its view
+      // model — see [_RiveArt]. The drawn image per colour is what it falls
+      // back to.
+      PlayerArtSlot.topdown => _RiveArt(color, _RiveCharacter.topdown),
+      PlayerArtSlot.face => _RiveArt(color, _RiveCharacter.front),
     };
   }
 
@@ -262,37 +262,106 @@ class _ShapeArt implements PlayerArt {
   }
 }
 
-/// The piece on the board: one `.riv` character, painted in a player's colours.
+/// Which of a player's three shades a view model property takes.
+enum _Shade {
+  main,
+  light,
+  dark;
+
+  Color of(PlayerColor color) => switch (this) {
+    _Shade.main => color.value,
+    _Shade.light => color.skinLight,
+    _Shade.dark => color.skinDark,
+  };
+}
+
+/// One `.riv` character for the whole cast, and how to colour it.
 ///
-/// One file for the whole cast rather than an image per colour, because the
-/// character is the same drawing eight times over and the only thing that
-/// differs is three fills. Those come off [PlayerColor] — [PlayerColor.value],
-/// [PlayerColor.skinLight] and [PlayerColor.skinDark] — and are bound to the
-/// artboard's own view model, so re-tinting the cast is editing the palette
-/// rather than re-exporting eight images.
+/// Per file rather than one table every file has to match: the two views were
+/// drawn separately and do not agree on names — the swatch is `SkinPrincipal`
+/// on the board piece and `NormalSkin` on the portrait — and renaming a
+/// property is a trip back to the editor, where mapping it is a line here.
+class _RiveCharacter {
+  const _RiveCharacter({
+    required this.asset,
+    required this.slot,
+    required this.viewModel,
+    required this.shades,
+    required this.facing,
+  });
+
+  final String asset;
+
+  /// Whose drawn image and geometry this falls back to.
+  final PlayerArtSlot slot;
+
+  /// The view model the shades live on. Only asked for by name when the
+  /// artboard does not say which one is its own.
+  final String viewModel;
+
+  /// Property name to shade. By name, because there are three of them and
+  /// position in the list is not a contract.
+  final Map<String, _Shade> shades;
+
+  /// Which way the character is drawn, in the same convention as an entity's
+  /// angle: 0 is +x, `pi / 2` is down the screen. Everything is turned by the
+  /// difference between where the player is heading and this.
+  final double facing;
+
+  /// The piece on the board, drawn heading down the screen.
+  static const topdown = _RiveCharacter(
+    asset: 'assets/sdk/players/smallcharacter.riv',
+    slot: PlayerArtSlot.topdown,
+    viewModel: 'SmallCharacter_VM',
+    shades: {
+      'SkinPrincipal': _Shade.main,
+      'SkinLight': _Shade.light,
+      'SkinDark': _Shade.dark,
+    },
+    facing: 1.5707963267948966, // pi / 2
+  );
+
+  /// The portrait, drawn upright: an angle of 0 leaves it standing, the same
+  /// as the drawn face it replaces.
+  static const front = _RiveCharacter(
+    asset: 'assets/sdk/players/CharacterFrontView.riv',
+    slot: PlayerArtSlot.face,
+    viewModel: 'SkinVM',
+    shades: {
+      'NormalSkin': _Shade.main,
+      'LightSkin': _Shade.light,
+      'DarkSkin': _Shade.dark,
+    },
+    facing: 0,
+  );
+}
+
+/// A player's character from one `.riv`, painted in their colours.
+///
+/// One file per view for the whole cast rather than an image per colour,
+/// because the character is the same drawing eight times over and the only
+/// thing that differs is three fills. Those come off [PlayerColor] —
+/// [PlayerColor.value], [PlayerColor.skinLight] and [PlayerColor.skinDark] —
+/// and are bound to the artboard's own view model, so re-tinting the cast is
+/// editing the palette rather than re-exporting eight images.
 ///
 /// **It is a ladder, not a replacement.** Rive does not render on every
 /// platform this is developed on — Windows takes the process down, see
 /// [IntroAnimation.platformSupportsRive] — and a file can always fail to
 /// parse. Either way this falls through to [_ShapeArt], which is the drawn
-/// topdown image and, under that, the flat geometry. Every rung paints
+/// image for that view and, under that, the flat geometry. Every rung paints
 /// something, which is the rule this class exists inside of: art never decides
 /// whether a round starts.
-class _TopdownArt implements PlayerArt {
-  _TopdownArt(this.color);
+class _RiveArt implements PlayerArt {
+  _RiveArt(this.color, this.character);
 
   final PlayerColor color;
+  final _RiveCharacter character;
 
   /// The drawn image, and the geometry under it. Built up front rather than on
   /// failure: it is what paints every frame until the artboard is ready, and
   /// on a platform without Rive it is what paints for the whole session.
-  late final _fallback = _ShapeArt(color, PlayerArtSlot.topdown);
-
-  /// Which way the character is drawn, in the same convention as an entity's
-  /// angle: 0 is +x, `pi / 2` is down the screen — which is how this one is
-  /// drawn. Everything is turned by the difference between where the player is
-  /// heading and this.
-  static const _facing = 1.5707963267948966; // pi / 2
+  late final _fallback = _ShapeArt(color, character.slot);
 
   /// Repainted when the artboard lands, so a widget drawn before the file
   /// arrived does not sit on the fallback forever. The canvas path needs no
@@ -320,7 +389,7 @@ class _TopdownArt implements PlayerArt {
   }
 
   Future<void> _load() async {
-    final file = await _RiveCast.file();
+    final file = await _RiveCast.file(character.asset);
     if (file == null) return;
     try {
       // `frameOrigin: true` puts the artboard's top-left at (0, 0). The
@@ -338,21 +407,21 @@ class _TopdownArt implements PlayerArt {
       _artboard = artboard;
       _arrived.value++;
     } on Object catch (e) {
-      debugPrint('[player art] no topdown character for ${color.id}: $e');
+      debugPrint(
+          '[player art] no ${character.slot.name} character for ${color.id}: $e');
     }
   }
 
   /// Put a player's three shades on their character.
   ///
-  /// By name, unlike the walking character's single fill, because there are
-  /// three of them and position in the list is not a contract. A property that
-  /// is not there is said out loud and skipped: two shades on a character is
-  /// worth more than none.
+  /// A property that is not there is said out loud and skipped: two shades on
+  /// a character is worth more than none.
   void _bind(rive.File file, rive.Artboard artboard, rive.StateMachine? machine) {
-    final viewModel = file.defaultArtboardViewModel(artboard);
+    final viewModel = file.defaultArtboardViewModel(artboard) ??
+        file.viewModelByName(character.viewModel);
     final instance = viewModel?.createDefaultInstance();
     if (viewModel == null || instance == null) {
-      debugPrint('[player art] ${_RiveCast.asset} has no view model — '
+      debugPrint('[player art] ${character.asset} has no view model — '
           'characters keep the colours they were drawn');
       return;
     }
@@ -361,24 +430,14 @@ class _TopdownArt implements PlayerArt {
     _keepAlive.addAll([viewModel, instance]);
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
-    const skins = {
-      'SkinPrincipal': 'value',
-      'SkinLight': 'skinLight',
-      'SkinDark': 'skinDark',
-    };
-    final shades = <String, Color>{
-      'SkinPrincipal': color.value,
-      'SkinLight': color.skinLight,
-      'SkinDark': color.skinDark,
-    };
-    for (final entry in shades.entries) {
-      final property = instance.color(entry.key);
+    for (final MapEntry(key: name, value: shade) in character.shades.entries) {
+      final property = instance.color(name);
       if (property == null) {
-        debugPrint('[player art] ${viewModel.name} has no ${entry.key} '
-            '(expected the ${skins[entry.key]} shade)');
+        debugPrint('[player art] ${viewModel.name} has no $name '
+            '(expected the ${shade.name} shade)');
         continue;
       }
-      property.value = entry.value;
+      property.value = shade.of(color);
     }
   }
 
@@ -403,7 +462,7 @@ class _TopdownArt implements PlayerArt {
 
     canvas.save();
     canvas.translate(center.dx, center.dy);
-    canvas.rotate(angle - _facing);
+    canvas.rotate(angle - character.facing);
     _paint(canvas, artboard, worldSize, opacity);
     canvas.restore();
   }
@@ -442,19 +501,18 @@ class _TopdownArt implements PlayerArt {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: _TopdownArtPainter(this, _arrived)),
+      child: CustomPaint(painter: _RiveArtPainter(this, _arrived)),
     );
   }
 }
 
-/// Drawn upright, not turned to [_TopdownArt._facing]: a piece on the board
+/// Drawn upright, not turned to [_RiveCharacter.facing]: a piece on the board
 /// points where the player is heading, but a picture in a HUD points at the
 /// person reading it.
-class _TopdownArtPainter extends CustomPainter {
-  const _TopdownArtPainter(this.art, Listenable repaint)
-      : super(repaint: repaint);
+class _RiveArtPainter extends CustomPainter {
+  const _RiveArtPainter(this.art, Listenable repaint) : super(repaint: repaint);
 
-  final _TopdownArt art;
+  final _RiveArt art;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -469,26 +527,25 @@ class _TopdownArtPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_TopdownArtPainter old) => !identical(old.art, art);
+  bool shouldRepaint(_RiveArtPainter old) => !identical(old.art, art);
 }
 
-/// The one character file, opened once for the whole app.
+/// The character files, each opened once for the whole app.
 ///
-/// Static because the cast it feeds is: [PlayerArt._cache] holds its artboards
-/// for the life of the process, and a file per colour would be eight parses of
-/// the same kilobyte. Nothing here throws — a platform that cannot render Rive
-/// and a file that will not parse both resolve to null, which is a topdown
-/// image on the board rather than an error anybody sees.
+/// Static because the cast they feed is: [PlayerArt._cache] holds its
+/// artboards for the life of the process, and a file per colour would be eight
+/// parses of the same kilobyte. Nothing here throws — a platform that cannot
+/// render Rive and a file that will not parse both resolve to null, which is a
+/// drawn image rather than an error anybody sees.
 class _RiveCast {
   const _RiveCast._();
 
-  static const asset = 'assets/sdk/players/smallcharacter.riv';
+  static final _opening = <String, Future<rive.File?>>{};
 
-  static Future<rive.File?>? _opening;
+  static Future<rive.File?> file(String asset) =>
+      _opening[asset] ??= _open(asset);
 
-  static Future<rive.File?> file() => _opening ??= _open();
-
-  static Future<rive.File?> _open() async {
+  static Future<rive.File?> _open(String asset) async {
     // Same gate as the intro and the walking cast: on a platform where
     // `rive_native` takes the process down there is nothing to catch, so do
     // not even load. See [IntroAnimation.platformSupportsRive].

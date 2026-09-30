@@ -47,8 +47,10 @@ class PlayerCharacter {
   /// Seen from above: the piece on the board, drawn small and at any angle.
   final String? topdownAsset;
 
-  /// Seen from the side: a portrait, drawn upright and large enough to have a
-  /// face. HUDs, the lobby, the results screen.
+  /// Seen from the front: a portrait, drawn upright and large enough to have a
+  /// face. The lobby's character picker. Painted from one tinted `.riv` for
+  /// the whole cast where Rive runs; this image is what stands in where it
+  /// does not.
   final String? faceAsset;
 
   final String? happyAsset;

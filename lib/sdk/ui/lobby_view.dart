@@ -1039,8 +1039,9 @@ class _CharacterPicker extends StatelessWidget {
 /// The character rather than a disc of paint, because the disc was a promise
 /// about something nobody had seen yet: a player chose Green in the lobby and
 /// then had to find out, once the round started, which of the eight animals on
-/// the board was theirs. This is the same picture they will be looking for a
-/// minute later.
+/// the board was theirs. This is the same character, in the same shades, that
+/// they will be looking for a minute later — facing them rather than seen from
+/// above, because a picker is read upright and up close, not across a table.
 class _CharacterTile extends StatelessWidget {
   const _CharacterTile({
     super.key,
@@ -1129,7 +1130,7 @@ class _CharacterTile extends StatelessWidget {
                       child: Center(
                         child: PlayerArt.of(
                           color,
-                          PlayerArtSlot.topdown,
+                          PlayerArtSlot.face,
                         ).widget(size: side * .72),
                       ),
                     ),

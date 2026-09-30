@@ -26,7 +26,89 @@ import '../model/player_color.dart';
 import '../ui/intro_animation.dart';
 import 'player_art.dart';
 
-/// One player's character, seen from above.
+/// What a character is doing, and so which file draws it.
+enum PlayerMotion {
+  /// Running, seen from above: the walk round the boards.
+  run,
+
+  /// Facing the reader and cheering: whoever won, on the podium.
+  win,
+
+  /// Facing the reader and not cheering: everybody else on the podium.
+  lose,
+}
+
+/// One looping `.riv` for the whole cast, and how to colour it.
+///
+/// Per file rather than one set of names every file has to match: each was
+/// drawn on its own, and the swatch is `skinOne` in one and `NormalColor` in
+/// the next. Renaming a property is a trip back to the editor; mapping it is a
+/// line here.
+class _Rig {
+  const _Rig({
+    required this.asset,
+    required this.stateMachine,
+    required this.shades,
+    required this.facing,
+    required this.still,
+  });
+
+  final String asset;
+
+  /// The looping machine. Named rather than default: a file may grow a second
+  /// state machine, and picking whichever one happens to be first is how a
+  /// character quietly starts playing the wrong thing.
+  final String stateMachine;
+
+  /// The view model properties that take [PlayerColor.value],
+  /// [PlayerColor.skinLight] and [PlayerColor.skinDark].
+  final ({String value, String light, String dark}) shades;
+
+  /// Which way the character is drawn, in the same convention as an entity's
+  /// angle: 0 is +x, `pi / 2` is down the screen. Everything is rotated by the
+  /// difference between where the player is heading and this.
+  final double facing;
+
+  /// The picture drawn instead when the file cannot be — the same view, so a
+  /// phone without Rive still shows the podium facing the reader.
+  final PlayerArtSlot still;
+
+  static _Rig of(PlayerMotion motion) => switch (motion) {
+    PlayerMotion.run => run,
+    PlayerMotion.win => win,
+    PlayerMotion.lose => lose,
+  };
+
+  /// Drawn heading down the screen.
+  static const run = _Rig(
+    asset: 'assets/sdk/animations/running_man.riv',
+    stateMachine: 'UpView_SM',
+    shades: (value: 'skinOne', light: 'SkinLight', dark: 'SkinDark'),
+    facing: 1.5707963267948966, // pi / 2
+    still: PlayerArtSlot.topdown,
+  );
+
+  /// Drawn upright, so an angle of 0 leaves it standing — the same as the
+  /// portrait in [PlayerArtSlot.face] it falls back to.
+  static const win = _Rig(
+    asset: 'assets/sdk/players/win.riv',
+    stateMachine: 'WinVM',
+    shades: (value: 'NormalColor', light: 'LightColor', dark: 'DarkColor'),
+    facing: 0,
+    still: PlayerArtSlot.face,
+  );
+
+  /// The same rig as [win], a different performance.
+  static const lose = _Rig(
+    asset: 'assets/sdk/players/lose.riv',
+    stateMachine: 'LoseVM',
+    shades: (value: 'NormalColor', light: 'LightColor', dark: 'DarkColor'),
+    facing: 0,
+    still: PlayerArtSlot.face,
+  );
+}
+
+/// One player's character, doing one [PlayerMotion].
 ///
 /// Playing and stopped are *states*, not calls: [start] and [stop] are
 /// idempotent and cheap, so the natural thing — asking for one of them every
@@ -84,54 +166,66 @@ abstract class PlayerAnimations {
 
   /// Nothing loaded: everybody is [PlayerArt] geometry. The default on
   /// [ViewContext], and what a test gets without asking for anything.
-  static const PlayerAnimations none = _ShapeAnimations();
+  static const PlayerAnimations none = _ShapeAnimations(PlayerArtSlot.topdown);
 
-  /// Load the cast for [colors].
+  /// Nothing loaded, for [motion]: [none] for running, and for the podium the
+  /// same still portrait facing the reader that a failed load comes back as.
+  static PlayerAnimations noneFor(PlayerMotion motion) =>
+      _ShapeAnimations(_Rig.of(motion).still);
+
+  /// Load the cast for [colors], doing [motion].
   ///
   /// Awaited during placement — dead time, people are pushing phones together
   /// — so the file is decoded before the first frame. **Never throws and never
-  /// hangs on a bad file**: anything that goes wrong resolves to [none], which
-  /// draws the same circles the games drew before any of this existed.
-  static Future<PlayerAnimations> load(Iterable<PlayerColor> colors) async {
+  /// hangs on a bad file**: anything that goes wrong resolves to [noneFor],
+  /// which draws the same pictures the games drew before any of this existed.
+  static Future<PlayerAnimations> load(
+    Iterable<PlayerColor> colors, {
+    PlayerMotion motion = PlayerMotion.run,
+  }) async {
+    final rig = _Rig.of(motion);
     // Same gate as the intro: on a platform where `rive_native` takes the
     // process down there is nothing to catch, so do not even load. See
     // [IntroAnimation.platformSupportsRive].
-    if (!IntroAnimation.available) return none;
+    if (!IntroAnimation.available) return noneFor(motion);
     try {
       final file = await rive.File.asset(
-        _RiveAnimations.asset,
+        rig.asset,
         // The Flutter renderer, not Rive's: this is drawn into the game's own
         // canvas alongside everything else, not into a surface of its own.
         riveFactory: rive.Factory.flutter,
       );
       if (file == null) throw StateError('not found');
-      return _RiveAnimations(file);
+      return _RiveAnimations(file, rig);
     } on Object catch (e) {
-      debugPrint('[player animation] ${_RiveAnimations.asset} did not load: $e');
-      return none;
+      debugPrint('[player animation] ${rig.asset} did not load: $e');
+      return noneFor(motion);
     }
   }
 }
 
-/// The fallback cast: [PlayerArt]'s geometry, which does not move.
+/// The fallback cast: [PlayerArt]'s picture, which does not move.
 ///
 /// A complete implementation rather than a stub — [start] and [stop] are
 /// honest no-ops on a picture with one frame — so a game written against this
 /// API works identically on a phone with no animation.
 class _ShapeAnimations implements PlayerAnimations {
-  const _ShapeAnimations();
+  const _ShapeAnimations(this.slot);
+
+  final PlayerArtSlot slot;
 
   @override
-  PlayerAnimation of(PlayerColor color) => _ShapeAnimation(color);
+  PlayerAnimation of(PlayerColor color) => _ShapeAnimation(color, slot);
 
   @override
   void dispose() {}
 }
 
 class _ShapeAnimation implements PlayerAnimation {
-  const _ShapeAnimation(this.color);
+  const _ShapeAnimation(this.color, this.slot);
 
   final PlayerColor color;
+  final PlayerArtSlot slot;
 
   @override
   void start() {}
@@ -151,7 +245,7 @@ class _ShapeAnimation implements PlayerAnimation {
     double angle = 0,
     double opacity = 1,
   }) {
-    PlayerArt.of(color, PlayerArtSlot.topdown).draw(
+    PlayerArt.of(color, slot).draw(
       canvas,
       center,
       worldSize: worldSize,
@@ -163,16 +257,10 @@ class _ShapeAnimation implements PlayerAnimation {
 
 /// The real cast: one Rive file, one artboard per colour.
 class _RiveAnimations implements PlayerAnimations {
-  _RiveAnimations(this._file);
-
-  static const asset = 'assets/sdk/animations/running_man.riv';
-
-  /// The looping walk. Named rather than default: the file may grow a second
-  /// state machine, and picking whichever one happens to be first is how a
-  /// character quietly starts playing the wrong thing.
-  static const stateMachine = 'UpView_SM';
+  _RiveAnimations(this._file, this._rig);
 
   final rive.File _file;
+  final _Rig _rig;
   final _characters = <String, PlayerAnimation>{};
 
   /// Everything bound to an artboard here, held for as long as the artboard
@@ -182,10 +270,11 @@ class _RiveAnimations implements PlayerAnimations {
 
   @override
   PlayerAnimation of(PlayerColor color) =>
-      _characters[color.id] ??= _make(color) ?? _ShapeAnimation(color);
+      _characters[color.id] ??=
+          _make(color) ?? _ShapeAnimation(color, _rig.still);
 
-  /// One artboard, coloured, ready to walk — or null, and this colour spends
-  /// the round as geometry.
+  /// One artboard, coloured, ready to play — or null, and this colour spends
+  /// the round as a still picture.
   _RiveAnimation? _make(PlayerColor color) {
     try {
       // `frameOrigin: true` puts the artboard's top-left at (0, 0). The
@@ -193,13 +282,13 @@ class _RiveAnimations implements PlayerAnimations {
       // that behaves the same on every runtime.
       final artboard = _file.defaultArtboard(frameOrigin: true);
       if (artboard == null) throw StateError('no artboard');
-      final machine =
-          artboard.stateMachine(stateMachine) ?? artboard.defaultStateMachine();
+      final machine = artboard.stateMachine(_rig.stateMachine) ??
+          artboard.defaultStateMachine();
       _paint(artboard, machine, color);
-      // Once, so the artboard holds the first frame of the walk rather than
+      // Once, so the artboard holds the first frame of the loop rather than
       // whatever pose it was exported in.
       machine?.advanceAndApply(0);
-      return _RiveAnimation(artboard, machine);
+      return _RiveAnimation(artboard, machine, _rig.facing);
     } on Object catch (e) {
       debugPrint('[player animation] no character for ${color.id}: $e');
       return null;
@@ -222,7 +311,7 @@ class _RiveAnimations implements PlayerAnimations {
     final viewModel = _file.defaultArtboardViewModel(artboard);
     final instance = viewModel?.createDefaultInstance();
     if (viewModel == null || instance == null) {
-      debugPrint('[player animation] $asset has no view model — '
+      debugPrint('[player animation] ${_rig.asset} has no view model — '
           'characters keep the colour they were drawn');
       return;
     }
@@ -230,9 +319,9 @@ class _RiveAnimations implements PlayerAnimations {
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
     final shades = {
-      'skinOne': color.value,
-      'SkinLight': color.skinLight,
-      'SkinDark': color.skinDark,
+      _rig.shades.value: color.value,
+      _rig.shades.light: color.skinLight,
+      _rig.shades.dark: color.skinDark,
     };
     for (final MapEntry(key: name, value: shade) in shades.entries) {
       final property = instance.color(name);
@@ -253,16 +342,13 @@ class _RiveAnimations implements PlayerAnimations {
 }
 
 class _RiveAnimation implements PlayerAnimation {
-  _RiveAnimation(this.artboard, this.machine);
-
-  /// Which way the character is drawn, in the same convention as an entity's
-  /// angle: 0 is +x, `pi / 2` is down the screen — which is how this one is
-  /// drawn. Everything is rotated by the difference between where the player is
-  /// heading and this.
-  static const facing = 1.5707963267948966; // pi / 2
+  _RiveAnimation(this.artboard, this.machine, this.facing);
 
   final rive.Artboard artboard;
   final rive.StateMachine? machine;
+
+  /// See [_Rig.facing].
+  final double facing;
 
   bool _playing = false;
 
@@ -284,9 +370,10 @@ class _RiveAnimation implements PlayerAnimation {
     double angle = 0,
     double opacity = 1,
   }) {
-    // Standing still is not a state this file has — `UpView_SM` is one looping
-    // `Walk` with no inputs — so it is the machine not being advanced. It holds
-    // the frame it stopped on, which is what standing looks like.
+    // Standing still is not a state these files have — each machine is one
+    // looping animation with no inputs — so it is the machine not being
+    // advanced. It holds the frame it stopped on, which is what standing looks
+    // like.
     if (_playing && dt > 0) machine?.advanceAndApply(dt);
 
     final bounds = artboard.bounds;

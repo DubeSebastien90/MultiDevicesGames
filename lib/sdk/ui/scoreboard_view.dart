@@ -18,10 +18,10 @@ import 'sticker/sticker.dart';
 /// off it: the way out is the same as everywhere else, one person deciding for
 /// the room.
 ///
-/// The characters run on the spot — on the podium and down the list — the
-/// same walk they did round the boards all evening. Where Rive cannot run,
-/// they stand still as [PlayerArt] geometry, which is what
-/// [PlayerAnimations.none] draws.
+/// On the podium the characters face the table: whoever came first cheers and
+/// the other two do not. Down the list they run on the spot, the same walk they
+/// did round the boards all evening. Where Rive cannot run, they stand still
+/// as [PlayerArt] pictures, which is what [PlayerAnimations.noneFor] draws.
 class ScoreboardView extends StatefulWidget {
   const ScoreboardView({
     super.key,
@@ -56,10 +56,13 @@ class ScoreboardView extends StatefulWidget {
 
 class _ScoreboardViewState extends State<ScoreboardView>
     with SingleTickerProviderStateMixin {
-  /// Geometry until the file has loaded, then the running cast.
-  PlayerAnimations _cast = PlayerAnimations.none;
+  /// Still pictures until the files have loaded, then a cast per motion.
+  Map<PlayerMotion, PlayerAnimations> _casts = {
+    for (final motion in PlayerMotion.values)
+      motion: PlayerAnimations.noneFor(motion),
+  };
 
-  /// The colour ids [_cast] was loaded for, to notice a new one arriving.
+  /// The colour ids [_casts] were loaded for, to notice a new one arriving.
   Set<String> _castIds = const {};
 
   /// Bumped to drop a load that finished after a newer one was asked for.
@@ -99,7 +102,9 @@ class _ScoreboardViewState extends State<ScoreboardView>
     _loadGen++;
     _ticker.dispose();
     _clock.dispose();
-    _cast.dispose();
+    for (final cast in _casts.values) {
+      cast.dispose();
+    }
     super.dispose();
   }
 
@@ -116,17 +121,27 @@ class _ScoreboardViewState extends State<ScoreboardView>
   Future<void> _load() async {
     final gen = ++_loadGen;
     final wanted = _wantedColors();
-    final cast = await PlayerAnimations.load(wanted.values);
+    final loaded = await Future.wait([
+      for (final motion in PlayerMotion.values)
+        PlayerAnimations.load(wanted.values, motion: motion),
+    ]);
     if (!mounted || gen != _loadGen) {
-      cast.dispose();
+      for (final cast in loaded) {
+        cast.dispose();
+      }
       return;
     }
-    final old = _cast;
+    final old = _casts;
     setState(() {
-      _cast = cast;
+      _casts = {
+        for (final (i, motion) in PlayerMotion.values.indexed)
+          motion: loaded[i],
+      };
       _castIds = wanted.keys.toSet();
     });
-    old.dispose();
+    for (final cast in old.values) {
+      cast.dispose();
+    }
   }
 
   /// Somebody who is not here is the grey character, whatever colour they
@@ -137,13 +152,16 @@ class _ScoreboardViewState extends State<ScoreboardView>
       ? PlayerPalette.away
       : widget.colors[phoneId];
 
-  Widget? _runner(String phoneId, double size) {
+  Widget? _runner(String phoneId, double size, PlayerMotion motion) {
     final color = _artFor(phoneId);
     if (color == null) return null;
     return _Runner(
-      animation: _cast.of(color)..start(),
+      animation: _casts[motion]!.of(color)..start(),
       clock: _clock,
       size: size,
+      // A runner is drawn from above, so it is turned to run down the screen,
+      // at whoever is holding the phone. The podium is already facing them.
+      angle: motion == PlayerMotion.run ? 1.5707963267948966 : 0,
     );
   }
 
@@ -208,7 +226,11 @@ class _ScoreboardViewState extends State<ScoreboardView>
                         me: entry.phoneId == widget.meId,
                         away: widget.offline.contains(entry.phoneId),
                         color: widget.colors[entry.phoneId],
-                        runner: _runner(entry.phoneId, _Row._art),
+                        runner: _runner(
+                          entry.phoneId,
+                          _Row._art,
+                          PlayerMotion.run,
+                        ),
                         // Medals mean nothing on a board nobody scored on.
                         medals: scores.isUsed,
                       ),
@@ -299,7 +321,8 @@ class _Podium extends StatelessWidget {
   final List<int> places;
   final String? meId;
   final Set<String> offline;
-  final Widget? Function(String phoneId, double size) runner;
+  final Widget? Function(String phoneId, double size, PlayerMotion motion)
+  runner;
 
   /// Block heights and runner sizes by podium slot — first, second, third.
   static const _heights = [124.0, 96.0, 80.0];
@@ -324,7 +347,13 @@ class _Podium extends StatelessWidget {
               slot: i,
               me: entries[i].phoneId == meId,
               away: offline.contains(entries[i].phoneId),
-              runner: runner(entries[i].phoneId, _runners[i]),
+              // Everybody in first place cheers, so a tie at the top is two
+              // winners rather than one of them told off by list order.
+              runner: runner(
+                entries[i].phoneId,
+                _runners[i],
+                places[i] == 1 ? PlayerMotion.win : PlayerMotion.lose,
+              ),
             ),
           ),
       ],
@@ -563,32 +592,36 @@ class _RunClock extends ChangeNotifier {
   }
 }
 
-/// One character running on the spot, facing the reader.
+/// One character looping on the spot, facing the reader.
 class _Runner extends StatelessWidget {
   const _Runner({
     required this.animation,
     required this.clock,
     required this.size,
+    required this.angle,
   });
 
   final PlayerAnimation animation;
   final _RunClock clock;
   final double size;
+  final double angle;
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
     dimension: size,
     child: RepaintBoundary(
-      child: CustomPaint(painter: _RunnerPainter(animation, clock)),
+      child: CustomPaint(painter: _RunnerPainter(animation, clock, angle)),
     ),
   );
 }
 
 class _RunnerPainter extends CustomPainter {
-  _RunnerPainter(this.animation, this.clock) : super(repaint: clock);
+  _RunnerPainter(this.animation, this.clock, this.angle)
+    : super(repaint: clock);
 
   final PlayerAnimation animation;
   final _RunClock clock;
+  final double angle;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -597,12 +630,11 @@ class _RunnerPainter extends CustomPainter {
       size.center(Offset.zero),
       worldSize: size.shortestSide,
       dt: clock.dtFor(animation),
-      // Down the screen: running at whoever is holding the phone.
-      angle: 1.5707963267948966,
+      angle: angle,
     );
   }
 
   @override
   bool shouldRepaint(_RunnerPainter old) =>
-      old.animation != animation || old.clock != clock;
+      old.animation != animation || old.clock != clock || old.angle != angle;
 }
