@@ -1,7 +1,4 @@
 import 'dart:math' as math;
-// `flutter/widgets.dart` re-exports a *widget* named Gradient, which shadows
-// the painting one this file needs. Aliasing keeps both reachable.
-import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
@@ -137,26 +134,30 @@ abstract class FloodView extends GameView {
     // Painting it the team's colour is what makes the screen tell the truth
     // about that. Only the *shared* picture has to agree between phones, and
     // that is the waterline, which still comes from the board.
-    _fill.color = const Color(FloodConfig.colorBlue);
-    final blueBottom = math.min(waterY, view.bottom);
-    if (blueBottom > view.top) {
-      canvas.drawRect(
-        Rect.fromLTRB(view.left, view.top, view.right, blueBottom),
-        _fill,
-      );
-    }
+    //
+    // The line between them is a wave rather than a ruler edge — it is a
+    // flood. Red fills the screen and blue is poured over it down to the
+    // wave, so the two always meet exactly on it.
+    final wave = _wave(frame, waterY, view.left, view.right);
 
     _fill.color = const Color(FloodConfig.colorRed);
-    final redTop = math.max(waterY, view.top);
-    if (redTop < view.bottom) {
-      canvas.drawRect(
-        Rect.fromLTRB(view.left, redTop, view.right, view.bottom),
-        _fill,
-      );
+    canvas.drawRect(
+      Rect.fromLTRB(view.left, view.top, view.right, view.bottom),
+      _fill,
+    );
+
+    _fill.color = const Color(FloodConfig.colorBlue);
+    final blue = Path()
+      ..moveTo(view.left, view.top)
+      ..lineTo(view.right, view.top);
+    for (final point in wave.reversed) {
+      blue.lineTo(point.dx, point.dy);
     }
+    blue.close();
+    canvas.drawPath(blue, _fill);
 
     renderContested(canvas, frame, view, waterY);
-    _renderWaterline(canvas, frame, waterY, view.left, view.right);
+    _renderWaterline(canvas, frame, wave);
 
     if (phase == FloodPhase.countdown) {
       _renderCountdownWash(canvas, frame);
@@ -164,15 +165,42 @@ abstract class FloodView extends GameView {
     }
   }
 
+  /// How tall the wave's crests are, how far apart, and how fast they roll —
+  /// in board units and seconds. Gentle: it is there to say "water", not to
+  /// make the line hard to read.
+  static const double _waveAmplitude = 0.28;
+  static const double _waveLength = 3.4;
+  static const double _waveSeconds = 2.6;
+
+  /// The waterline as points across this screen, [left] to [right].
+  ///
+  /// A function of the *board* x and the host's clock only, so the phone next
+  /// to this one draws the very same crest where their screens meet, and it
+  /// rolls across the seam without a jump. Two sines of different lengths
+  /// travelling opposite ways, so it swells and settles instead of marching
+  /// like a sine does.
+  List<Offset> _wave(Frame frame, double waterY, double left, double right) {
+    final t = frame.timeMs / 1000;
+    final k = 2 * math.pi / _waveLength;
+    final w = 2 * math.pi / _waveSeconds;
+    // A few pixels a step: smooth to the eye, cheap to build every frame.
+    final step = math.max(frame.onePixel * 4, 1e-3);
+    final points = <Offset>[];
+    for (var x = left; ; x += step) {
+      final at = math.min(x, right);
+      final y =
+          waterY +
+          _waveAmplitude * math.sin(k * at - w * t) +
+          _waveAmplitude * 0.35 * math.sin(k * 1.9 * at + w * 0.7 * t + 1.3);
+      points.add(Offset(at, y));
+      if (at >= right) break;
+    }
+    return points;
+  }
+
   /// A soft edge rather than a ruler line — it reads better on camera, and it
   /// hides the fact that the boundary moves in discrete steps.
-  void _renderWaterline(
-    Canvas canvas,
-    Frame frame,
-    double waterY,
-    double left,
-    double right,
-  ) {
+  void _renderWaterline(Canvas canvas, Frame frame, List<Offset> wave) {
     final bluePulse =
         (frame.sharedState[FloodState.bluePulse] as num?)?.toDouble() ?? 0;
     final redPulse =
@@ -182,30 +210,31 @@ abstract class FloodView extends GameView {
     // visible pressure to it even while the line is barely moving.
     final swell = 0.35 + 0.5 * math.max(bluePulse, redPulse);
 
-    final gradient = ui.Gradient.linear(
-      Offset(0, waterY - swell),
-      Offset(0, waterY + swell),
-      [
-        const Color(0x00FFFFFF),
-        Color.lerp(
-          const Color(0x66FFFFFF),
-          const Color(0xCCFFFFFF),
-          math.max(bluePulse, redPulse),
-        )!,
-        const Color(0x00FFFFFF),
-      ],
-      [0.0, 0.5, 1.0],
-    );
-    _foam.shader = gradient;
-    canvas.drawRect(
-      Rect.fromLTRB(left, waterY - swell, right, waterY + swell),
-      _foam,
-    );
+    final line = Path()..addPolygon(wave, false);
+
+    // The foam follows the wave: two wide, faint strokes along it, the wider
+    // one fainter, which fades out from the line without a blur.
+    final foam = Color.lerp(
+      const Color(0x66FFFFFF),
+      const Color(0xCCFFFFFF),
+      math.max(bluePulse, redPulse),
+    )!;
+    _foam
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeWidth = swell * 2
+      ..color = foam.withValues(alpha: foam.a * 0.3);
+    canvas.drawPath(line, _foam);
+    _foam
+      ..strokeWidth = swell
+      ..color = foam.withValues(alpha: foam.a * 0.45);
+    canvas.drawPath(line, _foam);
 
     _stroke
       ..color = const Color(0xE6FFFFFF)
+      ..strokeJoin = StrokeJoin.round
       ..strokeWidth = frame.onePixel * 2;
-    canvas.drawLine(Offset(left, waterY), Offset(right, waterY), _stroke);
+    canvas.drawPath(line, _stroke);
   }
 
   /// Dim everything while the countdown runs, so the board reads as "not yet".

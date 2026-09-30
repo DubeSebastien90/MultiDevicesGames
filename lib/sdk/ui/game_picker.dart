@@ -155,7 +155,15 @@ class GamePicker extends StatelessWidget {
   final Future<void> Function()? onRetryPremium;
 
   static const _pad = 20.0;
-  static const _gapX = 14.0;
+  static const _gapX = 18.0;
+
+  /// Tiles per row for a grid [width] wide: two on a phone, so each game's
+  /// picture is big enough to recognise at a glance, and three from tablet
+  /// width, where two would make every tile the size of a phone.
+  static int _columnsFor(double width) => width >= _tabletWidth ? 3 : 2;
+
+  /// Where a grid stops being a phone's: Material's tablet breakpoint.
+  static const _tabletWidth = 600.0;
 
   /// How far a tile's name ribbon hangs above the tile.
   static const _ribbon = 14.0;
@@ -272,7 +280,10 @@ class GamePicker extends StatelessWidget {
             children: [
               LayoutBuilder(
                 builder: (context, box) {
-                  final tile = (box.maxWidth - _pad * 2 - _gapX * 2) / 3;
+                  final columns = _columnsFor(box.maxWidth);
+                  final tile =
+                      (box.maxWidth - _pad * 2 - _gapX * (columns - 1)) /
+                      columns;
                   return GridView.builder(
                     padding: EdgeInsets.fromLTRB(
                       _pad,
@@ -281,7 +292,7 @@ class GamePicker extends StatelessWidget {
                       40 + MediaQuery.paddingOf(context).bottom,
                     ),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
+                      crossAxisCount: columns,
                       crossAxisSpacing: _gapX,
                       mainAxisSpacing: 16,
                       childAspectRatio: tile / (tile + _ribbon),
@@ -571,7 +582,7 @@ class _Tile extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: St.display(
-                            13,
+                            16,
                             color: ticked
                                 ? St.white
                                 : (locked ? St.lockedText : St.ink),

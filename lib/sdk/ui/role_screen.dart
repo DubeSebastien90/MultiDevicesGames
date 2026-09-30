@@ -9,6 +9,7 @@ import '../model/age_band.dart';
 import '../model/player_name.dart';
 
 import '../app_controller.dart';
+import '../audio/ui_audio.dart';
 import '../platform_config.dart';
 import '../model/device_metrics.dart';
 import '../model/name_drop_status.dart';
@@ -544,6 +545,7 @@ class _MorphLetterState extends State<_MorphLetter>
       _to = next;
     });
     HapticFeedback.selectionClick();
+    UiAudio.buttonPress();
     _morph.forward(from: 0);
   }
 
