@@ -803,3 +803,20 @@ inside it.
   a real advantage. Four phones is the size it is designed around.
 - On desktop, resizing the window after the board is laid out leaves the recorded
   viewport extent stale (phones do not resize).
+
+## License
+
+The **source code** is released under the [MIT License](LICENSE) —
+© 2026 Sébastien Dubé, Lamine Gueye, Charles Reny-Déry, David Mosquera.
+
+The MIT License does **not** cover:
+
+- **Artwork and animations** — everything under `assets/` except the fonts
+  (the `.riv` files, the SVG characters, balls and game icons). All rights
+  reserved; do not reuse them without permission.
+- **Sound effects and audio sources** — `assets/sdk/sfx/` and `audio-src/`.
+  All rights reserved.
+- **The "Bubble Games" name and logo.** A fork is welcome, but it has to ship
+  under a different name and icon.
+- **Fonts** — Fredoka and Lilita One keep their own
+  [SIL Open Font License](assets/fonts/), included alongside them.
