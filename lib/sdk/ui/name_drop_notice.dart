@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../model/name_drop_status.dart';
 import '../platform/name_drop_support.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// Shows [showNameDropNotice] over [child] the first time this is built with
 /// an unanswered question on a phone that can actually NameDrop.
@@ -85,6 +85,9 @@ Future<NameDropStatus> showNameDropNotice(BuildContext context) async {
   final answer = await showDialog<NameDropStatus>(
     context: context,
     barrierDismissible: false,
+    // Edge to edge: the notice keeps its own content inside the safe area, and
+    // the default inset would leave the scrim showing behind the notch.
+    useSafeArea: false,
     builder: (_) => const _NameDropNotice(),
   );
   // Only reachable if something outside this file pops the route — a state
@@ -138,85 +141,100 @@ class _NameDropNotice extends StatelessWidget {
     final setting = _localised(_settingName, context);
 
     return Dialog.fullscreen(
-      backgroundColor: LobbyFlowColors.paper,
-      child: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Center(
-                    child: LobbyMark(
-                      icon: Icons.contact_page_outlined,
-                      // Yellow, not coral: nothing has gone wrong yet. This is
-                      // the same "here is what is about to happen" the table
-                      // change screen wears.
-                      color: LobbyFlowColors.yellow,
+      backgroundColor: St.bg,
+      child: StickerBackground(
+        shapes: lobbyShapes,
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 24,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Blue, not red: nothing has gone wrong yet. This is the
+                    // same "here is what is about to happen" the table change
+                    // screen wears.
+                    const Center(
+                      child: StickerMark(
+                        icon: Symbols.contact_page_rounded,
+                        color: St.blue,
+                        size: 72,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  const LobbyTitle('One thing before you play'),
-                  const SizedBox(height: 14),
-                  Text(
-                    'This game puts phones edge to edge. When the tops of two '
-                    'iPhones touch, iOS pops up a card offering to share your '
-                    'contact details — over the game, mid-round.',
-                    style: LobbyText.body,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Turning off “$setting” stops it.',
-                    style: LobbyText.label,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 28),
+                    const SizedBox(height: 16),
+                    Text(
+                      'One thing before you play',
+                      textAlign: TextAlign.center,
+                      style: St.display(30, height: 1.05),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'This game puts phones edge to edge. When the tops of two '
+                      'iPhones touch, iOS pops up a card offering to share your '
+                      'contact details — over the game, mid-round.',
+                      style: St.body(
+                        16,
+                        weight: FontWeight.w500,
+                        color: St.muted,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Turning off “$setting” stops it.',
+                      style: St.body(17, weight: FontWeight.w700),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
 
-                  // Three answers, three weights. Green is the one that fixes
-                  // it, the field grey pair below are the ways of not fixing it
-                  // yet — and none of them is a flat Material button any more.
-                  LobbyPillButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(NameDropStatus.turnedOff),
-                    label: 'Already done',
-                    background: LobbyFlowColors.green,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: 17,
-                    radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  const SizedBox(height: 10),
-                  LobbyPillButton(
-                    onPressed: () => _showHow(context),
-                    label: 'How?',
-                    background: LobbyFlowColors.purple,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: 17,
-                    radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  const SizedBox(height: 10),
-                  LobbyPillButton(
-                    onPressed: () =>
-                        Navigator.of(context).pop(NameDropStatus.declined),
-                    label: 'No thanks',
-                    background: LobbyFlowColors.field,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: 17,
-                    radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Either way, this is the last you’ll hear of it.',
-                    style: LobbyText.body,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                    // Three answers, three weights. Green is the one that fixes
+                    // it; the two below are the ways of not fixing it yet.
+                    StickerWideButton(
+                      onTap: () =>
+                          Navigator.of(context).pop(NameDropStatus.turnedOff),
+                      label: 'Already done',
+                      height: 54,
+                      fontSize: 20,
+                      icon: Symbols.check_rounded,
+                      color: St.go,
+                      textColor: St.white,
+                    ),
+                    const SizedBox(height: 12),
+                    StickerWideButton(
+                      onTap: () => _showHow(context),
+                      label: 'How?',
+                      height: 54,
+                      fontSize: 20,
+                      icon: Symbols.help_rounded,
+                      color: St.premium,
+                      textColor: St.white,
+                    ),
+                    const SizedBox(height: 12),
+                    StickerWideButton(
+                      onTap: () =>
+                          Navigator.of(context).pop(NameDropStatus.declined),
+                      label: 'No thanks',
+                      height: 54,
+                      fontSize: 20,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Either way, this is the last you’ll hear of it.',
+                      style: St.body(
+                        14,
+                        weight: FontWeight.w500,
+                        color: St.muted,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -287,88 +305,86 @@ class _HowScreen extends StatelessWidget {
       ('Turn off', '“$setting”'),
     ];
 
-    return Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // The back pill pops with nothing, which is what tells the
-                // notice underneath that these instructions were not followed
-                // through — the same meaning the app bar's arrow carried.
-                LobbyHeader(
-                  title: 'Turning it off',
-                  onBack: () => Navigator.of(context).pop(),
-                ),
-                // Centred rather than hung from the header: the four cards do
-                // not fill a tall phone, and leaving the slack under them puts
-                // it between the walkthrough and its answer. Still scrolls
-                // where a short phone needs it to.
-                Expanded(
-                  child: Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Two by two, so all four are in view at once: a
-                          // walkthrough you have to scroll is one you lose your
-                          // place in halfway through.
-                          GridView.count(
-                            crossAxisCount: 2,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.72,
-                            children: [
-                              for (final (i, shot) in _shots.indexed)
-                                _Step(
-                                  number: i + 1,
-                                  verb: steps[i].$1,
-                                  target: steps[i].$2,
-                                  shot: shot,
-                                  cropAlignment: _cropAlignment[i],
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-                          Text(
-                            'Everything else about AirDrop keeps working.',
-                            style: LobbyText.body,
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Outside the scroll on purpose: it is the answer to the whole
-                // screen, and on a short phone the four steps push anything
-                // below them off the bottom — where an answer nobody scrolls
-                // to is an answer nobody gives.
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
-                  child: LobbyPillButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    icon: Icons.check,
-                    label: 'Done',
-                    background: LobbyFlowColors.green,
-                    foreground: LobbyFlowColors.ink,
-                    fontSize: 17,
-                    iconSize: 20,
-                    radius: LobbyMetrics.bigRadius,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ],
+    return StickerPage(
+      maxWidth: 520,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The back button pops with nothing, which is what tells the notice
+          // underneath that these instructions were not followed through.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: StickerHeader(
+              'Turning it off',
+              onBack: () => Navigator.of(context).pop(),
             ),
           ),
-        ),
+          // Centred rather than hung from the header: the four cards do not
+          // fill a tall phone, and leaving the slack under them puts it between
+          // the walkthrough and its answer. Still scrolls where a short phone
+          // needs it to.
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Two by two, so all four are in view at once: a
+                    // walkthrough you have to scroll is one you lose your place
+                    // in halfway through.
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      clipBehavior: Clip.none,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 0.72,
+                      children: [
+                        for (final (i, shot) in _shots.indexed)
+                          _Step(
+                            number: i + 1,
+                            verb: steps[i].$1,
+                            target: steps[i].$2,
+                            shot: shot,
+                            cropAlignment: _cropAlignment[i],
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Everything else about AirDrop keeps working.',
+                      style: St.body(
+                        14,
+                        weight: FontWeight.w500,
+                        color: St.muted,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Outside the scroll on purpose: it is the answer to the whole
+          // screen, and on a short phone the four steps push anything below
+          // them off the bottom — where an answer nobody scrolls to is an
+          // answer nobody gives.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
+            child: StickerWideButton(
+              onTap: () => Navigator.of(context).pop(true),
+              icon: Symbols.check_rounded,
+              label: 'Done',
+              color: St.go,
+              textColor: St.white,
+              height: 66,
+              fontSize: 26,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -397,20 +413,17 @@ class _Step extends StatelessWidget {
   final String shot;
   final double cropAlignment;
 
-  /// Squarer than the flow's usual plates. [LobbyMetrics.bigRadius] is drawn
-  /// for a button the width of a screen; on a card half that wide it eats into
-  /// the picture's corners, and a screenshot is a rectangle — rounding it hard
-  /// starts cutting off the thing it is a picture of.
+  /// Squarer than the other stickers: a screenshot is a rectangle, and
+  /// rounding it hard starts cutting off the thing it is a picture of.
   static const _cardRadius = 16.0;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: LobbyFlowColors.field,
-        borderRadius: BorderRadius.circular(_cardRadius),
-      ),
+    return StickerCard(
+      radius: _cardRadius,
+      shadow: 4,
+      padding: EdgeInsets.zero,
+      clip: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -423,16 +436,14 @@ class _Step extends StatelessWidget {
                   width: 24,
                   height: 24,
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: LobbyFlowColors.cyan,
+                  decoration: BoxDecoration(
+                    color: St.blue,
                     shape: BoxShape.circle,
+                    border: Border.all(color: St.ink, width: 2),
                   ),
                   child: Text(
                     '$number',
-                    // `height: 1` so the glyph box is the glyph. Without it
-                    // the font's own line spacing is inside the circle too,
-                    // and a digit centred in *that* sits visibly high.
-                    style: LobbyText.count.copyWith(fontSize: 13, height: 1),
+                    style: St.display(13, color: St.white, height: 1),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -442,17 +453,15 @@ class _Step extends StatelessWidget {
                       children: [
                         TextSpan(
                           text: '$verb ',
-                          style: LobbyText.body.copyWith(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                          style: St.body(
+                            12,
+                            weight: FontWeight.w500,
+                            color: St.muted,
                           ),
                         ),
                         TextSpan(
                           text: target,
-                          style: LobbyText.label.copyWith(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
+                          style: St.body(12, weight: FontWeight.w700),
                         ),
                       ],
                     ),
@@ -466,10 +475,16 @@ class _Step extends StatelessWidget {
           // price of every card being as tall as the tallest — and cheaper
           // than a caption cut off mid-word.
           Expanded(
-            child: Image.asset(
-              'assets/sdk/screenshots/$shot.png',
-              fit: BoxFit.cover,
-              alignment: Alignment(0, cropAlignment),
+            child: DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: St.ink, width: 2)),
+              ),
+              child: Image.asset(
+                'assets/sdk/screenshots/$shot.png',
+                fit: BoxFit.cover,
+                alignment: Alignment(0, cropAlignment),
+              ),
             ),
           ),
         ],

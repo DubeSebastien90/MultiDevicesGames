@@ -2,38 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import '../audio/ui_audio.dart';
 import '../catalog.dart';
 import '../contract/game.dart';
-import '../ui/lobby_flow_style.dart';
+import '../ui/sticker/sticker.dart';
 import 'premium_status.dart';
 
 /// Opens the paywall as a sheet over whatever locked something the tap.
 ///
-/// [trigger] is why it opened, shown as the top line so the sheet answers the
-/// question the tap actually asked — "unlock Hot Potato" reads differently
-/// from "unlock the game list" even though both end at the same purchase.
+/// [game] is the title of the Premium game that was tapped, if one was. The
+/// sheet leads with it, so it answers the question the tap actually asked —
+/// "unlock Hot Potato" reads differently from "unlock the game list" even
+/// though both end at the same purchase.
 Future<void> showPaywall(
   BuildContext context,
   PremiumStatus premium, {
-  String? trigger,
-}) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  showDragHandle: true,
-  // The flow's paper, and its big radius: the sheet slides up over the games
-  // list, and half a screen of the app's dark [ThemeData] arriving over a white
-  // list is the seam this whole pass exists to remove.
-  backgroundColor: LobbyFlowColors.paper,
-  shape: const RoundedRectangleBorder(
-    borderRadius: BorderRadius.vertical(
-      top: Radius.circular(LobbyMetrics.bigRadius),
-    ),
-  ),
+  String? game,
+}) => showStickerSheet<void>(
+  context,
   builder: (sheet) => ConstrainedBox(
     constraints: BoxConstraints(
-      maxHeight: MediaQuery.sizeOf(sheet).height * 0.9,
+      maxHeight: MediaQuery.sizeOf(sheet).height * .9,
     ),
-    child: PaywallSheet(premium: premium, trigger: trigger),
+    child: PaywallSheet(premium: premium, game: game),
   ),
 );
 
@@ -42,13 +33,13 @@ Future<void> showPaywall(
 ///
 /// Framed around the table rather than the phone: a host who buys Premium is
 /// not buying something for themselves, they are buying the rest of the
-/// catalogue for everyone who scans in tonight — so the copy says "the
-/// table", not "you".
+/// catalogue for everyone who scans in tonight — so the copy says "your whole
+/// party", not "you".
 class PaywallSheet extends StatefulWidget {
-  const PaywallSheet({super.key, required this.premium, this.trigger});
+  const PaywallSheet({super.key, required this.premium, this.game});
 
   final PremiumStatus premium;
-  final String? trigger;
+  final String? game;
 
   @override
   State<PaywallSheet> createState() => _PaywallSheetState();
@@ -177,183 +168,290 @@ class _PaywallSheetState extends State<PaywallSheet> {
         .where((g) => g.manifest.tier == GameTier.premium)
         .toList();
     final package = _lifetimePackage;
+    final game = widget.game;
 
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+    return StickerSheetShell(
+      children: [
+        _Header(
+          line: game != null
+              ? '$game is a premium game. Unlock it and every premium game '
+                    'for your whole party.'
+              : "Pick tonight's lineup and unlock every premium game for "
+                    'your whole party.',
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // The cup on yellow: the same disc the results screen hands a
-                // winner, at the size a header can carry.
-                const LobbyMark(
-                  icon: Icons.emoji_events,
-                  color: LobbyFlowColors.yellow,
-                  size: 52,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        trigger == null ? 'Bring the full party' : trigger!,
-                        style: LobbyText.title.copyWith(fontSize: 20),
+                // What the money buys: every Premium game, and the right to
+                // choose the lineup at all.
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final g in locked)
+                      _Chip(
+                        icon: Symbols.lock_open_rounded,
+                        label: g.manifest.title,
                       ),
-                      const SizedBox(height: 2),
+                    const _Chip(
+                      icon: Symbols.tune_rounded,
+                      label: 'Pick the lineup',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "One purchase on the host's phone unlocks it for everyone "
+                  'who joins — nobody else has to buy anything.',
+                  textAlign: TextAlign.center,
+                  style: St.body(13, weight: FontWeight.w500, color: _grey),
+                ),
+                const SizedBox(height: 18),
+                if (_loadingOfferings)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(
+                      child: SizedBox.square(
+                        dimension: 32,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3.5,
+                          color: St.ink,
+                        ),
+                      ),
+                    ),
+                  )
+                else if (package == null)
+                  Text(
+                    _error ?? 'Nothing to buy yet — check back shortly.',
+                    style: _troubleStyle,
+                    textAlign: TextAlign.center,
+                  )
+                else
+                  Center(
+                    child: _PriceSticker(
+                      price: package.storeProduct.priceString,
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                StickerButton(
+                  height: 66,
+                  radius: 22,
+                  shadow: 5,
+                  color: St.go,
+                  onTap: _purchasing || package == null
+                      ? null
+                      : () => _buy(package),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!_purchasing) ...[
+                        const StIcon(
+                          Symbols.lock_open_rounded,
+                          size: 30,
+                          color: St.white,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       Text(
-                        'Unlock every game for the whole table, forever.',
-                        style: LobbyText.body,
+                        _purchasing ? 'Working…' : 'Unlock Premium',
+                        style: St.display(26, color: St.white),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              "One purchase on the host's phone unlocks these for everyone "
-              'who joins — nobody else has to buy anything.',
-              style: LobbyText.body,
-            ),
-            const SizedBox(height: 16),
-
-            // What the money buys, on the flow's grey plate instead of a
-            // Material card full of ListTiles.
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-              decoration: BoxDecoration(
-                color: LobbyFlowColors.field,
-                borderRadius: BorderRadius.circular(LobbyMetrics.bigRadius),
-              ),
-              child: Column(
-                children: [
-                  for (final game in locked)
-                    _Unlocked(
-                      icon: Icons.lock_open,
-                      title: game.manifest.title,
-                      subtitle: game.manifest.tagline,
-                    ),
-                  const _Unlocked(
-                    icon: Icons.tune,
-                    title: "Choosing what's in the run",
-                    subtitle:
-                        "Pick tonight's lineup instead of playing the free "
-                        'set',
+                if (_error != null && package != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _error!,
+                    style: _troubleStyle,
+                    textAlign: TextAlign.center,
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            if (_loadingOfferings)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(child: LobbySpinner()),
-              )
-            else if (package == null)
-              Text(
-                _error ?? 'Nothing to buy yet — check back shortly.',
-                style: _troubleStyle,
-                textAlign: TextAlign.center,
-              )
-            else ...[
-              LobbyPillButton(
-                onPressed: _purchasing ? null : () => _buy(package),
-                label: _purchasing
-                    ? 'Working…'
-                    : 'Unlock everything · '
-                          '${package.storeProduct.priceString}',
-                background: LobbyFlowColors.green,
-                foreground: LobbyFlowColors.ink,
-                fontSize: 17,
-                radius: LobbyMetrics.bigRadius,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 18,
-                  horizontal: 20,
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: withButtonSound(
+                        () => Navigator.of(context).pop(),
+                      ),
+                      style: TextButton.styleFrom(foregroundColor: _grey),
+                      child: Text(
+                        'Maybe later',
+                        style: St.body(14, color: _grey),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: withButtonSound(_purchasing ? null : _restore),
+                      style: TextButton.styleFrom(foregroundColor: _grey),
+                      child: Text(
+                        'Restore purchase',
+                        style: St.body(
+                          14,
+                          color: _grey,
+                        ).copyWith(decoration: TextDecoration.underline),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'One-time purchase. No subscription, no ads, ever.',
-                style: LobbyText.body,
-                textAlign: TextAlign.center,
-              ),
-            ],
-            if (_error != null && package != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!, style: _troubleStyle, textAlign: TextAlign.center),
-            ],
-            const SizedBox(height: 12),
-            LobbyPillButton(
-              onPressed: _purchasing ? null : _restore,
-              label: 'Restore purchase',
-              background: LobbyFlowColors.field,
-              foreground: LobbyFlowColors.ink,
-              fontSize: 15,
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                if (_restoreError != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _restoreError!,
+                    style: _troubleStyle,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
             ),
-            if (_restoreError != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _restoreError!,
-                style: _troubleStyle,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
-  /// Bad news, in the flow's coral rather than Material's error red — dark
-  /// enough to read on paper, and still plainly not the colour of the rest.
-  static final _troubleStyle = LobbyText.label.copyWith(
-    color: LobbyFlowColors.shadeOf(LobbyFlowColors.coral),
-  );
+  static const _grey = Color(0xFF555555);
 
-  String? get trigger => widget.trigger;
+  /// Bad news in the back button's red — plainly not the colour of the rest.
+  static final _troubleStyle = St.body(14, color: St.back);
 }
 
-/// One line of what Premium buys: an icon, a name, and what it is.
-class _Unlocked extends StatelessWidget {
-  const _Unlocked({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
+/// The purple band: the crown wiggling, the headline, and why it opened.
+class _Header extends StatelessWidget {
+  const _Header({required this.line});
 
-  final IconData icon;
-  final String title;
-  final String subtitle;
+  final String line;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => DecoratedBox(
+    position: DecorationPosition.foreground,
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: St.ink, width: 3)),
+    ),
+    child: ColoredBox(
+      color: St.premium,
+      child: Stack(
         children: [
-          Icon(icon, size: 18, color: LobbyFlowColors.ink),
-          const SizedBox(width: 12),
-          Expanded(
+          const Positioned.fill(child: CustomPaint(painter: DotsPainter())),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 26, 22, 20),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: LobbyText.label),
+                Wiggle(
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: St.sticker(
+                      color: St.gold,
+                      radius: 22,
+                      shadow: 4,
+                    ),
+                    child: const Center(
+                      child: StIcon(
+                        Symbols.workspace_premium_rounded,
+                        size: 44,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 Text(
-                  subtitle,
-                  style: LobbyText.body,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  'Go Premium!',
+                  textAlign: TextAlign.center,
+                  style: St.display(34, color: St.white, height: 1).copyWith(
+                    shadows: const [
+                      Shadow(color: St.ink, offset: Offset(3, 3)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  line,
+                  textAlign: TextAlign.center,
+                  style: St.body(15, color: St.white, height: 1.35),
                 ),
               ],
             ),
           ),
+          const Positioned(top: 12, right: 12, child: SheetCloseButton()),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
+
+/// One thing Premium buys, as a lilac pill.
+class _Chip extends StatelessWidget {
+  const _Chip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF1E6FF),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(color: St.ink, width: 2),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        StIcon(icon, size: 15, color: St.premium),
+        const SizedBox(width: 4),
+        Text(label, style: St.display(14, height: 1)),
+      ],
+    ),
+  );
+}
+
+/// The store's own price, on a gold sticker. Never a number of our own: the
+/// store localises it, and a hardcoded "€3.99" is wrong in every other
+/// country.
+class _PriceSticker extends StatelessWidget {
+  const _PriceSticker({required this.price});
+
+  final String price;
+
+  @override
+  Widget build(BuildContext context) => StickerCard(
+    color: St.gold,
+    radius: 20,
+    shadow: 4,
+    tiltDeg: -1.5,
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(price, style: St.display(34, height: 1)),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'One-time payment',
+                style: St.body(13, color: St.muted, height: 1.2),
+              ),
+              Text(
+                'Yours forever, no subscription',
+                style: St.body(
+                  13,
+                  weight: FontWeight.w500,
+                  color: St.muted,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }

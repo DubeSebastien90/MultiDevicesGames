@@ -8,7 +8,7 @@ import '../layout/board_links.dart';
 import 'board_diagram.dart';
 import 'hold_to_confirm.dart';
 import 'link_palette.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// How thick the edge stripes are drawn, in logical pixels.
 ///
@@ -45,7 +45,7 @@ class PlacementView extends StatelessWidget {
     // diagram exists: "Ready" over an empty space asks people to promise they
     // are somewhere they have not been told about.
     if (layout == null || client.slices.isEmpty) {
-      return const LobbyLoadingScreen();
+      return const StickerLoadingScreen();
     }
 
     // Confirmation state comes from the lobby list, but *positions* come from
@@ -76,10 +76,11 @@ class PlacementView extends StatelessWidget {
           );
 
     return Scaffold(
-      // Same paper the lobby, the games list and the results are drawn on: this
-      // screen sits between them, and a dark screen in the middle of a white
-      // flow reads as a different app.
-      backgroundColor: LobbyFlowColors.paper,
+      // White, where every other screen is yellow — on purpose. The stripes on
+      // the glass are this screen's whole instruction, and one of their colours
+      // is a yellow that would vanish into the page. The stickers on it are the
+      // same as everywhere else; only the paper differs.
+      backgroundColor: St.white,
       // Deliberately not turned: you read your own phone the way you hold it,
       // whatever angle its slot in the board happens to be.
       body: Stack(
@@ -147,7 +148,7 @@ class _EdgeStripePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = LobbyFlowColors.paper);
+    canvas.drawRect(Offset.zero & size, Paint()..color = St.white);
 
     /// Where a world point lands on this screen, turn included.
     Offset toScreen(double wx, double wy) {
@@ -253,11 +254,11 @@ class _LinkLegend extends StatelessWidget {
 /// One stripe's chip: its colour and who is on the other end.
 ///
 /// When that is a phone, tapping it makes them speak — deliberately unmarked;
-/// see the plate below.
+/// see the button below.
 ///
-/// Two plates rather than one with a disabled state, because the flow draws a
-/// dead control at half opacity and the middle-of-the-table chip is not dead.
-/// It is a caption that happens to look like the others, and it should be as
+/// Two stickers rather than one with a disabled state, because a disabled
+/// button is drawn washed out and the middle-of-the-table chip is not dead. It
+/// is a caption that happens to look like the others, and it should be as
 /// legible as they are.
 class _LinkChip extends StatelessWidget {
   const _LinkChip({
@@ -270,43 +271,31 @@ class _LinkChip extends StatelessWidget {
   final String label;
   final VoidCallback? onPoke;
 
-  static const _padding = EdgeInsets.symmetric(horizontal: 16, vertical: 10);
+  static const _padding = EdgeInsets.symmetric(horizontal: 16, vertical: 9);
 
   @override
   Widget build(BuildContext context) {
     final poke = onPoke;
-    final words = Text(label, style: LobbyText.button);
+    final words = Text(label, style: St.display(17, height: 1.1));
 
     if (poke == null) {
-      return Container(
-        padding: _padding,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(LobbyMetrics.pillRadius),
-          boxShadow: [
-            BoxShadow(
-              color: LobbyFlowColors.shadeOf(color),
-              offset: const Offset(
-                LobbyMetrics.rowOffset,
-                LobbyMetrics.rowOffset,
-              ),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: words,
+      return DecoratedBox(
+        decoration: St.sticker(color: color, radius: 999, shadow: 3),
+        child: Padding(padding: _padding, child: words),
       );
     }
 
-    // The flow's plate at chip size: it sinks into its own shadow when pressed,
-    // which is the only feedback this phone gets — the sound it asks for comes
-    // out of somebody else's speaker.
+    // A sticker at chip size: it sinks into its own shadow when pressed, which
+    // is the only feedback this phone gets — the sound it asks for comes out
+    // of somebody else's speaker.
     //
     // Nothing marks it as a button. It is meant to be found by somebody idly
     // prodding the screen while the table sorts itself out, and a little
     // speaker icon would turn a discovery into a feature.
-    return LobbyCard(
+    return StickerButton(
       color: color,
+      radius: 999,
+      shadow: 3,
       padding: _padding,
       onTap: poke,
       child: words,

@@ -4,7 +4,7 @@ import 'package:multiscreen_slingshot/sdk/audio/game_audio.dart';
 import 'package:multiscreen_slingshot/sdk/audio/sound_cue.dart';
 import 'package:multiscreen_slingshot/sdk/audio/sounds.dart';
 import 'package:multiscreen_slingshot/sdk/audio/ui_audio.dart';
-import 'package:multiscreen_slingshot/sdk/ui/lobby_flow_style.dart';
+import 'package:multiscreen_slingshot/sdk/ui/sticker/sticker.dart';
 
 void main() {
   late _HeardAudio audio;
@@ -13,13 +13,15 @@ void main() {
   tearDown(() => UiAudio.speaker = const SilentLocalAudio());
 
   Future<void> mount(WidgetTester tester, VoidCallback? onPressed) =>
-      tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: LobbyPillButton(label: 'Go', onPressed: onPressed),
+      tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: StickerButton(onTap: onPressed, child: const Text('Go')),
+            ),
           ),
         ),
-      ));
+      );
 
   testWidgets('a menu button boups, then does its job', (tester) async {
     var pressed = 0;

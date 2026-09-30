@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../audio/game_audio.dart';
 import '../audio/sounds.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// Press anywhere and keep pressing: a ring fills, and at the end of it the
 /// answer is yes.
@@ -73,13 +73,14 @@ class HoldToConfirm extends StatefulWidget {
 
 class _HoldToConfirmState extends State<HoldToConfirm>
     with TickerProviderStateMixin {
-  late final AnimationController _progress = AnimationController(
-    vsync: this,
-    duration: widget.hold,
-    reverseDuration: widget.decay,
-  )
-    ..addStatusListener(_onStatus)
-    ..addListener(_onProgress);
+  late final AnimationController _progress =
+      AnimationController(
+          vsync: this,
+          duration: widget.hold,
+          reverseDuration: widget.decay,
+        )
+        ..addStatusListener(_onStatus)
+        ..addListener(_onProgress);
 
   /// The highest gauge step already sounded, -1 for none.
   ///
@@ -130,9 +131,10 @@ class _HoldToConfirmState extends State<HoldToConfirm>
 
   void _onProgress() {
     final steps = Sounds.holdSteps;
-    final step = (_progress.value * steps.length)
-        .floor()
-        .clamp(0, steps.length - 1);
+    final step = (_progress.value * steps.length).floor().clamp(
+      0,
+      steps.length - 1,
+    );
     if (_progress.status != AnimationStatus.forward) {
       // Draining: nothing to hear, only to remember.
       if (_progress.value == 0) {
@@ -268,16 +270,16 @@ class _HoldRing extends StatelessWidget {
           // Green once the promise is made, ink while it is being made: the
           // same pair the results screen uses for a round won and a round
           // merely played.
-          final arc = done ? LobbyFlowColors.green : LobbyFlowColors.ink;
+          final arc = done ? St.go : St.ink;
           return CustomPaint(
             painter: _HoldRingPainter(
               progress: value,
               spin: spin.value,
-              track: LobbyFlowColors.field,
+              track: const Color(0xFFEDEDED),
               arc: arc,
-              // The idle sweep in the flow's purple, fading out as the hold
+              // The idle sweep in the premium purple, fading out as the hold
               // takes over so the two never read as one arc changing colour.
-              idle: LobbyFlowColors.purple.withValues(alpha: 0.9 * (1 - value)),
+              idle: St.premium.withValues(alpha: 0.9 * (1 - value)),
             ),
             child: Center(
               child: Padding(
@@ -285,10 +287,9 @@ class _HoldRing extends StatelessWidget {
                 child: Text(
                   label,
                   textAlign: TextAlign.center,
-                  style: (done ? LobbyText.title : LobbyText.button).copyWith(
-                    fontSize: done ? 22 : 15,
-                    height: 1.15,
-                  ),
+                  style: done
+                      ? St.display(26, height: 1.1)
+                      : St.body(15, weight: FontWeight.w700, height: 1.15),
                 ),
               ),
             ),

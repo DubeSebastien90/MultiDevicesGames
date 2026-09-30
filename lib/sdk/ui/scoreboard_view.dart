@@ -1,9 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../model/player_color.dart';
 import '../render/player_art.dart';
 import '../score/scoreboard.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 import 'results_view.dart' show VerdictMark;
 
 /// The end of the run: who won the whole evening.
@@ -54,96 +56,85 @@ class ScoreboardView extends StatelessWidget {
     // who came fourth.
     final won = scores.isUsed && scores.leader?.phoneId == meId;
 
-    return Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(child: VerdictMark(won: won)),
-                  const SizedBox(height: 16),
-                  LobbyTitle(_headline(scores, meId), fontSize: 30),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Final standings',
-                    style: LobbyText.body.copyWith(letterSpacing: 2),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Deliberately not a [StandingsCard]: that one draws nothing
-                  // at all until somebody scores, which is right where it sits —
-                  // beside other things — and wrong here, where it is the whole
-                  // screen. A co-operative run that ended level still has to
-                  // show the table its own names.
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 10,
-                      horizontal: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: LobbyFlowColors.field,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: Column(
-                      children: [
-                        for (final (i, entry) in ranked.indexed)
-                          _Row(
-                            place: places[i],
-                            entry: entry,
-                            me: entry.phoneId == meId,
-                            away: offline.contains(entry.phoneId),
-                            color: colors[entry.phoneId],
-                            // Medals mean nothing on a board nobody scored on.
-                            medals: scores.isUsed,
-                          ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 26),
-                  if (onBackToLobby != null)
-                    LobbyPillButton(
-                      onPressed: onBackToLobby,
-                      icon: Icons.meeting_room_outlined,
-                      label: 'Back to lobby',
-                      background: LobbyFlowColors.green,
-                      foreground: LobbyFlowColors.ink,
-                      fontSize: 18,
-                      iconSize: 22,
-                      radius: LobbyMetrics.bigRadius,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 18,
-                        horizontal: 20,
-                      ),
-                    )
-                  else
-                    // Something to look at, so a phone with no button does not
-                    // read as a phone that has frozen.
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: LobbyFlowColors.muted,
-                          ),
-                        ),
-                        SizedBox(width: 10),
-                        Text('Waiting for the host…', style: LobbyText.body),
-                      ],
-                    ),
-                ],
+    return StickerPage(
+      maxWidth: 520,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Bob(child: VerdictMark(won: won)),
               ),
-            ),
+              const SizedBox(height: 20),
+              Transform.rotate(
+                angle: -2 * math.pi / 180,
+                child: Text(
+                  _headline(scores, meId),
+                  textAlign: TextAlign.center,
+                  style: St.display(40, height: 1),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Final standings',
+                style: St.body(15, color: St.muted).copyWith(letterSpacing: 2),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 22),
+
+              // Deliberately not a [StandingsCard]: that one draws nothing at
+              // all until somebody scores, which is right where it sits —
+              // beside other things — and wrong here, where it is the whole
+              // screen. A co-operative run that ended level still has to show
+              // the table its own names.
+              StickerCard(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  children: [
+                    for (final (i, entry) in ranked.indexed)
+                      _Row(
+                        place: places[i],
+                        entry: entry,
+                        me: entry.phoneId == meId,
+                        away: offline.contains(entry.phoneId),
+                        color: colors[entry.phoneId],
+                        // Medals mean nothing on a board nobody scored on.
+                        medals: scores.isUsed,
+                        odd: i.isOdd,
+                      ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 26),
+              if (onBackToLobby != null)
+                StickerWideButton(
+                  onTap: onBackToLobby,
+                  icon: Symbols.meeting_room_rounded,
+                  label: 'Back to lobby',
+                  color: St.go,
+                  textColor: St.white,
+                  height: 68,
+                  fontSize: 24,
+                )
+              else
+                // Something to look at, so a phone with no button does not
+                // read as a phone that has frozen.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const StickerSpinner(size: 18),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Waiting for the host…',
+                      style: St.body(15, color: St.muted),
+                    ),
+                  ],
+                ),
+            ],
           ),
         ),
       ),
@@ -183,6 +174,7 @@ class _Row extends StatelessWidget {
     required this.away,
     required this.color,
     required this.medals,
+    required this.odd,
   });
 
   final int place;
@@ -191,82 +183,87 @@ class _Row extends StatelessWidget {
   final bool away;
   final PlayerColor? color;
   final bool medals;
+  final bool odd;
 
-  /// The character, where a ten-pixel dot of their colour used to be.
-  ///
-  /// The dot was enough to tell two rows apart and not enough to be anybody.
-  /// This is the same picture they have been chasing round the board all
-  /// evening, at a size where it is that animal rather than a smudge of paint.
-  static const _art = 34.0;
+  /// The character, where a ten-pixel dot of their colour used to be — the
+  /// same picture they have been chasing round the board all evening.
+  static const _art = 38.0;
 
-  /// Gold, silver, bronze. Deliberately fixed rather than themed: a medal that
-  /// changes colour with the theme is not a medal.
-  static const _medal = <int, Color>{
-    1: Color(0xFFD4AF37),
-    2: Color(0xFFAFB6BD),
-    3: Color(0xFFB07B4F),
-  };
+  /// Gold, silver, bronze. Fixed rather than themed: a medal that changes
+  /// colour with the theme is not a medal.
+  static const _medal = <int, Color>{1: St.gold, 2: St.silver, 3: St.bronze};
+
+  static const _awayText = Color(0xFF999999);
 
   @override
   Widget build(BuildContext context) {
     final badge = medals ? _medal[place] : null;
-    final ink = away ? LobbyFlowColors.muted : LobbyFlowColors.ink;
     // Somebody who is not here is the grey character, whatever colour they
     // last wore: between rounds that colour has gone back to the palette and
     // may be on somebody else by now, and mid-round it is only being kept for
     // the game's sake.
     final art = away ? PlayerPalette.away : color;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      constraints: const BoxConstraints(minHeight: 54),
+      padding: const EdgeInsets.fromLTRB(8, 4, 12, 4),
+      decoration: BoxDecoration(
+        color: me && color != null
+            ? Color.alphaBlend(
+                color!.skinLight.withValues(alpha: .33),
+                St.white,
+              )
+            : (odd ? St.white : const Color(0xFFFAF6E8)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: me ? St.ink : Colors.transparent, width: 3),
+      ),
       child: Row(
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: badge ?? LobbyFlowColors.paper,
+              color: badge ?? St.white,
               shape: BoxShape.circle,
-            ),
-            child: Text(
-              '$place',
-              style: LobbyText.count.copyWith(
-                fontSize: 14,
-                color: badge == null ? LobbyFlowColors.muted : Colors.black87,
+              border: Border.all(
+                color: badge == null ? const Color(0x33000000) : St.ink,
+                width: 2,
               ),
             ),
+            child: Text('$place', style: St.display(16, height: 1)),
           ),
           const SizedBox(width: 10),
           if (art != null) ...[
             PlayerArt.of(art, PlayerArtSlot.topdown).widget(size: _art),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
           ],
           Expanded(
             child: Text(
               me ? '${entry.label} (you)' : entry.label,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: LobbyText.label.copyWith(
-                color: ink,
-                fontWeight: me ? FontWeight.w800 : FontWeight.w600,
-              ),
+              style: me
+                  ? St.display(18)
+                  : St.body(16, color: away ? _awayText : St.ink),
             ),
           ),
           if (away) ...[
-            const Icon(
-              Icons.cloud_off,
-              size: 14,
-              color: LobbyFlowColors.muted,
+            const StIcon(
+              Symbols.cloud_off_rounded,
+              size: 16,
+              color: Color(0xFF777777),
             ),
             const SizedBox(width: 8),
           ],
           Text(
             '${entry.total}',
-            style: LobbyText.title.copyWith(
-              color: ink,
-              fontSize: 20,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: St.display(
+              24,
+              color: away ? const Color(0xFFAAAAAA) : St.ink,
+              height: 1,
+            ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
           ),
         ],
       ),

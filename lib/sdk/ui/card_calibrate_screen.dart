@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../model/device_metrics.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// Full-screen calibration using an ISO 7810 ID-1 card (credit/ID cards).
 ///
@@ -73,27 +73,33 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
     final result = _calibrated();
 
     return Scaffold(
-      // Paper, like the rest of the flow. It was black — which read as a
-      // camera viewfinder, and this is not one — and a dark card on a white
-      // screen is the easier of the two to line an outline up against anyway.
-      backgroundColor: LobbyFlowColors.paper,
+      // Plain yellow, with none of the drifting shapes the other screens have:
+      // somebody is lining a real card up against this outline, and anything
+      // moving behind it is something to line up against by mistake.
+      backgroundColor: St.bg,
       body: SafeArea(
         child: Column(
           children: [
-            LobbyHeader(
-              title: 'Card calibration',
-              // Backing out keeps whatever the screen had before: popping with
-              // no result is what the caller reads as "nothing changed".
-              onBack: () => Navigator.of(context).pop(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: StickerHeader(
+                'Card calibration',
+                // Backing out keeps whatever the screen had before: popping
+                // with no result is what the caller reads as "nothing
+                // changed".
+                onBack: () => Navigator.of(context).pop(),
+              ),
             ),
             Expanded(
               child: Center(
+                // No shadow: the outline is a measurement, and a hard shadow
+                // offset from it is a second edge to line the card up with.
                 child: Container(
                   width: cardW,
                   height: cardH,
                   decoration: BoxDecoration(
-                    color: LobbyFlowColors.field,
-                    border: Border.all(color: LobbyFlowColors.ink, width: 3),
+                    color: St.white,
+                    border: Border.all(color: St.ink, width: 3),
                     borderRadius: BorderRadius.circular(cornerR),
                   ),
                 ),
@@ -106,10 +112,10 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
                 'Place a credit or ID card on the screen.\n'
                 'Slide until the outline matches the card exactly.',
                 textAlign: TextAlign.center,
-                style: LobbyText.body,
+                style: St.body(15, weight: FontWeight.w500, color: St.muted),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
             // What the slider currently claims this panel measures. The one
             // number the whole screen exists to produce, so it is set like a
@@ -117,20 +123,19 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
             Text(
               '${result.widthMm.toStringAsFixed(1)} × '
               '${result.heightMm.toStringAsFixed(1)} mm',
-              style: LobbyText.count.copyWith(fontSize: 20),
+              style: St.display(26),
             ),
 
-            // The flow has no slider of its own, so this is one built from its
-            // parts: ink track, a green thumb the size of a fingertip, and no
-            // ripple — the card moving under your finger is the feedback.
+            // Ink track, a green thumb the size of a fingertip, and no ripple
+            // — the card moving under your finger is the feedback.
             SliderTheme(
               data: SliderThemeData(
-                trackHeight: 6,
-                activeTrackColor: LobbyFlowColors.ink,
-                inactiveTrackColor: LobbyFlowColors.field,
-                thumbColor: LobbyFlowColors.green,
-                overlayColor: LobbyFlowColors.green.withValues(alpha: 0.18),
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 13),
+                trackHeight: 8,
+                activeTrackColor: St.ink,
+                inactiveTrackColor: St.white,
+                thumbColor: St.go,
+                overlayColor: St.go.withValues(alpha: 0.18),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 14),
               ),
               child: Slider(
                 value: _dpi.clamp(minDpi, maxDpi),
@@ -140,21 +145,16 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
                 onChanged: (v) => setState(() => _dpi = v),
               ),
             ),
-            const SizedBox(height: 4),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-              child: LobbyPillButton(
-                onPressed: () => Navigator.of(context).pop(result),
-                icon: Icons.check,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              child: StickerWideButton(
+                onTap: () => Navigator.of(context).pop(result),
+                icon: Symbols.check_rounded,
                 label: 'Save',
-                background: LobbyFlowColors.green,
-                fontSize: 17,
-                iconSize: 20,
-                radius: LobbyMetrics.bigRadius,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 28,
-                ),
+                color: St.go,
+                textColor: St.white,
+                height: 66,
+                fontSize: 26,
               ),
             ),
           ],

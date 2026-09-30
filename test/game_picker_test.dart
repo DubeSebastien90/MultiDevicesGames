@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:multiscreen_slingshot/games/dodgeball/dodgeball_game.dart';
 import 'package:multiscreen_slingshot/games/flood/flood_game.dart';
 import 'package:multiscreen_slingshot/games/hot_potato/hot_potato_game.dart';
@@ -8,6 +9,7 @@ import 'package:multiscreen_slingshot/games/arena/arena_game.dart';
 import 'package:multiscreen_slingshot/sdk/catalog.dart';
 import 'package:multiscreen_slingshot/sdk/contract/game.dart';
 import 'package:multiscreen_slingshot/sdk/host/host_session.dart';
+import 'package:multiscreen_slingshot/sdk/monetization/paywall_view.dart';
 import 'package:multiscreen_slingshot/sdk/monetization/premium_status.dart';
 import 'package:multiscreen_slingshot/sdk/ui/game_picker.dart';
 
@@ -88,7 +90,10 @@ void main() {
   /// point of it — so counting ticks across the whole list counts the ones
   /// that happen to be on screen.
   bool ticked(String title) => find
-      .descendant(of: rowOf(title), matching: find.byIcon(Icons.check))
+      .descendant(
+        of: rowOf(title),
+        matching: find.byIcon(Symbols.check_rounded),
+      )
       .evaluate()
       .isNotEmpty;
 
@@ -113,7 +118,7 @@ void main() {
     expect(game('Dodgeball'), findsOneWidget);
 
     // One tick, for the one game that is in the run.
-    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(find.byIcon(Symbols.check_rounded), findsOneWidget);
     expect(lit(tester, 'Arena'), isTrue);
     expect(lit(tester, 'Dodgeball'), isFalse);
   });
@@ -186,11 +191,14 @@ void main() {
     expect(find.text(const FloodGame().manifest.tagline), findsNothing);
   });
 
-  testWidgets("a game played in pairs shows two people next to its phone count, until it fits", (
+  testWidgets("a game played in pairs says so next to its phone count", (
     tester,
   ) async {
     bool team(String title) => find
-        .descendant(of: rowOf(title), matching: find.byIcon(Icons.people))
+        .descendant(
+          of: rowOf(title),
+          matching: find.byIcon(Symbols.counter_2_rounded),
+        )
         .evaluate()
         .isNotEmpty;
 
@@ -201,9 +209,10 @@ void main() {
     expect(team(const FloodGame().manifest.title), isTrue);
     expect(team(const ArenaGame().manifest.title), isFalse);
 
-    // Gone with the phone count once the table can play it.
+    // The count is on every tile now, not only the ones the table is short
+    // for — so the pairs mark stays with it once the table can play.
     await show(tester, [offer(const FloodGame())]);
-    expect(team(const FloodGame().manifest.title), isFalse);
+    expect(team(const FloodGame().manifest.title), isTrue);
   });
 
   test("only the even-table games are marked as played in pairs", () {
@@ -236,8 +245,8 @@ void main() {
     expect(find.text('PREMIUM'), findsOneWidget);
     // One tick only — Arena's. A locked row has nothing to tick, and shows a
     // padlock where the ring would be.
-    expect(find.byIcon(Icons.check), findsOneWidget);
-    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+    expect(find.byIcon(Symbols.check_rounded), findsOneWidget);
+    expect(find.byIcon(Symbols.lock_rounded), findsOneWidget);
 
     await tester.tap(game('Hot Potato'));
     expect(lockedTaps, ['hotpotato']);
@@ -246,6 +255,69 @@ void main() {
       isEmpty,
       reason: 'a locked row should open the paywall, not tick itself',
     );
+  });
+
+  testWidgets('holding a game says what it is, and its button does what a '
+      'tap would', (tester) async {
+    await show(tester, [offer(const ArenaGame())]);
+
+    await tester.longPress(game('Arena'));
+    await tester.pumpAndSettle();
+
+    // What you do and how it ends — the grid itself never says either.
+    expect(find.text(const ArenaGame().manifest.tagline), findsOneWidget);
+    expect(find.text(const ArenaGame().manifest.goal), findsOneWidget);
+    expect(toggles, isEmpty, reason: 'a hold also counted as a tap');
+
+    await tester.tap(find.text('Remove from run'));
+    await tester.pumpAndSettle();
+    expect(toggles, [('arena', false)]);
+    expect(find.text('Remove from run'), findsNothing);
+  });
+
+  testWidgets('holding a game a free host cannot pick sells, rather than '
+      'offering to add it', (tester) async {
+    await show(tester, [
+      offer(const DodgeballGame(), chosen: false),
+    ], selectionLocked: true);
+
+    await tester.longPress(game('Dodgeball'));
+    await tester.pumpAndSettle();
+    expect(find.text('Add to run'), findsNothing);
+
+    await tester.tap(find.text('Unlock with Premium'));
+    await tester.pumpAndSettle();
+    expect(selectionLockedTaps, 1);
+    expect(toggles, isEmpty);
+  });
+
+  testWidgets('the paywall leads with the game that opened it', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () =>
+                  showPaywall(context, PremiumStatus(), game: 'Guac-a-Mole'),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    // Frames rather than settling: the store never answers in a test, so the
+    // price spinner never stops.
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(
+      find.textContaining('Guac-a-Mole is a premium game'),
+      findsOneWidget,
+    );
+    // Choosing the lineup is part of what is being sold, so it is listed.
+    expect(find.text('Pick the lineup'), findsOneWidget);
+    // The price is the store's or nothing — never a number of our own.
+    expect(find.textContaining('€'), findsNothing);
   });
 
   testWidgets('both ends of the list are one tap each', (tester) async {
@@ -267,7 +339,7 @@ void main() {
 
     // The padlock means Premium: a free game keeps its tick even when the
     // host cannot change the selection.
-    expect(find.byIcon(Icons.lock_outline), findsNothing);
+    expect(find.byIcon(Symbols.lock_rounded), findsNothing);
     expect(find.text('Tap a game to add it'), findsNothing);
 
     await tester.tap(game('Arena'));
@@ -288,13 +360,13 @@ void main() {
 
       // The whole point: no padlock and no PREMIUM badge on a game the host may
       // well already own. Nothing on screen makes a claim about money.
-      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      expect(find.byIcon(Symbols.lock_rounded), findsNothing);
       expect(find.text('PREMIUM'), findsNothing);
       expect(find.textContaining('locked behind Premium'), findsNothing);
 
       // Nor is it offered as tickable, which would be the opposite lie: the
       // one tick on screen is Flood's.
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(Symbols.check_rounded), findsOneWidget);
       expect(find.text('Checking your purchase…'), findsOneWidget);
 
       // The rest of the list still works while one game waits: Flood keeps its
@@ -322,7 +394,7 @@ void main() {
     testWidgets('once it answers, the padlock appears', (tester) async {
       await show(tester, [offer(const HotPotatoGame(), locked: true)]);
 
-      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+      expect(find.byIcon(Symbols.lock_rounded), findsOneWidget);
       expect(find.text('PREMIUM'), findsOneWidget);
       expect(find.text('Checking your purchase…'), findsNothing);
     });

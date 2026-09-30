@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:multiscreen_slingshot/sdk/model/age_band.dart';
 import 'package:multiscreen_slingshot/sdk/model/player_name.dart';
 import 'package:multiscreen_slingshot/sdk/ui/age_gate_screen.dart';
-import 'package:multiscreen_slingshot/sdk/ui/lobby_flow_style.dart';
+import 'package:multiscreen_slingshot/sdk/ui/sticker/sticker.dart';
 
 void main() {
   group('classify', () {
@@ -158,14 +158,12 @@ void main() {
   });
 
   group('AgeGate', () {
-    Widget gate() => MaterialApp(
-          home: AgeGate(
-            builder: (_, band) => Text('through:$band'),
-          ),
-        );
+    Widget gate() =>
+        MaterialApp(home: AgeGate(builder: (_, band) => Text('through:$band')));
 
-    testWidgets('asks on a fresh install and blocks what is behind it',
-        (tester) async {
+    testWidgets('asks on a fresh install and blocks what is behind it', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues({});
       await tester.pumpWidget(gate());
       await tester.pumpAndSettle();
@@ -204,10 +202,10 @@ void main() {
       await tester.pumpWidget(gate());
       await tester.pumpAndSettle();
 
-      final button = tester.widget<LobbyPillButton>(
-        find.byType(LobbyPillButton),
+      final button = tester.widget<StickerWideButton>(
+        find.byType(StickerWideButton),
       );
-      expect(button.onPressed, isNull);
+      expect(button.onTap, isNull);
     });
 
     testWidgets('a young answer passes through silently', (tester) async {

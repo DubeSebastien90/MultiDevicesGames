@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import '../model/device_metrics.dart';
 import '../platform/native_dpi_channel.dart';
 import 'card_calibrate_screen.dart';
-import 'lobby_flow_style.dart';
+import 'sticker/sticker.dart';
 
 /// Correcting what the platform guessed about this screen — a page, not a
 /// dialog.
@@ -118,145 +118,118 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
   @override
   Widget build(BuildContext context) {
     final m = _metrics;
+    final note = St.body(14, weight: FontWeight.w500, color: St.muted);
 
-    return Scaffold(
-      backgroundColor: LobbyFlowColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-              children: [
-                LobbyHeader(
-                  title: 'Screen size',
-                  onBack: () => Navigator.of(context).pop(),
-                  padding: const EdgeInsets.only(top: 12, bottom: 8),
-                ),
-                const SizedBox(height: 18),
+    return StickerPage(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        children: [
+          StickerHeader(
+            'Screen size',
+            onBack: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(height: 22),
 
-                // What the phone believes, drawn rather than written: the same
-                // picture the settings page shows, and the thing every control
-                // below is trying to make true.
-                DimensionsCard(metrics: m),
-                const SizedBox(height: 12),
+          // What the phone believes, drawn rather than written: the same
+          // picture the settings page shows, and the thing every control
+          // below is trying to make true.
+          DimensionsCard(metrics: m),
+          const SizedBox(height: 14),
 
-                // The rest of what the old card reported, in one line. These
-                // are facts about the panel, not settings — the pixels and the
-                // dpi follow from the millimetres above.
-                Text(
-                  '${m.activePxWidth.toInt()} × ${m.activePxHeight.toInt()} px'
-                  '   ·   ${m.dpi.toStringAsFixed(0)} dpi'
-                  '   ·   bezel ${m.bezelMm.toStringAsFixed(1)} mm',
-                  textAlign: TextAlign.center,
-                  style: LobbyText.body,
-                ),
-                const SizedBox(height: 20),
+          // The rest of what the old card reported, in one line. These are
+          // facts about the panel, not settings — the pixels and the dpi
+          // follow from the millimetres above.
+          Text(
+            '${m.activePxWidth.toInt()} × ${m.activePxHeight.toInt()} px'
+            '   ·   ${m.dpi.toStringAsFixed(0)} dpi'
+            '   ·   bezel ${m.bezelMm.toStringAsFixed(1)} mm',
+            textAlign: TextAlign.center,
+            style: St.body(14, color: St.muted),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'The board is built in millimetres, so these numbers decide '
+            'whether the seam lines up. Measure the lit glass (not the '
+            'casing) and the dead border around it.',
+            textAlign: TextAlign.center,
+            style: note,
+          ),
+          const SizedBox(height: 22),
 
-                Text(
-                  'The board is built in millimetres, so these numbers decide '
-                  'whether the seam lines up. Measure the lit glass (not the '
-                  'casing) and the dead border around it.',
-                  textAlign: TextAlign.center,
-                  style: LobbyText.body,
-                ),
-                const SizedBox(height: 22),
+          // The two ways of not measuring anything by hand, first, because
+          // either one may make the fields below unnecessary. One colour:
+          // they are two halves of one offer — let the phone work its size
+          // out for you — and differ only in whether you have a card.
+          StickerWideButton(
+            onTap: _detecting ? null : _redetect,
+            icon: Symbols.autorenew_rounded,
+            label: _detecting ? 'Detecting…' : 'Re-detect automatically',
+            color: St.blue,
+            textColor: St.white,
+            fontSize: 20,
+          ),
+          const SizedBox(height: 16),
+          StickerWideButton(
+            onTap: _calibrateWithCard,
+            icon: Symbols.credit_card_rounded,
+            label: 'Auto-calibrate with physical card',
+            color: St.blue,
+            textColor: St.white,
+            fontSize: 20,
+          ),
+          const SizedBox(height: 28),
 
-                // The two ways of not measuring anything by hand, first,
-                // because either one may make the fields below unnecessary.
-                LobbyPillButton(
-                  onPressed: _detecting ? null : _redetect,
-                  icon: Icons.autorenew,
-                  label: _detecting ? 'Detecting…' : 'Re-detect automatically',
-                  // The same purple as the card button below. They are the two
-                  // halves of one offer — let the phone work its size out for
-                  // you — so they are one colour, and the difference between
-                  // them is only which one you happen to have a card for.
-                  background: LobbyFlowColors.purple,
-                  fontSize: 16,
-                  iconSize: 20,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 20,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LobbyPillButton(
-                  onPressed: _calibrateWithCard,
-                  icon: Icons.credit_card,
-                  label: 'Auto-calibrate with physical card',
-                  background: LobbyFlowColors.purple,
-                  fontSize: 16,
-                  iconSize: 20,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 20,
-                  ),
-                ),
-                const SizedBox(height: 26),
-
-                // And the ruler, for whoever has one. Width and height side by
-                // side because they are one measurement taken twice; the bezel
-                // on its own line because it is a different thing entirely —
-                // the dead border, not the glass.
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _Measurement(
-                        label: 'Screen width (mm)',
-                        controller: _width,
-                        onChanged: _push,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _Measurement(
-                        label: 'Screen height (mm)',
-                        controller: _height,
-                        onChanged: _push,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _Measurement(
-                  label: 'Bezel per edge (mm)',
-                  controller: _bezel,
+          // And the ruler, for whoever has one. Width and height side by side
+          // because they are one measurement taken twice; the bezel on its
+          // own line because it is a different thing entirely — the dead
+          // border, not the glass.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _Measurement(
+                  label: 'Screen width (mm)',
+                  controller: _width,
                   onChanged: _push,
                 ),
-                const SizedBox(height: 28),
-
-                // The dialog's Done button, kept: the back pill in the header
-                // is the same way out, but a page you have just typed into
-                // wants somewhere deliberate to say "that is it".
-                LobbyPillButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: Icons.check,
-                  label: 'Done',
-                  background: LobbyFlowColors.green,
-                  fontSize: 17,
-                  iconSize: 20,
-                  radius: LobbyMetrics.bigRadius,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 20,
-                  ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _Measurement(
+                  label: 'Screen height (mm)',
+                  controller: _height,
+                  onChanged: _push,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: 18),
+          _Measurement(
+            label: 'Bezel per edge (mm)',
+            controller: _bezel,
+            onChanged: _push,
+          ),
+          const SizedBox(height: 28),
+
+          // The back button in the header is the same way out, but a page
+          // you have just typed into wants somewhere deliberate to say "that
+          // is it".
+          StickerWideButton(
+            onTap: () => Navigator.of(context).pop(),
+            icon: Symbols.check_rounded,
+            label: 'Done',
+            color: St.go,
+            textColor: St.white,
+            height: 66,
+            fontSize: 26,
+          ),
+        ],
       ),
     );
   }
 }
 
 /// One millimetre field, named above rather than inside.
-///
-/// The flow's fields are pills with a hint in them, and a hint disappears the
-/// moment there is a value — which is exactly wrong for three numbers that all
-/// look alike once typed.
 class _Measurement extends StatelessWidget {
   const _Measurement({
     required this.label,
@@ -269,25 +242,13 @@ class _Measurement extends StatelessWidget {
   final VoidCallback onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 6, bottom: 6),
-          child: Text(label, style: LobbyText.body),
-        ),
-        LobbyChipField(
-          controller: controller,
-          onChanged: (_) => onChanged(),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-          ],
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => StickerField(
+    label: label,
+    controller: controller,
+    onChanged: (_) => onChanged(),
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+  );
 }
 
 /// What this phone thinks it measures, drawn as the screen it is describing.
@@ -298,55 +259,36 @@ class DimensionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final measure = St.display(18, height: 1);
+    return StickerCard(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      decoration: BoxDecoration(
-        color: LobbyFlowColors.field,
-        borderRadius: BorderRadius.circular(20),
-      ),
       child: Column(
         children: [
-          const Text('Screen dimensions', style: LobbyText.label),
+          Text('Screen dimensions', style: St.display(22, height: 1)),
           const SizedBox(height: 18),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _Measure('${metrics.heightMm.toStringAsFixed(0)} mm'),
-              const SizedBox(width: 10),
-              // The phone lying on its side, as the mockup draws it.
+              Text('${metrics.heightMm.toStringAsFixed(0)} mm', style: measure),
+              const SizedBox(width: 12),
+              // The phone lying on its side, as a sticker of its own.
               Expanded(
                 child: AspectRatio(
                   aspectRatio: 2,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: LobbyFlowColors.ink, width: 3),
+                  child: DecoratedBox(
+                    decoration: St.sticker(
+                      color: const Color(0xFFBDE8FB),
+                      radius: 14,
+                      shadow: 4,
                     ),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          _Measure('${metrics.widthMm.toStringAsFixed(0)} mm'),
+          const SizedBox(height: 12),
+          Text('${metrics.widthMm.toStringAsFixed(0)} mm', style: measure),
         ],
       ),
     );
   }
-}
-
-class _Measure extends StatelessWidget {
-  const _Measure(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: const TextStyle(
-      color: LobbyFlowColors.ink,
-      fontSize: 13,
-      fontWeight: FontWeight.w500,
-    ),
-  );
 }

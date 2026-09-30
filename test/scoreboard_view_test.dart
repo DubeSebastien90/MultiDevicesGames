@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:multiscreen_slingshot/sdk/score/scoreboard.dart';
 import 'package:multiscreen_slingshot/sdk/ui/scoreboard_view.dart';
 
@@ -97,7 +98,7 @@ void main() {
     await show(tester, offline: const {'p2'});
 
     expect(find.text('Bob wins!'), findsOneWidget);
-    expect(find.byIcon(Icons.cloud_off), findsOneWidget);
+    expect(find.byIcon(Symbols.cloud_off_rounded), findsOneWidget);
   });
 
   testWidgets('only the host is given the way out', (tester) async {

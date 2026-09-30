@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:multiscreen_slingshot/sdk/ui/lobby_view.dart';
 
 /// Reset throws away every score in the lobby and there is nothing to undo it
@@ -49,8 +50,8 @@ void main() {
 
     await tester.tap(find.text('reset'));
     await tester.pumpAndSettle();
-    // The flow's back pill, which is what a dialog's cancel looks like here.
-    await tester.tap(find.byIcon(Icons.arrow_back));
+    // The back button, which is what a sheet's cancel looks like here.
+    await tester.tap(find.byIcon(Symbols.arrow_back_rounded));
     await tester.pumpAndSettle();
 
     expect(answers, [false]);
