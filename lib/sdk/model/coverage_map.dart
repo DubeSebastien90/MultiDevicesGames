@@ -205,7 +205,3 @@ class CoverageMap {
     board: WorldRect.fromJson(j['board'] as Map<String, dynamic>),
   );
 }
-
-/// What a game does with a dead zone. Only [ignore] is implemented; the others
-/// record that the choice belongs to the game, not the platform.
-enum DeadZonePolicy { ignore, wall, void_ }

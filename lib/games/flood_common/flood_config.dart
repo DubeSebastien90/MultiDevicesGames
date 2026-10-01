@@ -74,15 +74,3 @@ class FloodGrowingConfig {
   /// stalemate run longer before the ramp breaks it open.
   static const double rampWindow = 15.0;
 }
-
-/// Option B's two knobs.
-class FloodShrinkingConfig {
-  const FloodShrinkingConfig._();
-
-  /// Seconds until the contested field is as narrow as it will get.
-  static const double shrinkWindow = 25.0;
-
-  /// The floor the field shrinks to. Never zero: a sliver of contested ground
-  /// always remains, or the last moment of the round becomes a coin toss.
-  static const double minScale = 0.15;
-}

@@ -634,37 +634,6 @@ class ArenaSim implements GameSim {
   /// still being fought.
   double? _finishIn;
 
-  // -- who is still here ------------------------------------------------------
-
-  // Kept as reference, not implemented. A fighter whose player has dropped out
-  // is treated exactly like one whose player is standing still: they stay where
-  // they are, they can still be cut down — a body left standing in the middle
-  // of a brawl is fair game, and taking it off the board would rescue whoever
-  // was losing to it — and nothing on screen says otherwise.
-  //
-  // To bring it back: `implements GameSim, PlayerPresence` on the class, the
-  // `_away` set, `map['away_$key'] = _away.contains(f.phoneId)` in
-  // [sharedState], and the grey body in `ArenaView`, which is commented there
-  // for the same reason.
-  //
-  // @override
-  // void onPlayerLeft(String phoneId) {
-  //   _away.add(phoneId);
-  //   // Their hands are off the glass, so nothing should still be held down.
-  //   final f = _fighterOf(phoneId);
-  //   if (f == null) return;
-  //   f
-  //     ..moveAngle = null
-  //     ..touchDown = false
-  //     ..touchMoved = false
-  //     ..touchHeldTime = 0;
-  //   if (f.blocking) _endBlock(f);
-  // }
-  //
-  // @override
-  // void onPlayerReturned(String phoneId) => _away.remove(phoneId);
-
-  // -- input ------------------------------------------------------------------
 
   @override
   void onTouch(TouchEvent touch) {

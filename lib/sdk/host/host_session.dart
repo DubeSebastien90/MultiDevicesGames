@@ -159,13 +159,6 @@ class HostSession extends ChangeNotifier {
        _premium = premium,
        _random = random ?? Random();
 
-  // JOIN CODE DISABLED — the lockout only means something with a code to get
-  // wrong.
-  //
-  // /// A stranger gets this many wrong guesses before we stop answering them.
-  // static const int _maxWrongGuesses = 5;
-  // static const Duration _lockout = Duration(seconds: 30);
-
   static const Duration _joinDeadline = Duration(seconds: 15);
 
   /// Builds the round's sim in place of the game's own `createSim`, for a test
@@ -218,9 +211,6 @@ class HostSession extends ChangeNotifier {
   final _phones = <PhoneRecord>[];
   final _subs = <StreamSubscription<dynamic>>[];
   final _pending = <PhoneRecord, Timer>{};
-  // JOIN CODE DISABLED
-  // final _wrongGuesses = <String, int>{};
-  // final _lockedOut = <String, DateTime>{};
 
   /// The session standings, shared by every game.
   final scores = Scoreboard();
@@ -619,12 +609,10 @@ class HostSession extends ChangeNotifier {
       return record;
     }
 
-    // Still worth waiting on with the code gate open: the join message is also
-    // what carries the app fingerprint, so a peer that never sends one has not
-    // proved it can render this build.
+    // The join message carries the app fingerprint, so a peer that never
+    // sends one has not proved it can render this build.
     _pending[record] = Timer(_joinDeadline, () {
       if (_pending.remove(record) != null) {
-        // JOIN CODE DISABLED — was 'No join code was sent.'
         _reject(link, 'That phone never finished joining.');
       }
     });
@@ -648,11 +636,9 @@ class HostSession extends ChangeNotifier {
       return;
     }
 
-    // JOIN CODE DISABLED — anyone on this WiFi who finds the beacon is let in.
-    // The code is still generated, still sent by clients and still in the QR;
-    // it is simply not checked. To bring the door policy back, delete the
-    // `_admit` below and uncomment the block under it, then the four other
-    // `JOIN CODE DISABLED` markers (`grep -rn "JOIN CODE DISABLED"`).
+    // There is deliberately no join-code check: anyone on this WiFi who finds
+    // the beacon is let in. The code is still generated, still sent and still
+    // in the QR, just never verified. The gate is in git history.
     final deviceId = msg['deviceId'] as String?;
 
     // The door policy for a round already under way: your own seat, or nothing.
@@ -689,37 +675,7 @@ class HostSession extends ChangeNotifier {
       deviceId: deviceId,
       preferredColor: PlayerPalette.byId(msg['preferredColor'] as String?),
     );
-
-    // final offered = (msg['code'] as String?)?.trim() ?? '';
-    // if (_codeMatches(offered)) {
-    //   _wrongGuesses.remove(record.link.debugName);
-    //   _admit(record);
-    //   return;
-    // }
-    //
-    // final remote = record.link.debugName;
-    // final wrong = (_wrongGuesses[remote] ?? 0) + 1;
-    // _wrongGuesses[remote] = wrong;
-    // if (wrong >= _maxWrongGuesses) {
-    //   _lockedOut[remote] = DateTime.now().add(_lockout);
-    //   _wrongGuesses.remove(remote);
-    // }
-    // _reject(record.link, 'Wrong code.');
   }
-
-  // JOIN CODE DISABLED — unused while the gate is open, so it is commented out
-  // rather than left to trip the analyzer.
-  //
-  // /// Constant-time-ish compare. The timing of a 5-digit string comparison is
-  // /// not a realistic attack over WiFi, but there is no reason to leak it.
-  // bool _codeMatches(String offered) {
-  //   if (offered.length != _joinCode.length) return false;
-  //   var diff = 0;
-  //   for (var i = 0; i < offered.length; i++) {
-  //     diff |= offered.codeUnitAt(i) ^ _joinCode.codeUnitAt(i);
-  //   }
-  //   return diff == 0;
-  // }
 
   /// The seat this device left behind, if it is empty and waiting.
   ///

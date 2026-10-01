@@ -19,16 +19,6 @@ import 'lightsaber_art.dart';
 /// of a decision taken elsewhere — and the blade now does both jobs honestly:
 /// where it is *is* what it can reach, and a blade held across the body is what
 /// a raised guard looks like.
-// Kept as reference, not used: the sim no longer tracks who has dropped out.
-// See the commented presence block in `ArenaSim`.
-//
-// /// The same colour drained of it: kept dark enough to read against the
-// /// floor, light enough to see the fighter is still standing there.
-// Color _greyed(Color c) {
-//   final grey = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) * 0.7;
-//   return Color.from(alpha: c.a, red: grey, green: grey, blue: grey);
-// }
-
 class ArenaView extends GameView {
   ArenaView({
     required this.phoneId,
@@ -182,12 +172,6 @@ class ArenaView extends GameView {
 
       // A fighter with no seat at the roster has no platform colour to ask a
       // character for, so they stay the sim's own circle.
-      //
-      // A player who had dropped out used to go grey here — still there, still
-      // hittable, plainly nobody home. Kept as reference, not implemented:
-      //
-      // final away = frame.sharedState['away_p${e.propInt('index', 0)}'] == true;
-      // final body = away ? _greyed(color) : color;
       final seated = roster.byPhone(e.props['phoneId'] as String? ?? '');
       if (seated == null) {
         _fill.color = isStunned ? color.withAlpha(140) : color;
