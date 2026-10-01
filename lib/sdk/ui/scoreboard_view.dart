@@ -6,22 +6,6 @@ import '../render/player_animation.dart';
 import '../score/scoreboard.dart';
 import 'sticker/sticker.dart';
 
-/// The end of the run: who won the whole evening.
-///
-/// The results screen after each round answers "what just happened". This one
-/// answers the only question left once the playlist is spent — and it is a
-/// different question, so it gets its own screen rather than a bigger card at
-/// the bottom of the last round's.
-///
-/// Every phone shows it at once, because the standings belong to the table
-/// rather than to the device running the session. Only the host is given a way
-/// off it: the way out is the same as everywhere else, one person deciding for
-/// the room.
-///
-/// On the podium the characters face the table: whoever came first cheers and
-/// the other two do not. Down the list they run on the spot, the same walk they
-/// did round the boards all evening. Where Rive cannot run, they stand still
-/// as [PlayerArt] pictures, which is what [PlayerAnimations.noneFor] draws.
 class ScoreboardView extends StatefulWidget {
   const ScoreboardView({
     super.key,
@@ -35,19 +19,12 @@ class ScoreboardView extends StatefulWidget {
   final ScoreView scores;
   final String? meId;
 
-  /// Each phone's character, so a row is recognisable to somebody who has spent
-  /// the evening being the frog. Missing entries simply get no portrait.
   final Map<String, PlayerColor?> colors;
 
-  /// Phones the session remembers that are not here any more. They keep their
-  /// place — they played for it — and the row says where they went.
   final Set<String> offline;
 
-  /// Wind the session back to the lobby, or null on a phone that cannot.
   final VoidCallback? onBackToLobby;
 
-  /// The standings list, for tests that need to look inside it rather than at
-  /// the podium above, which repeats the top three.
   static const listKey = ValueKey('scoreboard-list');
 
   @override
@@ -56,20 +33,15 @@ class ScoreboardView extends StatefulWidget {
 
 class _ScoreboardViewState extends State<ScoreboardView>
     with SingleTickerProviderStateMixin {
-  /// Still pictures until the files have loaded, then a cast per motion.
   Map<PlayerMotion, PlayerAnimations> _casts = {
     for (final motion in PlayerMotion.values)
       motion: PlayerAnimations.noneFor(motion),
   };
 
-  /// The colour ids [_casts] were loaded for, to notice a new one arriving.
   Set<String> _castIds = const {};
 
-  /// Bumped to drop a load that finished after a newer one was asked for.
   int _loadGen = 0;
 
-  /// Every runner on the screen paints off this one clock, so a character
-  /// drawn twice — on the podium and in the list — advances once per frame.
   final _clock = _RunClock();
   late final Ticker _ticker = createTicker(_clock.tick);
 
@@ -108,7 +80,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
     super.dispose();
   }
 
-  /// Every colour a runner on this screen will wear, by id.
   Map<String, PlayerColor> _wantedColors() {
     final wanted = <String, PlayerColor>{};
     for (final e in widget.scores.ranked) {
@@ -144,10 +115,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
     }
   }
 
-  /// Somebody who is not here is the grey character, whatever colour they
-  /// last wore: between rounds that colour has gone back to the palette and
-  /// may be on somebody else by now, and mid-round it is only being kept for
-  /// the game's sake.
   PlayerColor? _artFor(String phoneId) => widget.offline.contains(phoneId)
       ? PlayerPalette.away
       : widget.colors[phoneId];
@@ -159,8 +126,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
       animation: _casts[motion]!.of(color)..start(),
       clock: _clock,
       size: size,
-      // A runner is drawn from above, so it is turned to run down the screen,
-      // at whoever is holding the phone. The podium is already facing them.
       angle: motion == PlayerMotion.run ? 1.5707963267948966 : 0,
     );
   }
@@ -170,8 +135,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
     final scores = widget.scores;
     final ranked = scores.ranked;
 
-    // Ties share a place, so two people level on 40 are both second rather than
-    // one of them being told they came third by the order of a list.
     final places = _places(ranked);
 
     return StickerPage(
@@ -195,9 +158,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 18),
-
-              // A podium means nothing on a board nobody scored on: there is
-              // no order to stand anyone in.
               if (scores.isUsed && ranked.isNotEmpty) ...[
                 _Podium(
                   entries: ranked.take(3).toList(),
@@ -208,12 +168,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
                 ),
                 const SizedBox(height: 22),
               ],
-
-              // Deliberately not a [StandingsCard]: that one draws nothing at
-              // all until somebody scores, which is right where it sits —
-              // beside other things — and wrong here, where it is the whole
-              // screen. A co-operative run that ended level still has to show
-              // the table its own names.
               StickerCard(
                 key: ScoreboardView.listKey,
                 padding: const EdgeInsets.all(10),
@@ -231,13 +185,11 @@ class _ScoreboardViewState extends State<ScoreboardView>
                           _Row._art,
                           PlayerMotion.run,
                         ),
-                        // Medals mean nothing on a board nobody scored on.
                         medals: scores.isUsed,
                       ),
                   ],
                 ),
               ),
-
               const SizedBox(height: 26),
               if (widget.onBackToLobby != null)
                 StickerWideButton(
@@ -250,8 +202,6 @@ class _ScoreboardViewState extends State<ScoreboardView>
                   fontSize: 24,
                 )
               else
-                // Something to look at, so a phone with no button does not
-                // read as a phone that has frozen.
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -270,18 +220,15 @@ class _ScoreboardViewState extends State<ScoreboardView>
     );
   }
 
-  /// The one line worth reading from across the table.
   static String _headline(ScoreView scores, String? meId) {
     if (!scores.isUsed) return 'That is the lot';
 
     final winner = scores.leader;
-    // Null means the top two are level. Naming one of them would be a lie, and
-    // naming neither is the actual result.
+
     if (winner == null) return 'It is a tie!';
     return winner.phoneId == meId ? 'You win!' : '${winner.label} wins!';
   }
 
-  /// Standard competition ranking: 1, 2, 2, 4.
   static List<int> _places(List<ScoreEntry> ranked) {
     final places = <int>[];
     for (var i = 0; i < ranked.length; i++) {
@@ -295,19 +242,14 @@ class _ScoreboardViewState extends State<ScoreboardView>
   }
 }
 
-/// Gold, silver, bronze. Fixed rather than themed: a medal that changes colour
-/// with the theme is not a medal.
 const _medal = <int, Color>{1: St.gold, 2: St.silver, 3: St.bronze};
 
-/// The same three, dark enough to be read as numbers on a white block.
 const _medalText = <int, Color>{
   1: Color(0xFFE0A800),
   2: Color(0xFF9A9A9A),
   3: St.bronze,
 };
 
-/// The top three on their blocks: second on the left, first raised in the
-/// middle, third on the right.
 class _Podium extends StatelessWidget {
   const _Podium({
     required this.entries,
@@ -324,29 +266,18 @@ class _Podium extends StatelessWidget {
   final Widget? Function(String phoneId, double size, PlayerMotion motion)
   runner;
 
-  /// Block heights by podium slot — first, second, third.
   static const _heights = [124.0, 96.0, 80.0];
 
-  /// The winner's block a little wider, as drawn.
   static int _flex(int slot) => slot == 0 ? 11 : 10;
 
-  /// How much of its block's width each character fills, by slot. The podium
-  /// is what this screen is for, so the characters are sized off the blocks
-  /// rather than fixed: a fixed size that looked right on one phone left the
-  /// cheering too small to read on the rest. Second and third a little under
-  /// their blocks, so the step down in place is also a step down in size.
   static const _fills = [1.0, .86, .8];
 
   @override
   Widget build(BuildContext context) {
-    // Left to right: second, first, third. Fewer than three players leaves
-    // the missing blocks out rather than drawing an empty step.
     final order = [1, 0, 2].where((i) => i < entries.length).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Sized as if all three blocks were there, so one or two players get
-        // the same characters as three rather than giants a block wide.
         final unit = constraints.maxWidth / (_flex(0) + _flex(1) + _flex(2));
         double art(int slot) => unit * _flex(slot) * _fills[slot];
         return Row(
@@ -362,9 +293,6 @@ class _Podium extends StatelessWidget {
                   me: entries[i].phoneId == meId,
                   away: offline.contains(entries[i].phoneId),
                   art: art(i),
-                  // Everybody in first place cheers, so a tie at the top is
-                  // two winners rather than one of them told off by list
-                  // order.
                   runner: runner(
                     entries[i].phoneId,
                     art(i),
@@ -393,12 +321,10 @@ class _Step extends StatelessWidget {
   final ScoreEntry entry;
   final int place;
 
-  /// 0 for the middle block, 1 left, 2 right.
   final int slot;
   final bool me;
   final bool away;
 
-  /// The side of the square the character stands in.
   final double art;
   final Widget? runner;
 
@@ -423,8 +349,6 @@ class _Step extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        // One stack round the character and the block, so the YOU tag is
-        // painted over the block's top edge rather than tucked under it.
         Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.topCenter,
@@ -511,8 +435,6 @@ class _Row extends StatelessWidget {
   final Widget? runner;
   final bool medals;
 
-  /// The character, running, where a ten-pixel dot of their colour used to
-  /// be — the same walk they have been doing round the board all evening.
   static const _art = 36.0;
 
   static const _awayText = Color(0xFF999999);
@@ -587,14 +509,9 @@ class _Row extends StatelessWidget {
   }
 }
 
-/// The screen's one clock: a frame counter every runner repaints off, and the
-/// per-character bookkeeping that keeps a character shown twice from walking
-/// at double speed.
 class _RunClock extends ChangeNotifier {
   Duration _now = Duration.zero;
 
-  /// When each character was last advanced to, so the second picture of it in
-  /// the same frame draws with no time passed.
   final _advancedTo = Expando<Duration>();
 
   void tick(Duration elapsed) {
@@ -602,8 +519,6 @@ class _RunClock extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Seconds [animation] has to catch up by this frame — once per frame,
-  /// however many times it is drawn.
   double dtFor(PlayerAnimation animation) {
     final last = _advancedTo[animation];
     _advancedTo[animation] = _now;
@@ -612,7 +527,6 @@ class _RunClock extends ChangeNotifier {
   }
 }
 
-/// One character looping on the spot, facing the reader.
 class _Runner extends StatelessWidget {
   const _Runner({
     required this.animation,

@@ -18,15 +18,8 @@ import 'join_sheet.dart';
 import 'sticker/sticker.dart';
 import 'settings_screen.dart';
 
-/// The longest a board may be called, typed or generated.
-///
-/// A board's name is read off a header on every phone at the table and off the
-/// join list on phones that have not arrived yet. Past this it stops being a
-/// name and starts being a paragraph — and the header answers a long one by
-/// setting it smaller, which only works while "long" has an end.
 const int kBoardNameMaxLength = 25;
 
-/// Pick a role. One app, two jobs: run the world, or be a window onto it.
 class RoleScreen extends StatefulWidget {
   const RoleScreen({
     super.key,
@@ -36,13 +29,6 @@ class RoleScreen extends StatefulWidget {
 
   final AppController controller;
 
-  /// Decides whether the two names on this screen are typed or issued.
-  ///
-  /// Required and non-nullable on purpose. Both names leave the phone in clear
-  /// — the player name rides along in [DeviceMetrics], and the game name goes
-  /// out on the discovery beacon to everything on the network — so this screen
-  /// should be impossible to construct without having settled the question
-  /// first. [AgeGate] is the only thing that answers it.
   final AgeBand ageBand;
 
   @override
@@ -79,17 +65,9 @@ class _RoleScreenState extends State<RoleScreen> {
   Future<void> _loadSavedPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    // Nobody arrives without a name. A blank field is a small wall between
-    // opening the app and playing, and "phone" in the standings tells the table
-    // nothing — so one is picked and written down on the first run, and anyone
-    // who dislikes theirs types over it.
+
     final saved = prefs.getString(_kNameKey);
 
-    // A child keeps a stored name only if the app is the one that made it up.
-    // The check runs on every load rather than once at the gate, because a
-    // typed name can predate the gate — an install from before this existed, or
-    // a phone an adult set up and handed over. Either way the name is replaced
-    // here, before anything has had a chance to put it on the wire.
     final usable =
         saved != null &&
         saved.isNotEmpty &&
@@ -120,7 +98,6 @@ class _RoleScreenState extends State<RoleScreen> {
     });
   }
 
-  /// Another name from the hat, saved and shown as if it had been typed.
   void _rollName() {
     final name = PlayerNames.random();
     _nameController
@@ -130,8 +107,6 @@ class _RoleScreenState extends State<RoleScreen> {
   }
 
   void _onNameChanged(String name) {
-    // Only ever reached from the text field, which a child does not get, or
-    // from the dice, which can only produce names off the fixed lists.
     SharedPreferences.getInstance().then((p) => p.setString(_kNameKey, name));
     final label = name.trim().isEmpty ? 'phone' : name.trim();
     setState(() => _metrics = _metrics?.copyWith(label: label));
@@ -155,12 +130,8 @@ class _RoleScreenState extends State<RoleScreen> {
     final view = View.of(context);
     final px = view.physicalSize;
 
-    // The app is locked portrait, so the short edge is the width. Taking the
-    // min and max rather than the raw values survives being measured a frame
-    // before that lock lands.
     _surfaceIsLandscape = px.width > px.height;
 
-    // Immediate Flutter density-bucket estimate so the screen is never blank.
     _metrics ??= DeviceMetrics.estimate(
       physicalPx: Size(
         math.min(px.width, px.height),
@@ -170,8 +141,6 @@ class _RoleScreenState extends State<RoleScreen> {
       platform: defaultTargetPlatform,
     );
 
-    // Then attempt a one-shot native refinement (Android xdpi/ydpi or iOS
-    // model-lookup). Falls back to the Flutter estimate silently on failure.
     if (!_nativeDone) {
       _nativeDone = true;
       _refineWithNative(view.physicalSize, view.devicePixelRatio);
@@ -186,8 +155,6 @@ class _RoleScreenState extends State<RoleScreen> {
     );
     if (!mounted) return;
     setState(() {
-      // If the user has already calibrated this screen, keep their mm values
-      // and only take the pixel dimensions and DPR from native detection.
       _metrics = _hasSavedScreenSize
           ? refined.copyWith(
               widthMm: _metrics?.widthMm,
@@ -207,12 +174,6 @@ class _RoleScreenState extends State<RoleScreen> {
     return name.isEmpty ? 'phone' : name;
   }
 
-  /// Debug-only: forgets what this phone has been asked, so both questions
-  /// come back.
-  ///
-  /// The two answers come back at different moments, and the message says so:
-  /// [NameDropGate] asks on the way into the next lobby, while the age gate is
-  /// read once at launch and so cannot ask again until the app is restarted.
   Future<void> _reloadAskedState() async {
     await NameDropPref.save(NameDropStatus.waiting);
     await AgeGatePref.debugForget();
@@ -240,17 +201,10 @@ class _RoleScreenState extends State<RoleScreen> {
     );
   }
 
-  /// What the game is called before anyone renames it.
-  ///
-  /// Derived from the player name rather than being a fixed string: a join list
-  /// showing three separate entries called "My board" is a coin toss, and the
-  /// person hosting is the one thing everyone at the table can already identify.
-  /// It also means a child's board is named after a made-up animal for free.
   String _defaultBoardName() {
     const suffix = "'s board";
     final label = _currentLabel();
-    // Trim the name rather than the shape: cutting the whole string at 25
-    // would leave boards called "Bartholomew's bo", which reads as a bug.
+
     final room = kBoardNameMaxLength - suffix.length;
     final short = label.length > room ? label.substring(0, room) : label;
     return '$short$suffix';
@@ -259,14 +213,8 @@ class _RoleScreenState extends State<RoleScreen> {
   Future<void> _host() async {
     final name = await showStickerSheet<String>(
       context,
-      builder: (_) => _NameDialog(
-        initialName: _defaultBoardName(),
-        // This name goes out on the beacon, unencrypted, to every device on the
-        // network — it is the more exposed of the two fields on this screen,
-        // not the less. Locking the player name and leaving this one open would
-        // move the problem rather than solve it.
-        locked: _isChild,
-      ),
+      builder: (_) =>
+          _NameDialog(initialName: _defaultBoardName(), locked: _isChild),
     );
     if (name == null || !mounted) return;
     await widget.controller.startHost(_metrics!, name: name);
@@ -298,12 +246,6 @@ class _RoleScreenState extends State<RoleScreen> {
       body: StickerBackground(
         shapes: homeShapes,
         child: SafeArea(
-          // Scrolls only when it has to — a small phone, big system type, the
-          // keyboard up — and otherwise fills the screen with the title taking
-          // whatever height the controls leave, as drawn.
-          //
-          // Not primary: on iOS a primary scroll view always bounces, even
-          // with nothing to scroll, and the whole page moved under a finger.
           child: CustomScrollView(
             primary: false,
             slivers: [
@@ -344,7 +286,6 @@ class _RoleScreenState extends State<RoleScreen> {
     );
   }
 
-  /// Pinned to the top corner rather than riding the centred content.
   Widget _gear() => Align(
     alignment: Alignment.centerRight,
     child: StickerButton(
@@ -358,15 +299,10 @@ class _RoleScreenState extends State<RoleScreen> {
   );
 
   Widget _nameField() {
-    // A child gets the name as a fact rather than a field: not a read-only
-    // TextField, which still draws a box that asks to be tapped and reads as
-    // broken when tapping does nothing.
     return _NamePill(
       controller: _isChild ? null : _nameController,
       name: _nameController.text,
       onChanged: _onNameChanged,
-      // Rolling for another is quicker than thinking of one, and quicker still
-      // than typing it on a phone.
       onRoll: _rollName,
     );
   }
@@ -396,8 +332,6 @@ class _RoleScreenState extends State<RoleScreen> {
 
   List<Widget> _actions() {
     if (widget.controller.busy) {
-      // The height of the two buttons it stands in for, so nothing above it
-      // jumps while a lobby is opening.
       return const [
         SizedBox(
           height: 204,
@@ -410,7 +344,7 @@ class _RoleScreenState extends State<RoleScreen> {
         ),
       ];
     }
-    // Nothing can start until this screen knows how big it is.
+
     final ready = _metrics != null;
     return [
       _BigAction(
@@ -431,8 +365,6 @@ class _RoleScreenState extends State<RoleScreen> {
     ];
   }
 
-  /// A hidden reset so testing the two gates repeatedly doesn't mean
-  /// reinstalling.
   Widget _debugReload() => Padding(
     padding: const EdgeInsets.only(top: 14),
     child: Center(
@@ -446,9 +378,6 @@ class _RoleScreenState extends State<RoleScreen> {
   );
 }
 
-/// "BUBBLE" as six letter stickers, bobbing, over "GAMES!".
-///
-/// Read as one name by a screen reader rather than as seven stray letters.
 class _BubbleTitle extends StatelessWidget {
   const _BubbleTitle();
 
@@ -468,8 +397,6 @@ class _BubbleTitle extends StatelessWidget {
     header: true,
     label: 'Bubble Games',
     excludeSemantics: true,
-    // Scaled down, never up: the letters are drawn at the size the design
-    // wants and only give ground to a narrow phone or a short one.
     child: FittedBox(
       fit: BoxFit.scaleDown,
       child: Column(
@@ -504,12 +431,6 @@ class _BubbleTitle extends StatelessWidget {
   );
 }
 
-/// One letter of the title — and a small secret: tap it and its sticker turns
-/// into another shape, squashing and popping as it goes.
-///
-/// Rounded square, circle, triangle or hexagon, picked at random — never the
-/// one it already is. Nothing marks it as tappable; it is there for whoever
-/// prods the title while waiting.
 class _MorphLetter extends StatefulWidget {
   const _MorphLetter({required this.letter, required this.color});
 
@@ -527,14 +448,12 @@ class _MorphLetterState extends State<_MorphLetter>
     duration: const Duration(milliseconds: 560),
   );
 
-  /// The shape being left and the shape being become.
   _LetterShape _from = _LetterShape.square;
   _LetterShape _to = _LetterShape.square;
 
   static final _dice = math.Random();
 
   void _tap() {
-    // Any shape but the one it already is, so every tap visibly changes it.
     final others = [
       for (final shape in _LetterShape.values)
         if (shape != _to) shape,
@@ -564,12 +483,11 @@ class _MorphLetterState extends State<_MorphLetter>
         animation: _morph,
         builder: (context, child) {
           final t = _morph.value;
-          // Squash on the way down, overshoot on the way up, settle: the
-          // letter ducks into the change and bounces out of it.
+
           final pop = t < .25
               ? 1 - .22 * Curves.easeOut.transform(t / .25)
               : .78 + .22 * Curves.elasticOut.transform((t - .25) / .75);
-          // And a small wobble, gone by the time it settles.
+
           final wobble = math.sin(t * math.pi * 3) * (1 - t) * .18;
           return Transform.rotate(
             angle: wobble,
@@ -601,12 +519,6 @@ class _MorphLetterState extends State<_MorphLetter>
 
 enum _LetterShape { square, circle, triangle, hexagon }
 
-/// The letter's sticker: fill, 3px ink outline, hard shadow — the same recipe
-/// as [St.sticker], drawn as a path so it can change shape.
-///
-/// Every shape is described the same way — how far its edge is from the centre
-/// in each direction — so two of them blend by mixing those distances, and the
-/// outline flows from one into the other instead of cross-fading.
 class _LetterShapePainter extends CustomPainter {
   _LetterShapePainter({
     required this.from,
@@ -618,8 +530,6 @@ class _LetterShapePainter extends CustomPainter {
   final _LetterShape from;
   final _LetterShape to;
 
-  /// 0 is [from], 1 is [to]; a little either side of that while it
-  /// overshoots.
   final double t;
   final Color color;
 
@@ -664,17 +574,11 @@ class _LetterShapePainter extends CustomPainter {
     );
   }
 
-  /// How far [shape]'s outline is from the centre along [theta], for a letter
-  /// box of half-size [hx] by [hy].
-  ///
-  /// The shapes other than the square are sized to keep the letter inside
-  /// them, which is why the triangle is so much bigger than the box.
   static double _reach(_LetterShape shape, double theta, double hx, double hy) {
     final big = math.max(hx, hy);
     return switch (shape) {
       _LetterShape.square => _roundedRect(theta, hx, hy, _radius),
       _LetterShape.circle => big * 1.06,
-      // Point up.
       _LetterShape.triangle => _polygon(
         theta,
         3,
@@ -682,17 +586,10 @@ class _LetterShapePainter extends CustomPainter {
         big * 1.6,
         big * 0.32,
       ),
-      // Flat top and bottom.
       _LetterShape.hexagon => _polygon(theta, 6, 0, big * 1.12, big * 0.2),
     };
   }
 
-  /// A regular [sides]-gon with a vertex at [start] and circumradius [r],
-  /// its corners rounded off to radius [rc].
-  ///
-  /// The sides stay where the sharp polygon's were; only the corners are cut.
-  /// That shape is a smaller polygon grown by [rc] all round, so a ray either
-  /// meets one of its flat sides or one of the corner circles.
   static double _polygon(
     double theta,
     int sides,
@@ -702,11 +599,11 @@ class _LetterShapePainter extends CustomPainter {
   ) {
     final wedge = 2 * math.pi / sides;
     final half = wedge / 2;
-    // The angle from the middle of the nearest side, in -half..half.
+
     final local = ((theta - start) % wedge + wedge) % wedge - half;
 
     final apothem = r * math.cos(half);
-    // The inner polygon whose corners are the rounding circles' centres.
+
     final inner = r - rc / math.cos(half);
 
     final c = math.cos(local);
@@ -715,14 +612,12 @@ class _LetterShapePainter extends CustomPainter {
     final corner = inner * math.sin(half);
     if ((t * s).abs() <= corner) return t;
 
-    // Past the flat part: meet the corner circle on that side.
     final vx = inner * math.cos(half);
     final vy = s < 0 ? -corner : corner;
     final dot = c * vx + s * vy;
     return dot + math.sqrt(dot * dot - (vx * vx + vy * vy) + rc * rc);
   }
 
-  /// Where a ray from the centre leaves a rounded rectangle.
   static double _roundedRect(double theta, double hx, double hy, double rc) {
     final c = math.cos(theta).abs();
     final s = math.sin(theta).abs();
@@ -731,7 +626,7 @@ class _LetterShapePainter extends CustomPainter {
       s < 1e-9 ? double.infinity : hy / s,
     );
     if (c * t <= hx - rc || s * t <= hy - rc) return t;
-    // Inside a corner: meet the corner's circle instead.
+
     final cx = hx - rc;
     final cy = hy - rc;
     final dot = c * cx + s * cy;
@@ -743,14 +638,6 @@ class _LetterShapePainter extends CustomPainter {
       old.from != from || old.to != to || old.t != t || old.color != color;
 }
 
-/// The player's name on a white pill, with the dice beside it.
-///
-/// Given a [controller] it is a field an adult can type into. Without one it
-/// is the name as a fact: everything a child can do here produces a name off
-/// [PlayerNames]'s two fixed lists, so there is no path from this widget to a
-/// string that means anything about the person holding the phone. Which is the
-/// entire point: the name goes out over the LAN either way, and nine hundred
-/// combinations of adjective and animal are plenty to tell six phones apart.
 class _NamePill extends StatefulWidget {
   const _NamePill({
     required this.controller,
@@ -769,8 +656,6 @@ class _NamePill extends StatefulWidget {
 }
 
 class _NamePillState extends State<_NamePill> {
-  /// Whole turns of the dice, so each roll spins it once more rather than
-  /// back to where it started.
   double _turns = 0;
 
   void _roll() {
@@ -841,8 +726,6 @@ class _NamePillState extends State<_NamePill> {
   }
 }
 
-/// Create a Lobby / Join a Lobby: a tall tilted sticker with a white disc for
-/// the icon.
 class _BigAction extends StatelessWidget {
   const _BigAction({
     required this.label,
@@ -895,14 +778,6 @@ class _BigAction extends StatelessWidget {
   );
 }
 
-/// Names the game. This name is what friends look for in their join list, so
-/// it is the one thing worth asking before the lobby opens.
-///
-/// [locked] turns the field into a label. The name typed here is put on a UDP
-/// beacon in clear, to the whole subnet, by a device whose owner is a child —
-/// so on that path there is nothing to type and nothing to submit but the name
-/// the app already chose. The sheet still opens rather than being skipped:
-/// being shown what the rest of the network is about to be told is worth a tap.
 class _NameDialog extends StatefulWidget {
   const _NameDialog({required this.initialName, this.locked = false});
 
@@ -919,8 +794,7 @@ class _NameDialogState extends State<_NameDialog> {
   @override
   void initState() {
     super.initState();
-    // Selected, not just filled in. The default is a suggestion, and the first
-    // keystroke should replace it rather than land in the middle of it.
+
     _controller.selection = TextSelection(
       baseOffset: 0,
       extentOffset: _controller.text.length,

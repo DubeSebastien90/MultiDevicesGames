@@ -8,12 +8,6 @@ import '../contract/game.dart';
 import '../ui/sticker/sticker.dart';
 import 'premium_status.dart';
 
-/// Opens the paywall as a sheet over whatever locked something the tap.
-///
-/// [game] is the title of the Premium game that was tapped, if one was. The
-/// sheet leads with it, so it answers the question the tap actually asked —
-/// "unlock Hot Potato" reads differently from "unlock the game list" even
-/// though both end at the same purchase.
 Future<void> showPaywall(
   BuildContext context,
   PremiumStatus premium, {
@@ -28,13 +22,6 @@ Future<void> showPaywall(
   ),
 );
 
-/// The pitch, the price, and the button. Everything a host needs to decide,
-/// nothing they have to scroll a store page to find.
-///
-/// Framed around the table rather than the phone: a host who buys Premium is
-/// not buying something for themselves, they are buying the rest of the
-/// catalogue for everyone who scans in tonight — so the copy says "your whole
-/// party", not "you".
 class PaywallSheet extends StatefulWidget {
   const PaywallSheet({super.key, required this.premium, this.game});
 
@@ -51,9 +38,6 @@ class _PaywallSheetState extends State<PaywallSheet> {
   bool _purchasing = false;
   String? _error;
 
-  /// Kept apart from [_error]: that one belongs to the offer and the buy
-  /// button, and a restore failing must not take over the place where the
-  /// price would be.
   String? _restoreError;
 
   @override
@@ -63,10 +47,6 @@ class _PaywallSheetState extends State<PaywallSheet> {
   }
 
   Future<void> _loadOfferings() async {
-    // The native SDK crashes rather than throwing a catchable error when
-    // asked for anything before [Purchases.configure] has succeeded — this
-    // sheet can be reached even when it never did (missing API key, or the
-    // store timing out at launch), so it must check before calling in.
     if (!widget.premium.isConfigured) {
       setState(() {
         _error = widget.premium.error ?? "Couldn't reach the store.";
@@ -93,10 +73,7 @@ class _PaywallSheetState extends State<PaywallSheet> {
   Package? get _lifetimePackage {
     final current = _offerings?.current;
     if (current == null) return null;
-    // Lifetime is a non-consumable, so RevenueCat surfaces it as the
-    // "lifetime" package type on whichever offering is marked current in the
-    // dashboard — no product identifier hardcoded here, so renaming the
-    // product in App Store Connect never breaks this screen.
+
     for (final pkg in current.availablePackages) {
       if (pkg.packageType == PackageType.lifetime) return pkg;
     }
@@ -185,8 +162,6 @@ class _PaywallSheetState extends State<PaywallSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // What the money buys: every Premium game, and the right to
-                // choose the lineup at all.
                 Wrap(
                   alignment: WrapAlignment.center,
                   spacing: 6,
@@ -316,11 +291,9 @@ class _PaywallSheetState extends State<PaywallSheet> {
 
   static const _grey = Color(0xFF555555);
 
-  /// Bad news in the back button's red — plainly not the colour of the rest.
   static final _troubleStyle = St.body(14, color: St.back);
 }
 
-/// The purple band: the crown wiggling, the headline, and why it opened.
 class _Header extends StatelessWidget {
   const _Header({required this.line});
 
@@ -384,7 +357,6 @@ class _Header extends StatelessWidget {
   );
 }
 
-/// One thing Premium buys, as a lilac pill.
 class _Chip extends StatelessWidget {
   const _Chip({required this.icon, required this.label});
 
@@ -410,9 +382,6 @@ class _Chip extends StatelessWidget {
   );
 }
 
-/// The store's own price, on a gold sticker. Never a number of our own: the
-/// store localises it, and a hardcoded "€3.99" is wrong in every other
-/// country.
 class _PriceSticker extends StatelessWidget {
   const _PriceSticker({required this.price});
 

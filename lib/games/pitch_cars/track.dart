@@ -6,19 +6,12 @@ import '../../sdk/model/world_rect.dart';
 import 'pitch_cars_config.dart';
 import 'pitch_cars_scale.dart';
 
-/// A point on a track's centerline, in world units.
 class Waypoint {
   const Waypoint(this.x, this.y);
   final double x;
   final double y;
 }
 
-/// A racing line: a centerline with a fixed width, either open (a line, run
-/// once from start to finish) or closed (a loop, one lap back to the start).
-///
-/// Anything beyond `widthWorld / 2` from the centerline is dead space a car
-/// can fall into — this is the game's own analogue of the platform's
-/// `CoverageMap`, deliberately kept independent of it.
 class PitchTrack {
   PitchTrack({
     required this.waypoints,
@@ -46,28 +39,10 @@ class PitchTrack {
     return cum;
   }
 
-  /// Total length of the centerline — the finish distance for a line, one
-  /// full circuit for a loop.
   double get length => _cumulative.last;
 
-  /// The exact point sequence every question about the track is answered
-  /// against — the one [lateralDistance], [isOnTrack] and [progressAt] walk,
-  /// with a closed track's wrap-around segment already in it.
-  ///
-  /// Handed out so that whatever draws the road draws *this*, rather than
-  /// rebuilding `closed ? [...waypoints, first] : waypoints` beside it and
-  /// hoping the two stay in step. They did not: the renderer used to emit a
-  /// rectangle per segment, which is not the shape [isOnTrack] tests for, and
-  /// the picture disagreed with the physics at every bend and both ends.
-  ///
-  /// The shape that *is* [isOnTrack] is this polyline stroked to
-  /// [widthWorld] with round caps and round joins: the set of points within
-  /// half a width of a polyline is exactly its Minkowski sum with a disc of
-  /// that radius, which is what such a stroke draws.
   late final List<Waypoint> collisionOutline = List.unmodifiable(_points);
 
-  /// Perpendicular distance from (x, y) to the nearest point on the
-  /// centerline.
   double lateralDistance(double x, double y) {
     var best = double.infinity;
     for (var i = 0; i < _points.length - 1; i++) {
@@ -79,13 +54,6 @@ class PitchTrack {
 
   bool isOnTrack(double x, double y) => lateralDistance(x, y) <= widthWorld / 2;
 
-  /// Arclength of the point on the centerline nearest to (x, y), from 0 at
-  /// the start up to [length].
-  ///
-  /// This is a *positional* projection: on a closed track it cannot tell
-  /// "still at the start" from "just completed a lap". Callers that need
-  /// monotonic lap progress must unwrap it themselves against the previous
-  /// reading (see `PitchCarsSim._updateProgress`).
   double progressAt(double x, double y) {
     var best = double.infinity;
     var bestArc = 0.0;
@@ -107,7 +75,6 @@ class PitchTrack {
     return bestArc;
   }
 
-  /// The centerline point at arclength [s]. Wraps for a closed track.
   Waypoint pointAtArclength(double s) {
     final clamped = closed ? s % length : s.clamp(0.0, length);
     for (var i = 0; i < _cumulative.length - 1; i++) {
@@ -122,7 +89,6 @@ class PitchTrack {
     return _points.last;
   }
 
-  /// Unit tangent direction of the centerline at arclength [s].
   Waypoint tangentAt(double s) {
     const eps = 0.01;
     final a = pointAtArclength(closed ? s - eps : math.max(0, s - eps));
@@ -157,13 +123,9 @@ class PitchTrack {
   }
 }
 
-/// Builds a random [PitchTrack] that follows the phones' physical chain.
 class TrackGenerator {
   const TrackGenerator._();
 
-  /// [scale] decides both how wide the road is and how much it is allowed to
-  /// wander on its way across a phone. Defaulted from the table's own size,
-  /// because that is what it would be derived from anyway.
   static PitchTrack generate({
     required List<PhoneSlice> slices,
     required math.Random random,
@@ -188,9 +150,7 @@ class TrackGenerator {
       final exit = i == chain.length - 1
           ? _outerPoint(viewport, seams[i - 1], widthWorld)
           : seams[i];
-      // First and last phone are treated as straight-through for amplitude
-      // purposes — there is no second seam on that phone to be "adjacent
-      // to", so the corner classification below does not apply to them.
+
       final relation = i == 0 || i == chain.length - 1
           ? _Relation.opposite
           : _classify(
@@ -223,9 +183,6 @@ class TrackGenerator {
     );
   }
 
-  /// Recovers the phones in physical connection order from the compiled,
-  /// reading-order slice list, using [BoardLinks] — the same adjacency the
-  /// connector stripes are drawn from — rather than re-deriving it by hand.
   static List<PhoneSlice> _recoverChainOrder(List<PhoneSlice> slices) {
     if (slices.length <= 1) return slices;
     final byId = {for (final s in slices) s.phoneId: s};
@@ -255,12 +212,6 @@ class TrackGenerator {
       return ordered;
     }
 
-    // A simple path's two ends have degree <= 1; try a walk from each and
-    // keep the longest. Falls back to every node if none qualifies (a
-    // branched, non-`Layouts.path` board). Phones the longest walk doesn't
-    // reach are dropped rather than spliced in non-adjacently — a spliced
-    // phone would have no join marker to its "neighbour" and crash the seam
-    // lookup in `generate` right after this returns.
     final degreeOneStarts = neighbors.entries
         .where((e) => e.value.length <= 1)
         .map((e) => e.key);
@@ -277,19 +228,7 @@ class TrackGenerator {
     return [for (final id in best) byId[id]!];
   }
 
-  /// The midpoint of the shared edge between two joined phones — the same
-  /// geometry the connector stripes are drawn from, read back off
-  /// [BoardLinks.of]'s markers rather than recomputed independently.
   static Waypoint _seamPoint(List<EdgeMarker> markers, String aId, String bId) {
-    // `BoardLinks.of` emits one marker per phone at that phone's own facing
-    // edge, not a single shared line — with a real bezel gap between phones
-    // (the common case), those two edges sit a few millimetres apart, and
-    // averaging both lands the seam in the dead space between screens,
-    // covered by neither. Using [aId]'s own edge instead keeps the seam on
-    // an actual screen; when the boards are flush (no gap) the two edges
-    // coincide anyway, so this is a no-op there.
-    // Asymmetric: walking the chain from the other end lands seams on the
-    // other phones' edges, so reversed direction yields a different (still valid) track.
     for (final m in markers) {
       if (m.phoneId == aId && m.partnerId == bId) {
         return Waypoint((m.x1 + m.x2) / 2, (m.y1 + m.y2) / 2);
@@ -298,20 +237,6 @@ class TrackGenerator {
     throw StateError('no join marker between $aId and $bId');
   }
 
-  /// A point near the far side of [viewport], inset from every edge by half
-  /// the track width, on the opposite side from [towardSeam] — reflecting the
-  /// seam through the phone's center and clamping to its rectangle. Used for
-  /// the track's very start and end, which have no seam on one side.
-  ///
-  /// `Layouts.path` always joins two phones corner to corner, so the seam
-  /// this reflects sits near a corner of the phone by construction — the
-  /// reflected point lands near the *opposite* corner. Clamped inward by
-  /// half the track's own width on every axis (not just kept inside the
-  /// rectangle), so the whole track surface at this end — and anything
-  /// riding near it, like the starting grid's lane offset — stays on this
-  /// phone's screen instead of landing on or past its edge. Collapses
-  /// toward the phone's own center on an axis too narrow for the margin,
-  /// rather than producing an invalid (min > max) clamp range.
   static Waypoint _outerPoint(
     WorldRect viewport,
     Waypoint towardSeam,
@@ -345,29 +270,9 @@ class TrackGenerator {
       (a == _Edge.top && b == _Edge.bottom) ||
       (a == _Edge.bottom && b == _Edge.top);
 
-  /// How an entry point and an exit point relate to the phone rectangle they
-  /// sit on — `opposite` (a straight pass-through) or `adjacent` (an L-turn
-  /// within this phone).
   static _Relation _classify(_Edge a, _Edge b) =>
       _isOpposite(a, b) ? _Relation.opposite : _Relation.adjacent;
 
-  /// The points that make the road bend on its way across one phone, nudged
-  /// sideways off the straight line from where it enters to where it leaves.
-  ///
-  /// How many is [PitchCarsScale.bendsPerPhone], and it is the small table's
-  /// whole answer to being short:
-  ///
-  /// - **Two** puts them at the thirds and throws them opposite ways, so the
-  ///   road makes an S across the screen. Two corners per phone out of a board
-  ///   that only has a handful of phones to give.
-  /// - **One** is a single lazy bend — the original behaviour.
-  /// - **None** runs seam to seam. On a big table the phones are already
-  ///   supplying a corner at every join, and adding more only lengthens a race
-  ///   that was too long to begin with.
-  ///
-  /// Each point is capped independently against the room actually available
-  /// where it sits, so an S never pushes its second half off the screen just
-  /// because its first half fitted.
   static List<Waypoint> _bendPoints({
     required Waypoint entry,
     required Waypoint exit,
@@ -393,13 +298,8 @@ class TrackGenerator {
         : tuning.cornerAmplitudeWorld;
     final halfWidth = tuning.trackWidthWorld / 2;
 
-    // Catmull-Rom can overshoot its control polygon near a turn, so the
-    // geometric room to wiggle in is halved before it becomes the cap —
-    // headroom for the curve, not just for these points.
     const safetyFactor = 0.5;
 
-    // One in the middle; two at the thirds, which leaves the chord's ends
-    // free for the spline to come out of the seam straight.
     final along = count == 1 ? <double>[0.5] : <double>[1 / 3, 2 / 3];
     final firstSign = random.nextBool() ? 1.0 : -1.0;
 
@@ -415,8 +315,6 @@ class TrackGenerator {
           _maxOffsetAlong(px, py, -nx, -ny, halfWidth, viewport) * safetyFactor;
       final capped = math.min(baseAmplitude, math.min(maxPos, maxNeg));
 
-      // Alternating, so two bends read as an S. Both the same way would only
-      // be one wide arc with an extra control point in it.
       final sign = firstSign * (k.isEven ? 1.0 : -1.0);
       final amount = capped * sign * (0.5 + random.nextDouble() * 0.5);
       bends.add(Waypoint(px + nx * amount, py + ny * amount));
@@ -424,8 +322,6 @@ class TrackGenerator {
     return bends;
   }
 
-  /// How far a point can move from (x, y) along direction (dx, dy) before
-  /// it, inflated by [margin] on every side, would leave [v].
   static double _maxOffsetAlong(
     double x,
     double y,
@@ -454,10 +350,6 @@ class TrackGenerator {
     return tMax.isFinite ? math.max(tMax, 0.0) : 0.0;
   }
 
-  /// Samples a Catmull-Rom spline through [control], duplicating the first
-  /// and last points as phantom neighbours so the curve starts and ends
-  /// exactly at them. Segment boundaries are shared, not duplicated, so
-  /// consecutive segments' sample lists join with no repeated point.
   static List<Waypoint> _sampleCatmullRom(
     List<Waypoint> control,
     int samplesPerSegment,
@@ -472,11 +364,6 @@ class TrackGenerator {
       final p3 = pts[i + 2];
       final startJ = i == 1 ? 0 : 1;
       for (var j = startJ; j <= samplesPerSegment; j++) {
-        // At the segment's own endpoints, use the control point directly
-        // rather than the blend formula: algebraically blend(t=0) == p1 and
-        // blend(t=1) == p2, but floating-point rounding in the polynomial
-        // can miss by ~1e-14 — enough to put a seam point that sits exactly
-        // on a phone's edge just outside that phone's coverage.
         if (j == 0) {
           result.add(p1);
           continue;

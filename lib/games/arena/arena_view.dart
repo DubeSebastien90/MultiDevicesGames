@@ -11,14 +11,6 @@ import '../../sdk/render/player_animation.dart';
 import 'arena_config.dart';
 import 'lightsaber_art.dart';
 
-/// Renders the arena: fighters, their swords, lives, stun stars, invincibility
-/// pulses, and the countdown overlay.
-///
-/// The cone the old attack drew and the arc the old block drew are both gone.
-/// Neither was ever the thing that hit or stopped anybody — they were pictures
-/// of a decision taken elsewhere — and the blade now does both jobs honestly:
-/// where it is *is* what it can reach, and a blade held across the body is what
-/// a raised guard looks like.
 class ArenaView extends GameView {
   ArenaView({
     required this.phoneId,
@@ -33,17 +25,10 @@ class ArenaView extends GameView {
 
   final String phoneId;
 
-  /// Everyone's walking character, loaded and coloured by the platform.
   final PlayerAnimations characters;
 
-  /// Everyone in the round, for their platform colour — the one they were
-  /// shown in the lobby, rather than the sim's own palette.
   final Roster roster;
 
-  /// Packed earth, as in a real arena: warm sand, raked round the middle and
-  /// scattered with grit. Light, so every fighter's colour and every blade's
-  /// glow stands out against it — and the controls and words drawn over it
-  /// are in [_ink], the lobby's own dark, rather than white.
   static const _floorColor = Color(0xFFEBD0A2);
   static const _rake = Color(0x33B98A4E);
   static const _ring = Color(0xFFD2A76C);
@@ -51,63 +36,28 @@ class ArenaView extends GameView {
   static const _gritLight = Color(0x66FFF3DC);
   static const _ink = Color(0xFF191510);
 
-  /// How far apart the rake's lines are, in world units.
   static const _rakeGap = 0.45;
 
-  /// The grit is laid one speck per cell of this size, each nudged about
-  /// inside its own cell so the floor does not read as a grid.
   static const _gritCell = 0.7;
 
-  /// The air kept between the message and the bottom edge of the glass, as a
-  /// fraction of the screen's half-height.
   static const _messageMargin = 0.06;
 
-  /// World units per second below which a fighter counts as standing still.
-  ///
-  /// Not zero: positions are interpolated, so a stationary fighter still
-  /// jitters by a hair between frames and an exact test would flicker the walk
-  /// on and off.
   static const _walkingSpeed = 0.5;
 
-  // Reusable paint objects.
   final _fill = Paint();
   final _stroke = Paint()..style = PaintingStyle.stroke;
 
-  /// Where each fighter was last frame, to tell walking from standing.
   final _lastSeen = <String, Offset>{};
 
-  /// When each fallen fighter's burst started, on the host's clock.
-  ///
-  /// The *instant* is local — it is whenever this phone was told the fighter
-  /// was gone — while everything after it is phased off [Frame.timeMs] like
-  /// every other animation here. That split is deliberate: a burst is a
-  /// one-shot fired by an event that reaches every phone within a few
-  /// milliseconds, so there is nothing for the phones to disagree about, and
-  /// hanging it off a timestamp from the sim would mean lining up two clocks
-  /// to no visible end.
   final _burstAt = <String, double>{};
 
-  /// The last blow each fighter had counted against them, and when this phone
-  /// saw it. A burst runs while the clock is inside its length.
   final _impactSeen = <String, int>{};
   final _impactAt = <String, double>{};
 
   @override
   void render(Canvas canvas, Frame frame) {
-    // Floor, over the whole panel.
-    //
-    // It used to be painted over `frame.board` alone, and on a table of
-    // mismatched phones that rectangle stops short of the biggest screen — so
-    // the rest of that screen was left showing through as a differently
-    // coloured band nobody could walk into. The sim now keeps fighters inside
-    // the screens themselves (see [PlayArea]), which means every point this
-    // phone can draw is a point somebody can stand on, and the floor can
-    // simply cover it.
     _drawFloor(canvas, frame);
 
-    // Grips under the bodies, blades over them: the hilt sits in the hand
-    // that holds it, and whatever of it would show through the body is the
-    // part the fist is closed round.
     for (final e in frame.ofKind('sword')) {
       if (frame.sharedState['alive_p${e.propInt('index')}'] != true) continue;
       _drawGrip(canvas, e);
@@ -129,9 +79,6 @@ class ArenaView extends GameView {
           (frame.sharedState['lives_$key'] as num?)?.toInt() ??
           ArenaConfig.maxLives;
 
-      // The guard coming back, as a ring closing round the fighter — drawn
-      // only while it fills, so a fighter who can block has nothing extra
-      // round their feet. Full circle is the moment the blade hums back on.
       final guard = _guardCharge(frame, key);
       if (guard < 1 && frame.sharedState['blocking_$key'] != true) {
         _stroke
@@ -149,7 +96,6 @@ class ArenaView extends GameView {
         );
       }
 
-      // Invincibility pulse.
       if (isInvincible) {
         final pulse = 0.5 + 0.5 * math.sin(frame.timeMs / 100);
         _stroke
@@ -158,9 +104,6 @@ class ArenaView extends GameView {
         canvas.drawCircle(Offset(e.x, e.y), radius * 1.3, _stroke);
       }
 
-      // Fighter body. `RenderEntity` carries no velocity, so movement is the
-      // distance covered since the last frame; a stunned fighter is being
-      // knocked about rather than walking, so they hold still.
       final here = Offset(e.x, e.y);
       final before = _lastSeen[e.id];
       _lastSeen[e.id] = here;
@@ -170,8 +113,6 @@ class ArenaView extends GameView {
           frame.dt > 0 &&
           (here - before).distance / frame.dt > _walkingSpeed;
 
-      // A fighter with no seat at the roster has no platform colour to ask a
-      // character for, so they stay the sim's own circle.
       final seated = roster.byPhone(e.props['phoneId'] as String? ?? '');
       if (seated == null) {
         _fill.color = isStunned ? color.withAlpha(140) : color;
@@ -188,21 +129,8 @@ class ArenaView extends GameView {
         );
       }
 
-      // Lives, as dots over the head — one per hit left, and a dot simply
-      // gone once it is spent. A bar had to be read: a fighter on a sliver of
-      // red and one on a third of it look alike at arm's length across a
-      // table, while two dots and three never do.
       _drawLives(canvas, Offset(e.x, e.y), radius, lives);
 
-      // Stun stars, going round the fighter in a circle.
-      //
-      // A circle, and centred on the fighter's own origin — not an ellipse
-      // over the head. This world is seen from above: a fighter *is* their
-      // head, they spin on the spot constantly, and a ring drawn with a
-      // squashed vertical axis is a ring that only looks right while they
-      // happen to be facing along it. A true circle round the middle of them
-      // reads the same from every angle, which is the only thing that works
-      // when the thing it is drawn on turns.
       if (isStunned) {
         _fill.color = const Color(0xFFFFDD44);
         final spin = frame.timeMs / 320;
@@ -219,33 +147,17 @@ class ArenaView extends GameView {
       }
     }
 
-    // Whoever has just come apart, over the floor and under the living: a
-    // burst is something that happened *there*, and a fighter standing on the
-    // spot is standing on it.
     _drawDeaths(canvas, frame);
     _drawImpacts(canvas, frame);
 
-    // Blades over bodies, and over *all* the bodies: a sword swung across a
-    // neighbour passes in front of them, which is also the truth — the sim
-    // just cut them with it.
     for (final e in frame.ofKind('sword')) {
       final key = 'p${e.propInt('index')}';
       if (frame.sharedState['alive_$key'] != true) continue;
       _drawSword(canvas, e, _colorOf(frame, key));
     }
 
-    // The player's own stick, drawn last so a fighter walking over their own
-    // anchor does not cut a hole in it.
-    //
-    // Only this phone's: a joystick is a picture of what one pair of hands is
-    // doing, and drawing everybody's would litter the table with rings nobody
-    // can act on — and quietly leak which way each opponent is about to break.
     _drawJoystick(canvas, frame);
 
-    // What to do, then when it starts. Both in the middle of this phone's own
-    // screen rather than in the corner badge the platform collects HUDs into:
-    // during the one moment there is nothing else to look at, the thing to
-    // look at should not be in a corner.
     final phase = frame.sharedState['phase'];
     if (phase == 'briefing') {
       final step = (frame.sharedState['step'] as num?)?.toInt() ?? 0;
@@ -263,34 +175,18 @@ class ArenaView extends GameView {
       _drawCentered(
         canvas,
         frame,
-        // GO for the last stretch, and the digits before it — never a nought,
-        // which is what the clock actually says for the few frames between
-        // running out and the round starting.
         go ? 'GO' : (cd - ArenaConfig.goSeconds).ceil().toString(),
         frame.me.halfWidth * 2 * (go ? 0.22 : 0.3),
       );
     }
-
-    // No finished overlay. The round now holds for a second after the last
-    // fall so the burst can play, and a word stamped over the middle of the
-    // table is exactly what nobody should be reading during it — the phones
-    // move on to the score by themselves a moment later.
   }
 
-  /// Everybody's burst, for as long as theirs lasts.
-  ///
-  /// Driven from `alive_pN` going false rather than from a death message,
-  /// because the sim publishes no such message and does not need to: the
-  /// roster of who is still standing is already on the wire, and the moment it
-  /// changes is the moment somebody fell.
   void _drawDeaths(Canvas canvas, Frame frame) {
     for (var i = 0; i < 8; i++) {
       final key = 'p$i';
       if (frame.sharedState['phoneId_$key'] == null) break;
 
       if (frame.sharedState['alive_$key'] == true) {
-        // Alive, so any burst of theirs belongs to a previous round. Cleared
-        // rather than left: this view outlives a replay.
         _burstAt.remove(key);
         continue;
       }
@@ -315,11 +211,6 @@ class ArenaView extends GameView {
     }
   }
 
-  /// The small bursts: a blow landing, and a blow turned away.
-  ///
-  /// Driven off a counter rather than a flag. Two blows in a row set the same
-  /// flag to the same value, and a diffed broadcast would never mention the
-  /// second — so the fighter would be hit twice and spark once.
   void _drawImpacts(Canvas canvas, Frame frame) {
     for (var i = 0; i < 8; i++) {
       final key = 'p$i';
@@ -327,7 +218,6 @@ class ArenaView extends GameView {
 
       final count = (frame.sharedState['impacts_$key'] as num?)?.toInt() ?? 0;
       if (count == 0) {
-        // A replay: nothing has struck anybody yet, so nothing is owed.
         _impactSeen.remove(key);
         _impactAt.remove(key);
         continue;
@@ -347,8 +237,6 @@ class ArenaView extends GameView {
       final y = (frame.sharedState['impactY_$key'] as num?)?.toDouble();
       if (x == null || y == null) continue;
 
-      // White for a guard that held — the sparks belong to neither fighter —
-      // and the player's own colour for a life going.
       final parried = frame.sharedState['impactKind_$key'] == 'parry';
       final color = parried
           ? const Color(ArenaConfig.parryColor)
@@ -366,9 +254,6 @@ class ArenaView extends GameView {
     }
   }
 
-  /// A fighter's colour: the platform one they have worn since the lobby where
-  /// there is a seat for them, and the sim's palette otherwise — the same
-  /// choice the body itself makes.
   Color _colorOf(Frame frame, String key) {
     final phoneId = frame.sharedState['phoneId_$key'] as String? ?? '';
     final seated = roster.byPhone(phoneId);
@@ -376,7 +261,6 @@ class ArenaView extends GameView {
         Color((frame.sharedState['color_$key'] as num?)?.toInt() ?? 0xFFFFFFFF);
   }
 
-  /// One burst — see [drawParticleBurst] — sized to a fighter.
   void _drawBurst(
     Canvas canvas,
     Offset at,
@@ -394,20 +278,10 @@ class ArenaView extends GameView {
     count: count,
     speed: speed,
     seconds: seconds,
-    particleRadius: ArenaConfig.characterRadius * ArenaConfig.deathParticleScale,
+    particleRadius:
+        ArenaConfig.characterRadius * ArenaConfig.deathParticleScale,
   );
 
-  /// The blade: a grey rectangle from the hilt outwards, at whatever angle the
-  /// sim has it pointing this instant.
-  ///
-  /// Nothing here decides anything. The angle is interpolated between the
-  /// host's snapshots like any other transform, so the swing a player sees is
-  /// the swing that cut them, a frame or two of playback delay apart — the same
-  /// delay every other moving thing on the table is drawn with.
-  /// How ready this fighter's guard is, 0 to 1.
-  ///
-  /// Spent while they are actually blocking, then climbing back over
-  /// [ArenaConfig.blockCooldown]. Drawn as the ring round the fighter.
   double _guardCharge(Frame frame, String key) {
     if (frame.sharedState['blocking_$key'] == true) return 0;
     final left = (frame.sharedState['blkCd_$key'] as num?)?.toDouble() ?? 0;
@@ -416,8 +290,6 @@ class ArenaView extends GameView {
     return charge < 0 ? 0 : (charge > 1 ? 1 : charge);
   }
 
-  /// The saber's grip, behind the blade. Nothing to draw without the art:
-  /// the plain sword's guard goes over the body with its blade.
   void _drawGrip(Canvas canvas, RenderEntity e) {
     canvas
       ..save()
@@ -432,14 +304,10 @@ class ArenaView extends GameView {
     canvas.restore();
   }
 
-  /// Always fully lit, in the owner's colour: the guard's recharge is the
-  /// ring round the fighter, and the blade only has to say *whose*.
   void _drawSword(Canvas canvas, RenderEntity e, Color color) {
     final length = e.propDouble('length', ArenaConfig.swordLength);
     final width = e.propDouble('width', ArenaConfig.swordWidth);
 
-    // The entity *is* the hilt, so there is nothing to offset: translate,
-    // turn, and lay the blade down the positive x axis.
     canvas.save();
     canvas.translate(e.x, e.y);
     canvas.rotate(e.angle);
@@ -449,23 +317,18 @@ class ArenaView extends GameView {
       Radius.circular(width / 2),
     );
 
-    // The glow, under whichever blade is drawn over it.
     _fill
       ..color = color.withValues(alpha: 0.55)
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, width * 1.6);
     canvas.drawRRect(blade, _fill);
     _fill.maskFilter = null;
 
-    // The lightsaber when it has loaded. The grip is drawn on its own, under
-    // the body.
     if (LightsaberArt.isLoaded(color)) {
       LightsaberArt.draw(canvas, color, length: length, from: 0, to: length);
       canvas.restore();
       return;
     }
 
-    // Until then, a plain sword: a guard across the hilt, so the thing reads
-    // as a sword rather than a stick, and which end is dangerous is obvious.
     _fill.color = const Color(0xFF6B7280);
     canvas.drawRect(
       Rect.fromLTWH(-width * 0.6, -width * 1.8, width * 1.2, width * 3.6),
@@ -477,16 +340,12 @@ class ArenaView extends GameView {
     canvas.restore();
   }
 
-  /// The three dots. Only the ones still in hand are drawn — a spent life is
-  /// gone rather than greyed, which is what makes the row countable at a
-  /// glance instead of read.
   void _drawLives(Canvas canvas, Offset at, double radius, int lives) {
     if (lives <= 0) return;
 
     final dot = radius * 0.22;
     final gap = dot * 3;
-    // High enough to leave the head clear: the stun ring goes round just above
-    // it, and two things in that band read as one mess.
+
     final top = at.dy - radius - dot * 5.5;
     final left = at.dx - gap * (lives - 1) / 2;
 
@@ -496,25 +355,13 @@ class ArenaView extends GameView {
     }
   }
 
-  /// The anchor the drag is measured from, under the finger that set it.
-  ///
-  /// Movement here is an angle from a point the player cannot see, which is a
-  /// fine control and an invisible one — a finger drifting an inch during a
-  /// scrap steers hard without ever feeling like it moved. The ring gives that
-  /// point a body: where the stick is centred, which way it is pushed, and how
-  /// far, now that how far is how fast.
-  ///
-  /// It appears only once the drag is actually steering. A finger sitting
-  /// still is a tap or a block being held, and a ring under it would be the
-  /// game saying "you are moving" to a player who is not.
   void _drawJoystick(Canvas canvas, Frame frame) {
     final key = _myKey(frame.sharedState);
     if (key == null) return;
 
     final ax = (frame.sharedState['stickX_$key'] as num?)?.toDouble();
     final ay = (frame.sharedState['stickY_$key'] as num?)?.toDouble();
-    // Absent means no finger is down. Nothing to draw, and nothing else in
-    // here is worth reading.
+
     if (ax == null || ay == null) return;
     final tx = (frame.sharedState['stickToX_$key'] as num?)?.toDouble() ?? ax;
     final ty = (frame.sharedState['stickToY_$key'] as num?)?.toDouble() ?? ay;
@@ -522,17 +369,14 @@ class ArenaView extends GameView {
     final anchor = Offset(ax, ay);
     final pushed = Offset(tx - ax, ty - ay);
     final reach = ArenaConfig.joystickRadius;
-    // Past the ring the knob stops travelling but the drag keeps steering, so
-    // full tilt looks like full tilt however far the hand has wandered.
+
     final tilt = pushed.distance > reach
         ? pushed * (reach / pushed.distance)
         : pushed;
     final knob = anchor + tilt;
 
     final blocking = frame.sharedState['blocking_$key'] == true;
-    // Held still long enough to be blocking: the stick says so in the shield's
-    // own colour, because a player holding a block is doing it by *not*
-    // moving, and an unlit ring looks identical to a dead one.
+
     final ringColor = blocking ? const Color(0xFF4488FF) : _ink;
 
     _fill.color = _ink.withAlpha(ArenaConfig.joystickWellAlpha);
@@ -543,9 +387,6 @@ class ArenaView extends GameView {
       ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.04);
     canvas.drawCircle(anchor, reach, _stroke);
 
-    // The dead zone: where the fighter stops, and the edge the speed ramps up
-    // from — a knob sitting just outside this circle is a crawl, and out at
-    // the ring it is a run.
     _stroke
       ..color = ringColor.withAlpha(ArenaConfig.joystickDeadZoneAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
@@ -558,8 +399,6 @@ class ArenaView extends GameView {
       canvas.drawLine(anchor, knob, _stroke);
     }
 
-    // The knob in the player's own colour — the one their fighter is wearing,
-    // so at a glance the ring belongs to somebody.
     final me = roster.byPhone(phoneId);
     final knobColor = me?.color.value ?? const Color(0xFFFFFFFF);
     _fill.color = knobColor.withAlpha(ArenaConfig.joystickKnobAlpha);
@@ -570,12 +409,6 @@ class ArenaView extends GameView {
     canvas.drawCircle(knob, ArenaConfig.joystickKnobRadius, _stroke);
   }
 
-  /// The arena floor: sand, the rake's rings round the middle of the table,
-  /// the fighting circle trodden into it, and grit.
-  ///
-  /// All of it laid from the world, never from this screen's edge — the rings
-  /// share the board's centre, and each speck of grit is placed by its cell's
-  /// own coordinates — so the floor runs unbroken from one phone to the next.
   void _drawFloor(Canvas canvas, Frame frame) {
     final view = frame.visible;
     final area = Rect.fromLTWH(view.left, view.top, view.width, view.height);
@@ -585,7 +418,6 @@ class ArenaView extends GameView {
     final board = frame.board;
     final centre = Offset(board.centerX, board.centerY);
 
-    // The rake, in rings round the middle. Only the rings this screen reaches.
     final near =
         (Offset(
                   centre.dx.clamp(area.left, area.right),
@@ -613,7 +445,6 @@ class ArenaView extends GameView {
       canvas.drawCircle(centre, r, _stroke);
     }
 
-    // The fighting circle, trodden darker into the sand.
     final ring = math.min(board.width, board.height) * 0.42;
     _stroke
       ..color = _ring
@@ -623,12 +454,6 @@ class ArenaView extends GameView {
     _drawGrit(canvas, area);
   }
 
-  /// A speck of grit in every cell, dark or light, placed and sized by the
-  /// cell's own coordinates — the same speck on every phone that can see it.
-  ///
-  /// Hashed with small integer arithmetic on purpose: it has to come out the
-  /// same on a phone running compiled Dart and one running it as JavaScript,
-  /// where big products lose their low bits.
   void _drawGrit(Canvas canvas, Rect area) {
     final x0 = (area.left / _gritCell).floor();
     final x1 = (area.right / _gritCell).ceil();
@@ -657,8 +482,6 @@ class ArenaView extends GameView {
     return (h * 31 + x % 17) % m;
   }
 
-  /// Which fighter is this phone's, as `p0`..`p7`. Null before the sim has
-  /// seated anybody, and on a phone that is watching rather than playing.
   String? _myKey(Map<String, Object?> sharedState) {
     for (var i = 0; i < 8; i++) {
       if (sharedState['phoneId_p$i'] == phoneId) return 'p$i';
@@ -686,31 +509,10 @@ class ArenaView extends GameView {
     canvas.drawPath(path, paint);
   }
 
-  /// One line across this phone's own glass, under the fighter standing on it.
-  ///
-  /// Drawn in the phone's **own frame**, not the world's. A phone laid at an
-  /// angle sits in an angled slot in the world, so world x and y run diagonally
-  /// across its glass: text placed by world coordinates comes out crooked, and
-  /// "half a screen down" in world y can be most of the way off a screen whose
-  /// height points sideways. Turning the canvas to match the slot makes the
-  /// arithmetic below plain again — x across the glass, y down it — and has
-  /// the words arrive upright for whoever is holding it.
-  ///
-  /// *Below* the fighter, because above them is taken: the lives sit over their
-  /// head and the stun ring goes round them. The line is centred in what is
-  /// left — the band between the bottom of the body and the bottom of the
-  /// screen — and then pinned inside the glass, because that band is a
-  /// different size on every phone at the table and a message that is
-  /// comfortable on a tall one must not fall off a short one.
   void _drawCentered(Canvas canvas, Frame frame, String text, double size) {
     final me = frame.me;
     final width = me.halfWidth * 2;
-    // Laid out in logical pixels, at the size it is actually seen, and drawn
-    // with the canvas scaled back down to world units — Flood's way. Laid out
-    // in world units the line was a sub-point font magnified fifty-fold by the
-    // camera: Skia redraws glyphs at the final size, but Impeller on iOS
-    // rasterises them near the laid-out size and stretches the result, which
-    // is what made every briefing blurry on an iPhone.
+
     final px = me.logicalPxPerWorldUnit;
 
     final builder =
@@ -725,14 +527,10 @@ class ArenaView extends GameView {
     final half = paragraph.height / px / 2;
     final margin = me.halfHeight * _messageMargin;
 
-    // All of this is now measured from the middle of the glass, down it.
     final bodyBottom = ArenaConfig.characterRadius * 1.8;
     final glassBottom = me.halfHeight - margin;
     var centre = (bodyBottom + glassBottom) / 2;
 
-    // Pinned to the glass. On a screen too short for the band to hold the
-    // line, this is what decides which of the two it gives up: staying on
-    // screen wins, and the words may lie across the fighter's feet.
     final lowest = glassBottom - half;
     final highest = -me.halfHeight + margin + half;
     if (centre > lowest) centre = lowest;
@@ -748,10 +546,4 @@ class ArenaView extends GameView {
     );
     canvas.restore();
   }
-
-  // No HUD. Everything it used to carry has gone where it belongs: the
-  // controls into the briefing that opens the round, the lives onto the
-  // fighter's own head, the block cooldown onto the blade, and the attack
-  // cooldown nowhere — at half a second it is over before anybody could look
-  // it up.
 }

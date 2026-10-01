@@ -3,11 +3,6 @@ import 'dart:math' as math;
 import '../model/device_metrics.dart';
 import '../model/player_color.dart';
 
-/// One connected phone, as a game needs to know it when deciding the layout.
-///
-/// Everything physical is in millimetres, because that is what a ruler and a
-/// spec sheet give you, and because the whole point of the platform is that a
-/// board is a real object on a real table.
 class PhoneSpec {
   const PhoneSpec({
     required this.phoneId,
@@ -22,28 +17,15 @@ class PhoneSpec {
     this.color,
   });
 
-  /// Platform-assigned, stable for this connection: 'p1'.
   final String phoneId;
 
-  /// Human name, for diagrams and standings: 'Pixel 7'.
   final String label;
 
-  /// Who is sitting here, as a colour. Null only in the moment between a phone
-  /// connecting and the host seating it, and on a board built from bare metrics
-  /// in a test.
   final PlayerColor? color;
 
-  /// The lit area as the device itself is held: **portrait**, so width is the
-  /// short edge and height is the long one.
-  ///
-  /// This is the panel, not the placement. How the phone lies on the table is
-  /// the game's decision, expressed as `quarterTurns` on its placement — see
-  /// [footprintWidthMm].
   final double widthMm;
   final double heightMm;
 
-  /// Casing edge to first lit pixel. Two phones pushed together leave
-  /// `a.bezelMm + b.bezelMm` of dead space between their active areas.
   final double bezelMm;
 
   final double dpi;
@@ -53,25 +35,19 @@ class PhoneSpec {
 
   double get areaMm2 => widthMm * heightMm;
 
-  /// How much board this screen covers once turned [quarterTurns] steps.
-  /// An odd number of turns swaps the two.
   double footprintWidthMm(int quarterTurns) =>
       quarterTurns.isOdd ? heightMm : widthMm;
 
   double footprintHeightMm(int quarterTurns) =>
       quarterTurns.isOdd ? widthMm : heightMm;
 
-  /// The same swap for pixels, which is what the rotated surface reports and
-  /// therefore what the world transform has to be built from.
   double footprintPxWidth(int quarterTurns) =>
       quarterTurns.isOdd ? activePxHeight : activePxWidth;
 
   double footprintPxHeight(int quarterTurns) =>
       quarterTurns.isOdd ? activePxWidth : activePxHeight;
 
-  /// Handy for "biggest screen", which is usually what a game means by "best".
-  double get diagonalMm =>
-      math.sqrt(widthMm * widthMm + heightMm * heightMm);
+  double get diagonalMm => math.sqrt(widthMm * widthMm + heightMm * heightMm);
 
   static PhoneSpec fromMetrics(
     String phoneId,
@@ -82,23 +58,6 @@ class PhoneSpec {
     label: metrics.label,
     color: color,
     widthMm: metrics.widthMm,
-    // Derived from the pixel count rather than taken as given, and this is
-    // load-bearing.
-    //
-    // A screen's physical size was being read two ways: the layout reserved a
-    // slot of `widthMm` by `heightMm`, while the camera and the compiled screen
-    // used `activePx` scaled by [DeviceMetrics.dpi] — which is worked out from
-    // the **width alone**. Those agree only while the entered millimetres have
-    // the same aspect ratio as the pixels, and the metrics card invites exactly
-    // the correction that breaks it: you measure the short edge with a ruler,
-    // fix the width, and leave the height at whatever was estimated. From then
-    // on the phone was drawn to one size and given room for another, so it
-    // reached over its neighbour — visible on the placement diagram and on the
-    // glass, while the plan itself validated cleanly because it had only ever
-    // checked the slot.
-    //
-    // Pixels are square, so the aspect ratio is not a matter of opinion: one
-    // measured edge fixes the other. Correcting the width now scales both.
     heightMm: metrics.widthMm * metrics.activePxHeight / metrics.activePxWidth,
     bezelMm: metrics.bezelMm,
     dpi: metrics.dpi,
@@ -108,12 +67,9 @@ class PhoneSpec {
   );
 }
 
-/// Everything a game is told about the table before it decides the layout.
 class LobbyInfo {
   const LobbyInfo(this.phones);
 
-  /// In join order. A game that cares about physical size should sort by it
-  /// rather than trusting this order to mean anything.
   final List<PhoneSpec> phones;
 
   int get phoneCount => phones.length;
@@ -125,11 +81,6 @@ class LobbyInfo {
     return null;
   }
 
-  /// Everyone who has a colour, in join order.
-  ///
-  /// The list a game builds its players from. Anyone unseated is left out
-  /// rather than given a placeholder: a game that deals turns or spawns by
-  /// colour needs every entry here to be a real, distinct player.
   List<PhoneSpec> get seated => [
     for (final p in phones)
       if (p.color != null) p,

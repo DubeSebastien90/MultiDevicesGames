@@ -18,19 +18,9 @@ part 'sim_input.dart';
 part 'sim_progress.dart';
 part 'sim_contact.dart';
 
-/// Flick your car around a randomized track. Turn-based: exactly one
-/// player's car may be flicked at a time, in join order.
-///
-/// Input is never gated by [TouchEvent.phoneId] — the board spans multiple
-/// phones, so a car can end up under a different phone's screen than the one
-/// its owner joined from. Nor is it gated by where the touch lands: proximity
-/// to the car only picks *which* point the draw is measured from.
 class PitchCarsSim extends Forge2DGameSim {
   PitchCarsSim(super.context, {math.Random? random})
     : _random = random ?? math.Random() {
-    // Everything the table's size changes, settled once and read from here on.
-    // Derived from the slices rather than the players because it is the *road*
-    // this sets the shape of, and the road is built from the board.
     scale = PitchCarsScale.forPlayers(context.slices.length);
     track = TrackGenerator.generate(
       slices: context.slices,
@@ -58,7 +48,6 @@ class PitchCarsSim extends Forge2DGameSim {
 
   final math.Random _random;
 
-  /// How big this table's race is drawn and how far its flicks carry.
   late final PitchCarsScale scale;
 
   late final PitchTrack track;
@@ -74,21 +63,12 @@ class PitchCarsSim extends Forge2DGameSim {
   final _lastHitAt = <String, Duration>{};
   final _lastOnTrack = <String, Vector2>{};
 
-  /// Cars currently over the edge, and how long they have been falling.
-  /// Membership is the state: absent means on the road.
   final _fallenFor = <String, double>{};
 
-  /// Where each falling car will reappear, decided when it went over rather
-  /// than when it lands — by then the turn may have moved on.
   final _fallTarget = <String, Vector2>{};
 
-  /// Which way each falling car was pointing when it went over, so it comes
-  /// back the way it was going rather than wherever the tumble left it.
   final _fallAngle = <String, double>{};
 
-  /// The fall as the phones should see it: a clock started with the fall that
-  /// outlives the landing by [PitchCarsConfig.fallVisualLagSeconds], since
-  /// that is how far behind the sim they draw the car.
   final _fallVisualFor = <String, double>{};
   final _rawProgress = <String, double>{};
   final _progress = <String, double>{};
@@ -96,29 +76,16 @@ class PitchCarsSim extends Forge2DGameSim {
 
   String? _draggingPhoneId;
 
-  /// The hold sound of the aim being drawn, so the release can cut it short.
   SoundHandle? _holdSound;
 
-  /// Seconds since the last crash sounded — see
-  /// [PitchCarsConfig.crashCooldownSeconds]. Starts past it, so the first one
-  /// always plays.
   double _sinceCrash = PitchCarsConfig.crashCooldownSeconds;
 
-  /// Where an *off-car* aim is being drawn from, in world coordinates: the
-  /// pull is the finger's displacement from here, added to [_preTurnPosition],
-  /// which is what lets a drag that began nowhere near the car still aim it.
-  ///
-  /// Null means the finger came down on the car and the draw is measured from
-  /// the car itself — so this doubles as "is there a pivot the player cannot
-  /// see", which is exactly when the view draws a crosshair on it.
   Vector2? _dragOrigin;
   Vector2? _pull;
   bool _moving = false;
   Duration _sinceLaunch = Duration.zero;
   Duration _atRest = Duration.zero;
 
-  /// Reset whenever the current car moves more than
-  /// [PitchCarsConfig.stallDisplacement] away — feeds the stall watchdog.
   Vector2? _stallAnchor;
   Duration _sinceStallAnchor = Duration.zero;
 
@@ -139,17 +106,7 @@ class PitchCarsSim extends Forge2DGameSim {
     switch (touch.phase) {
       case TouchPhase.down:
         if (_draggingPhoneId != null) return;
-        // Anywhere on the board starts an aim. A finger that lands *on* the
-        // car pulls it directly, as before — the car follows the finger, which
-        // is the gesture that reads as a slingshot. A finger that lands
-        // anywhere else aims from where it landed, so the draw is the same
-        // gesture measured from there.
-        //
-        // The car is regularly somewhere a finger cannot comfortably drag
-        // from: pinned against the edge of a screen, or sitting on the seam
-        // between two phones where half the draw would land on a neighbour's
-        // glass. Requiring the gesture to *start* on the car made those
-        // positions unplayable; nothing about aiming actually needs it to.
+
         final reach = scale.carRadius + scale.grabSlack;
         _dragOrigin = p.distanceTo(car.position) <= reach ? null : p.clone();
         _draggingPhoneId = touch.phoneId;
@@ -158,8 +115,7 @@ class PitchCarsSim extends Forge2DGameSim {
 
       case TouchPhase.move:
         if (_draggingPhoneId != touch.phoneId || _pull == null) return;
-        // Aiming from the car makes the pull point the finger itself; aiming
-        // from off it carries the same displacement back onto the car.
+
         final origin = _dragOrigin ?? _preTurnPosition;
         _pull = _clampPull(_preTurnPosition + (p - origin));
         _faceTheShot(car);
@@ -170,17 +126,12 @@ class PitchCarsSim extends Forge2DGameSim {
     }
   }
 
-  // -- sound ------------------------------------------------------------------
-
-  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
   SoundHandle? _playOn(String phoneId, SoundCue cue, {double volume = 1.0}) {
     final player = context.roster.byPhone(phoneId);
     if (player == null) return null;
     return context.audio.playOnPhone(player, cue, volume: volume);
   }
 
-  /// A crash, on the phone under [x], [y] — or the nearest one, since an
-  /// impact at the very edge of the glass can be a hair past it.
   void _crashAt(double x, double y) {
     if (_sinceCrash < PitchCarsConfig.crashCooldownSeconds) return;
     final phone = context.nearestPhone(x, y);
@@ -189,13 +140,6 @@ class PitchCarsSim extends Forge2DGameSim {
     _playOn(phone, PitchCarsConfig.crash, volume: PitchCarsConfig.crashVolume);
   }
 
-  /// The last of a car's speed, braked away rather than coasted off.
-  ///
-  /// After the physics, so the brake has the last word on the tick: a car
-  /// slower than [PitchCarsScale.brakeSpeed] loses a steady
-  /// [PitchCarsScale.brakeDecel] a second — instead of the ever-smaller share
-  /// damping takes — and one that reaches nothing is held there, spin and
-  /// all. A car falling into the void is left to its fall.
   void _brake(double dt) {
     for (final id in _order) {
       if (_finished.contains(id) || _fallenFor.containsKey(id)) continue;
@@ -223,7 +167,6 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   void step(double dt) {
-    // Before the physics: that is where contacts, and so crashes, happen.
     _sinceCrash += dt;
     super.step(dt);
     _brake(dt);
@@ -244,20 +187,14 @@ class PitchCarsSim extends Forge2DGameSim {
       var maxSpeed = 0.0;
       for (final id in _order) {
         if (_finished.contains(id)) continue;
-        // A car tumbling into the void is off the board and on a timer of its
-        // own; its speed says nothing about whether the turn is over. The turn
-        // waits for it to land (below), not for it to coast to a stop.
+
         if (_fallenFor.containsKey(id)) continue;
         final speed = carOf(id).linearVelocity.length;
         if (speed > maxSpeed) maxSpeed = speed;
       }
-      // Stopped means stopped: [_brake] takes every car the last of the way to
-      // exactly nothing, so there is no threshold to be under.
+
       _atRest = maxSpeed == 0 ? _atRest + elapsed : Duration.zero;
 
-      // Angular damping should stop a car spinning-in-place well before
-      // this, but this watchdog is the actual guarantee: force the turn to
-      // end if the car hasn't translated in a while, regardless of why.
       final currentPos = carOf(currentTurn).position;
       if (_stallAnchor == null ||
           currentPos.distanceTo(_stallAnchor!) > scale.stallDisplacement) {
@@ -267,9 +204,6 @@ class PitchCarsSim extends Forge2DGameSim {
         _sinceStallAnchor += elapsed;
       }
 
-      // Never with a car still in the air: the next driver would be aiming
-      // at a road with a car missing from it, and the one falling would land
-      // back in the middle of their shot.
       if (_fallenFor.isEmpty &&
           (_atRest >= PitchCarsConfig.restDelay ||
               _sinceLaunch >= PitchCarsConfig.maxFlightTime ||
@@ -310,25 +244,16 @@ class PitchCarsSim extends Forge2DGameSim {
 
   @override
   Iterable<Entity> get entities sync* {
-    // The road, kerbs and finish checkerboard. None of them draws in this
-    // order — they carry no `ShapeProps.shape`, so `ShapeView` passes over
-    // them and `PitchCarsView` paints them in the background, under the cars.
     yield* _trackEntities;
     yield* super.entities;
   }
 
   @override
   Map<String, Object?> get sharedState => {
-    // The draw a full-strength shot takes, so the aim arrow reads power
-    // against this table's own scale rather than a constant that is only
-    // right for one size of board.
     'maxPull': scale.maxPull,
     'currentTurn': _roundOver ? null : currentTurn,
     'winner': _finishOrder.isEmpty ? null : _finishOrder.first,
     for (final id in _order) 'finished_$id': _finished.contains(id),
-    // How far through its fall each car over the edge is, 0 to 1, so the view
-    // can shrink and fade it into the void. Absent for a car on the road.
-    // Lagged to line up with the positions the phones are drawing.
     for (final entry in _fallVisualFor.entries)
       'fall_${entry.key}': double.parse(
         ((entry.value - PitchCarsConfig.fallVisualLagSeconds) /
@@ -344,13 +269,8 @@ class PitchCarsSim extends Forge2DGameSim {
                   .clamp(0.0, 1.0)
                   .toStringAsFixed(3),
             ),
-    // Pull point in world coords while aiming, null once released/idle —
-    // the view draws the launch arrow from this to the current car.
     'pullX': _pull == null ? null : double.parse(_pull!.x.toStringAsFixed(3)),
     'pullY': _pull == null ? null : double.parse(_pull!.y.toStringAsFixed(3)),
-    // The point an off-car drag is pivoting around, for the view to mark.
-    // Null whenever the draw is measured from the car, which needs no mark:
-    // the car is already standing on the spot.
     'anchorX': _dragOrigin == null
         ? null
         : double.parse(_dragOrigin!.x.toStringAsFixed(3)),
@@ -382,9 +302,7 @@ class PitchCarsSim extends Forge2DGameSim {
     _sinceStallAnchor = Duration.zero;
     _lastHitBy.clear();
     _lastHitAt.clear();
-    // Anything mid-fall is landed by the reset itself. Left behind, its id
-    // would still read as falling on the new grid — skipped by the progress
-    // update and by the rest check, and never put back.
+
     _fallenFor.clear();
     _fallTarget.clear();
     _fallAngle.clear();

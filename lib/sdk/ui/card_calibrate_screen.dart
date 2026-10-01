@@ -5,12 +5,6 @@ import 'package:flutter/material.dart';
 import '../model/device_metrics.dart';
 import 'sticker/sticker.dart';
 
-/// Full-screen calibration using an ISO 7810 ID-1 card (credit/ID cards).
-///
-/// The user places a physical card on the screen and slides until the outline
-/// matches. Because the card dimensions are fixed worldwide (85.6 × 54 mm),
-/// matching the outline uniquely determines the panel DPI, which is then used
-/// to recompute accurate mm dimensions for this device.
 class CardCalibrateScreen extends StatefulWidget {
   const CardCalibrateScreen({super.key, required this.metrics});
 
@@ -21,11 +15,9 @@ class CardCalibrateScreen extends StatefulWidget {
 }
 
 class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
-  // ISO 7810 ID-1, shown portrait on a portrait screen so the narrow
-  // dimension (54 mm) sits across the phone width.
   static const _kWidthMm = 54.0;
   static const _kHeightMm = 85.6;
-  static const _kCornerMm = 3.18; // standard corner radius
+  static const _kCornerMm = 3.18;
 
   late double _dpi;
 
@@ -53,12 +45,10 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
     final m = widget.metrics;
     final dpr = m.devicePixelRatio;
 
-    // Card outline in logical pixels at the current DPI guess.
     final cardW = _kWidthMm * _dpi / 25.4 / dpr;
     final cardH = _kHeightMm * _dpi / 25.4 / dpr;
     final cornerR = _kCornerMm * _dpi / 25.4 / dpr;
 
-    // Slider range: card fills 20–90 % of the available axes. dpr cancels.
     final maxDpi = math
         .min(
           m.activePxWidth * 0.90 * 25.4 / _kWidthMm,
@@ -73,9 +63,6 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
     final result = _calibrated();
 
     return Scaffold(
-      // Plain yellow, with none of the drifting shapes the other screens have:
-      // somebody is lining a real card up against this outline, and anything
-      // moving behind it is something to line up against by mistake.
       backgroundColor: St.bg,
       body: SafeArea(
         child: Column(
@@ -84,16 +71,11 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: StickerHeader(
                 'Card calibration',
-                // Backing out keeps whatever the screen had before: popping
-                // with no result is what the caller reads as "nothing
-                // changed".
                 onBack: () => Navigator.of(context).pop(),
               ),
             ),
             Expanded(
               child: Center(
-                // No shadow: the outline is a measurement, and a hard shadow
-                // offset from it is a second edge to line the card up with.
                 child: Container(
                   width: cardW,
                   height: cardH,
@@ -116,18 +98,11 @@ class _CardCalibrateScreenState extends State<CardCalibrateScreen> {
               ),
             ),
             const SizedBox(height: 10),
-
-            // What the slider currently claims this panel measures. The one
-            // number the whole screen exists to produce, so it is set like a
-            // number and not like a caption.
             Text(
               '${result.widthMm.toStringAsFixed(1)} × '
               '${result.heightMm.toStringAsFixed(1)} mm',
               style: St.display(26),
             ),
-
-            // Ink track, a green thumb the size of a fingertip, and no ripple
-            // — the card moving under your finger is the feedback.
             SliderTheme(
               data: SliderThemeData(
                 trackHeight: 8,

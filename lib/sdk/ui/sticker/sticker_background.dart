@@ -8,8 +8,6 @@ import 'sticker_tokens.dart';
 
 enum ShapeKind { circle, rounded, square, pill }
 
-/// One floating shape. [x] and [y] are fractions of the screen, [size] is in
-/// logical pixels.
 class StickerShape {
   const StickerShape(this.x, this.y, this.size, this.kind, [this.rotDeg = 0]);
 
@@ -20,7 +18,6 @@ class StickerShape {
   final ShapeKind kind;
 }
 
-/// Home: shapes all over, since nothing much sits on top of them.
 const homeShapes = [
   StickerShape(.08, .12, 46, ShapeKind.circle),
   StickerShape(.72, .08, 38, ShapeKind.rounded, 20),
@@ -33,7 +30,6 @@ const homeShapes = [
   StickerShape(.44, .88, 28, ShapeKind.square, 10),
 ];
 
-/// Lobby: pushed to the edges, behind the cards.
 const lobbyShapes = [
   StickerShape(.06, .20, 40, ShapeKind.circle),
   StickerShape(.80, .16, 34, ShapeKind.rounded, 20),
@@ -46,7 +42,6 @@ const lobbyShapes = [
   StickerShape(.46, .94, 26, ShapeKind.square, 10),
 ];
 
-/// Game picker: few and small, so they do not compete with the tiles.
 const pickerShapes = [
   StickerShape(.06, .04, 30, ShapeKind.circle),
   StickerShape(.84, .05, 26, ShapeKind.rounded, 20),
@@ -56,12 +51,6 @@ const pickerShapes = [
   StickerShape(.03, .88, 30, ShapeKind.rounded, 45),
 ];
 
-/// The yellow behind every sticker screen: a dot grid panning diagonally and a
-/// handful of outlined shapes drifting over it.
-///
-/// One painter on one ticker, and only translation and rotation — no blur, no
-/// shader — so it costs next to nothing on the cheapest phone at the table.
-/// Stands still when [StickerMotion] says to.
 class StickerBackground extends StatefulWidget {
   const StickerBackground({
     super.key,
@@ -142,8 +131,6 @@ class _BgPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final t = secs.value;
 
-    // The grid pans 36px diagonally every 3s — two cells, so the loop is
-    // seamless.
     final shift = (t / 3 * 36) % _grid;
     for (double y = shift - _grid; y < size.height + _grid; y += _grid) {
       for (double x = shift - _grid; x < size.width + _grid; x += _grid) {
@@ -151,8 +138,6 @@ class _BgPainter extends CustomPainter {
       }
     }
 
-    // Each shape ping-pongs on its own period, staggered so they never move
-    // in step.
     for (var i = 0; i < shapes.length; i++) {
       final s = shapes[i];
       final period = 5 + (i % 4) * 1.5;
@@ -192,7 +177,6 @@ class _BgPainter extends CustomPainter {
       old.shapes != shapes || old.colors != colors;
 }
 
-/// A still dot pattern: white dots on a coloured band. The paywall header.
 class DotsPainter extends CustomPainter {
   const DotsPainter({
     this.color = const Color(0x2EFFFFFF),

@@ -9,25 +9,6 @@ import '../../sdk/score/scoreboard.dart';
 import 'cops_robbers_config.dart';
 import 'city_maze.dart';
 
-/// Two teams, one city, two halves.
-///
-/// In the first half one team are the robbers, grabbing the coins lying in the
-/// streets, and the other are the cops hunting them; once every robber is
-/// caught — or the coins are gone, or the half runs out — the streets are
-/// refilled and the roles swap. The team that grabbed more in its turn wins.
-///
-/// A swipe on your own phone picks the next way to turn, and the turn is taken
-/// at the first junction that allows it — so a swipe can be made early, the
-/// way a street is actually run.
-///
-/// The streets are the maze's corridors and the blocks its walls; underneath,
-/// "dots" are the coins, which is what the code still calls them.
-///
-/// ## The teams
-///
-/// Each side of the table is a team: the top row against the bottom. The maze
-/// is mirrored across both middles, so each team starts on the same streets
-/// the other does.
 class CopsRobbersSim implements GameSim {
   CopsRobbersSim(this.context, {math.Random? random})
     : _random = random ?? math.Random() {
@@ -37,8 +18,6 @@ class CopsRobbersSim implements GameSim {
   final BoardContext context;
   final math.Random _random;
 
-  /// Which pitch of the boup a dot gets. Its own generator, so a sound cannot
-  /// change the maze a seeded round is dealt.
   final _boupPick = math.Random(6);
 
   late final CityMaze maze;
@@ -51,27 +30,19 @@ class CopsRobbersSim implements GameSim {
 
   late final List<_Runner> _runners;
 
-  /// Dots still in the maze, one byte a tile.
   late Uint8List _dots;
 
-  /// Dots eaten by each team, in the half it was robbing.
   final _eaten = [0, 0];
 
-  // 'role' | 'countdown' | 'playing' | 'switch' | 'over' | 'finished'
   String _phase = 'role';
   int _half = 0;
   double _clock = 0;
 
-  /// Whether the half that just ended was ended by the clock, which the
-  /// phones show as ROUND OVER before anything else.
   bool _timedOut = false;
 
   GameOutcome? _outcome;
 
-  /// Which team robs this half: team 0 first, then team 1.
   int get robbingTeam => _half;
-
-  // ------------------------------------------------------------------ build
 
   void _build() {
     final board = context.board;
@@ -90,8 +61,6 @@ class CopsRobbersSim implements GameSim {
     maze = CityMaze.generate(cols, rows, _random);
     _mazeCode = maze.encode();
 
-    // Split the table across whichever way its phones spread less: a block
-    // of phones is split top from bottom, a pair side by side left from right.
     final slices = context.slices;
     final ys = slices.map((s) => s.viewport.centerY).toList();
     final spreadY = ys.reduce(math.max) - ys.reduce(math.min);
@@ -122,7 +91,6 @@ class CopsRobbersSim implements GameSim {
     _startHalf(0);
   }
 
-  /// The tile nearest a point that nobody else starts on.
   int _freeTileNear(double x, double y, Set<int> taken) {
     var best = 0;
     var bestD = double.infinity;
@@ -162,8 +130,6 @@ class CopsRobbersSim implements GameSim {
     }
   }
 
-  // ------------------------------------------------------------------- step
-
   @override
   void step(double dt) {
     _clock += dt;
@@ -202,7 +168,6 @@ class CopsRobbersSim implements GameSim {
       if (robber) _eat(p);
     }
 
-    // Caught: any cop close enough to any robber.
     final reach = CopsRobbersConfig.catchReach * math.min(_tw, _th);
     for (final cop in _runners) {
       if (cop.team == robbingTeam) continue;
@@ -217,8 +182,7 @@ class CopsRobbersSim implements GameSim {
           ..caught = true
           ..deadX = px
           ..deadY = py;
-        // The bang where it happened, the robber's sad voice on their own
-        // phone, and the cop's happy one on theirs.
+
         final at = context.nearestPhone(px, py);
         if (at != null) _playOn(at, CopsRobbersConfig.caught);
         final lost = context.roster.byPhone(prey.phoneId);
@@ -246,12 +210,9 @@ class CopsRobbersSim implements GameSim {
     _decide();
   }
 
-  /// Walk [p] up to [budget] tiles, turning where they asked to at the first
-  /// junction that allows it and stopping at a wall.
   void _move(_Runner p, double budget) {
     var left = budget;
     for (var guard = 0; guard < 8 && left > 1e-9; guard++) {
-      // Turning round is allowed anywhere, as in the original.
       if ((p.wantC != 0 || p.wantR != 0) &&
           p.wantC == -p.dc &&
           p.wantR == -p.dr &&
@@ -285,10 +246,11 @@ class CopsRobbersSim implements GameSim {
       if (p.dc == 0 && p.dr == 0) return;
       p.facing = math.atan2(p.dr.toDouble(), p.dc.toDouble());
 
-      // Distance to the next tile centre ahead.
       final along = p.dc != 0 ? p.c : p.r;
       final dir = p.dc != 0 ? p.dc : p.dr;
-      final next = dir > 0 ? along.floorToDouble() + 1 : along.ceilToDouble() - 1;
+      final next = dir > 0
+          ? along.floorToDouble() + 1
+          : along.ceilToDouble() - 1;
       final toNext = (next - along).abs();
       final step = math.min(left, toNext);
       if (p.dc != 0) {
@@ -297,7 +259,6 @@ class CopsRobbersSim implements GameSim {
         p.r += p.dr * step;
       }
       if ((step - toNext).abs() < 1e-9) {
-        // Landed exactly on a centre: snap, so the next loop sees it.
         if (p.dc != 0) {
           p.c = next;
         } else {
@@ -321,21 +282,17 @@ class CopsRobbersSim implements GameSim {
     _eaten[p.team]++;
     p.ate++;
 
-    // On the phone the dot was on.
     final (x, y) = _centre(c, r);
     final at = context.nearestPhone(x, y);
     final bites = Sounds.buttonPress;
     if (at != null) _playOn(at, bites[_boupPick.nextInt(bites.length)]);
   }
 
-  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
   void _playOn(String phoneId, SoundCue cue) {
     final player = context.roster.byPhone(phoneId);
     if (player != null) context.audio.playOnPhone(player, cue);
   }
 
-  /// Whoever ate more in their turn takes the round, Flood's way: every
-  /// winner first place's points, and a dead heat shared by everyone.
   void _decide() {
     final teams = {for (final p in _runners) p.phoneId: p.team};
     if (_eaten[0] == _eaten[1]) {
@@ -367,10 +324,6 @@ class CopsRobbersSim implements GameSim {
           'you grabbed ${p.ate} of them',
   };
 
-  // ------------------------------------------------------------------ input
-
-  /// A swipe on your own glass picks where you turn next. One swipe, one turn,
-  /// however far the finger carries on.
   @override
   void onTouch(TouchEvent touch) {
     if (_phase != 'playing' && _phase != 'countdown') return;
@@ -407,8 +360,6 @@ class CopsRobbersSim implements GameSim {
     if (touch.phase == TouchPhase.up) p.swipeFrom = null;
   }
 
-  // ---------------------------------------------------- what phones see
-
   @override
   Iterable<Entity> get entities sync* {
     for (final p in _runners) {
@@ -417,8 +368,6 @@ class CopsRobbersSim implements GameSim {
       final (x, y) = _centre(p.c, p.r);
       yield Entity(
         descriptor: EntityDescriptor(
-          // A new id each half: a runner changes what it is at half time, and
-          // an entity's kind is fixed for its life.
           id: '${robber ? 'robber' : 'cop'}_${p.index}_$_half',
           kind: robber ? 'robber' : 'cop',
           props: {'phoneId': p.phoneId, 'index': p.index},
@@ -430,7 +379,6 @@ class CopsRobbersSim implements GameSim {
     }
   }
 
-  /// The dots as hex, four tiles a digit. Changes only when one is eaten.
   String get _dotString {
     final out = StringBuffer();
     for (var k = 0; k < _dots.length; k += 4) {
@@ -451,18 +399,15 @@ class CopsRobbersSim implements GameSim {
       'robbing': robbingTeam,
       if (_phase == 'countdown')
         'countdown':
-            ((CopsRobbersConfig.countdownSeconds - _clock) * 10).roundToDouble() /
+            ((CopsRobbersConfig.countdownSeconds - _clock) * 10)
+                .roundToDouble() /
             10,
-      // Whole seconds of the half left: a value that changes every tick is a
-      // packet every tick.
       if (_phase == 'playing')
         'left': (CopsRobbersConfig.halfSeconds - _clock).ceil(),
-      // ROUND OVER, for as long as it holds the table after the clock ran out.
       if ((_phase == 'switch' || _phase == 'over') &&
           _timedOut &&
           _clock < CopsRobbersConfig.timeUpSeconds)
         'timeUp': true,
-      // The maze and where it sits: fixed for the round.
       'maze': _mazeCode,
       'ox': _ox,
       'oy': _oy,
@@ -486,8 +431,6 @@ class CopsRobbersSim implements GameSim {
     return map;
   }
 
-  // -------------------------------------------------------- for tests and HUD
-
   String get phase => _phase;
   int get half => _half;
   int eatenBy(int team) => _eaten[team];
@@ -498,13 +441,11 @@ class CopsRobbersSim implements GameSim {
   int get dotsLeft => _dots.where((d) => d == 1).length;
   bool dotAt(int c, int r) => _dots[r * maze.cols + c] == 1;
 
-  /// Which tile [phoneId] is on, rounded to the nearest.
   (int, int) tileOf(String phoneId) {
     final p = _runners.firstWhere((p) => p.phoneId == phoneId);
     return (p.c.round(), p.r.round());
   }
 
-  /// World position of a tile's centre.
   (double, double) centreOf(int c, int r) => _centre(c, r);
 
   @override
@@ -541,18 +482,15 @@ class _Runner {
   final int home;
   final int color;
 
-  /// Position in tiles — whole numbers at tile centres — and heading.
   double c = 0, r = 0;
   int dc = 0, dr = 0;
 
-  /// The turn asked for, taken at the first junction that allows it.
   int wantC = 0, wantR = 0;
   double facing = 0;
 
   bool caught = false;
   double deadX = 0, deadY = 0;
 
-  /// Dots this player ate, across the round.
   int ate = 0;
 
   (double, double)? swipeFrom;

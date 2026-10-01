@@ -2,11 +2,6 @@ import 'dart:math' as math;
 
 import 'world_rect.dart';
 
-/// One screen's place in the world: a rectangle that may be turned.
-///
-/// Turned screens are why this exists. An axis-aligned rectangle stopped being
-/// able to describe a phone the moment a game could lay one at 37°, and the
-/// bounding box of a turned phone is emphatically not the phone.
 class ScreenRect {
   const ScreenRect({
     required this.centerX,
@@ -19,14 +14,11 @@ class ScreenRect {
   final double centerX;
   final double centerY;
 
-  /// Extent in the screen's own frame, before the turn.
   final double width;
   final double height;
 
   final double turnRadians;
 
-  /// The axis-aligned box this covers — for cheap culling and framing.
-  /// Conservative: never smaller than the screen, exactly it when unturned.
   WorldRect get bounds {
     final c = math.cos(turnRadians).abs();
     final s = math.sin(turnRadians).abs();
@@ -37,7 +29,6 @@ class ScreenRect {
 
   bool get isTurned => turnRadians.abs() > 1e-9;
 
-  /// Exact: is this world point on this screen?
   bool contains(double x, double y) {
     final dx = x - centerX;
     final dy = y - centerY;
@@ -65,30 +56,15 @@ class ScreenRect {
   );
 }
 
-/// Which parts of the board are backed by a real screen.
-///
-/// The world is continuous and physics runs *everywhere*, including the dead
-/// millimetres between two phones. This map is metadata on top, so a game can
-/// choose a policy per dead zone — most let a moving thing cross the gap
-/// invisibly and reappear exactly where momentum says it should.
 class CoverageMap {
   const CoverageMap({required this.screens, required this.board});
 
-  /// One entry per phone's active area, in world coordinates.
   final List<ScreenRect> screens;
 
-  /// Bounding box of the playfield.
   final WorldRect board;
 
-  /// Axis-aligned extents, for culling and diagrams.
   List<WorldRect> get liveRects => [for (final s in screens) s.bounds];
 
-  /// The widest gap that still counts as a seam, in world units.
-  ///
-  /// A seam is a gap you could close by pushing two phones together — a
-  /// bezel, a few millimetres. Open table between two screens in a ring is
-  /// not a seam, and a four-phone ring happens to be turned in exact quarter
-  /// turns, so the angle check alone would not have caught it.
   static const double maxSeamWorld = 3.0;
 
   bool isCovered(double x, double y) {
@@ -98,14 +74,6 @@ class CoverageMap {
     return false;
   }
 
-  /// The gaps between neighbouring screens — physically real space a ball or a
-  /// bird must cross.
-  ///
-  /// Only meaningful for screens square to each other and close enough to
-  /// abut: a row has vertical seams, a column horizontal ones, a grid both. A
-  /// ring of phones facing outward has no seams at all — the screens never
-  /// meet, so there is no shared edge to line up — and this returns nothing
-  /// rather than inventing bands across open table.
   List<WorldRect> seamRects() {
     const epsilon = 1e-6;
     final seams = <WorldRect>[];
@@ -119,7 +87,6 @@ class CoverageMap {
         final a = rects[i];
         final b = rects[j];
 
-        // Side by side, sharing some height → a vertical seam.
         final overlapTop = math.max(a.top, b.top);
         final overlapBottom = math.min(a.bottom, b.bottom);
         if (overlapBottom - overlapTop > epsilon) {
@@ -141,7 +108,6 @@ class CoverageMap {
           }
         }
 
-        // Stacked, sharing some width → a horizontal seam.
         final overlapLeft = math.max(a.left, b.left);
         final overlapRight = math.min(a.right, b.right);
         if (overlapRight - overlapLeft > epsilon) {
@@ -171,9 +137,6 @@ class CoverageMap {
     return (quarters - quarters.roundToDouble()).abs() < 1e-6;
   }
 
-  /// True when no screen other than [a] and [b] intrudes into [band]. In a
-  /// three-phone column the top and bottom are also separated and overlapping,
-  /// but the space between them is mostly the middle phone.
   static bool _nothingInside(
     List<WorldRect> rects,
     WorldRect band,
@@ -183,7 +146,8 @@ class CoverageMap {
   ) {
     for (final other in rects) {
       if (identical(other, a) || identical(other, b)) continue;
-      final overlaps = other.left < band.right - eps &&
+      final overlaps =
+          other.left < band.right - eps &&
           other.right > band.left + eps &&
           other.top < band.bottom - eps &&
           other.bottom > band.top + eps;

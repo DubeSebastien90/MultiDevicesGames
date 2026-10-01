@@ -6,22 +6,14 @@ import '../contract/view.dart';
 import '../model/player.dart';
 import 'player_art.dart';
 
-/// Prop keys [ShapeView] understands. A game using it declares these when it
-/// creates an entity; anything else is ignored.
 class ShapeProps {
-  static const shape = 'shape'; // 'circle' | 'box'
+  static const shape = 'shape';
   static const radius = 'r';
   static const width = 'w';
   static const height = 'h';
-  static const color = 'color'; // ARGB int
-  static const spin = 'spin'; // bool: draw a rotation tell
+  static const color = 'color';
+  static const spin = 'spin';
 
-  /// Whose piece this is: a `phoneId`. An entity that names a player at the
-  /// table is drawn as that player's character rather than as a flat shape —
-  /// see [ShapeView.roster].
-  ///
-  /// Still declare [shape] alongside it. It is what the entity falls back to,
-  /// and what every phone that has not got a roster yet draws.
   static const player = 'player';
 }
 
@@ -30,14 +22,6 @@ class ShapeKind {
   static const box = 'box';
 }
 
-/// Draws entities from their props: circles, boxes, colours, rotation.
-///
-/// This used to be the only renderer there was. It is now the default one — a
-/// game that has not got as far as art gets a working picture for free, and can
-/// replace it with a real [GameView] later without touching anything else.
-///
-/// Use it directly, or extend it and override [renderBackground] /
-/// [renderForeground] to keep the shapes and add your own layers around them.
 class ShapeView extends GameView {
   ShapeView({
     this.background = const Color(0xFF0B1020),
@@ -47,37 +31,16 @@ class ShapeView extends GameView {
     this.roster = Roster.empty,
   });
 
-  /// Outside the board.
   final Color background;
 
-  /// The board itself.
   final Color playfield;
 
-  /// A 1cm world grid. Because every phone draws the *same* world grid, lines
-  /// running unbroken across the physical gap are a live calibration check: if
-  /// they step, a measurement is wrong.
   final bool grid;
 
-  /// Mark where this screen's coverage ends and the gap begins.
   final bool showSeams;
 
-  /// Who is at the table, for entities that carry [ShapeProps.player].
-  ///
-  /// Given rather than looked up because a renderer has no session to ask: a
-  /// game hands over `context.roster` when it builds the view. Left empty —
-  /// the default — every entity is a shape, which is what a test and a phone
-  /// mid-join both get.
   final Roster roster;
 
-  /// How much bigger the character is drawn than the disc it stands in for.
-  ///
-  /// Three, the same as the fighters in Arena, so a player is the same size
-  /// relative to their own body in every game that draws one. The artboard
-  /// carries margins, so filling the disc exactly would draw a character
-  /// noticeably smaller than the circle everybody had been aiming at.
-  ///
-  /// Overridable for a game that seats the character in something drawn under
-  /// it — a car, say — where the seat, not the disc, sets how big they can be.
   double get characterScale => 3;
 
   final _fill = Paint();
@@ -109,15 +72,10 @@ class ShapeView extends GameView {
     if (showSeams) _drawSeams(canvas, frame);
   }
 
-  /// How big to draw [e] relative to its declared size this frame. Override
-  /// for per-frame effects — something shrinking away as it falls, say —
-  /// which props cannot carry, since a descriptor never changes.
   double entityScale(Frame frame, RenderEntity e) => 1;
 
-  /// How opaque to draw [e] this frame, from 0 (not drawn) to 1.
   double entityOpacity(Frame frame, RenderEntity e) => 1;
 
-  /// Every entity that declared a shape.
   void renderEntities(Canvas canvas, Frame frame) {
     final view = frame.visible.inflate(2.0);
 
@@ -125,9 +83,6 @@ class ShapeView extends GameView {
       final shape = e.props[ShapeProps.shape] as String?;
       if (shape == null) continue;
 
-      // Cull what this screen cannot see. The entity still exists and is still
-      // simulated — drawing it is just somebody else's job. Boxes use the
-      // half-diagonal so a rotated one is never clipped early.
       final reach = shape == ShapeKind.circle
           ? e.propDouble(ShapeProps.radius)
           : math.sqrt(
@@ -146,10 +101,6 @@ class ShapeView extends GameView {
       if (opacity <= 0) continue;
       final scale = entityScale(frame, e);
 
-      // Somebody's piece, and we know who: draw them instead of a shape.
-      // Unknown phone, empty roster, art still decoding — every one of those
-      // falls through to the shape below, which is the same rule the art layer
-      // lives by.
       final player = roster.byPhone(
         e.props[ShapeProps.player] as String? ?? '',
       );
@@ -175,7 +126,6 @@ class ShapeView extends GameView {
     }
   }
 
-  /// Override to draw on top of the shapes.
   void renderForeground(Canvas canvas, Frame frame) {}
 
   void _drawCircle(
@@ -187,7 +137,6 @@ class ShapeView extends GameView {
     final r = e.propDouble(ShapeProps.radius) * scale;
     canvas.drawCircle(Offset(e.x, e.y), r, _fill);
     if (e.props[ShapeProps.spin] == true) {
-      // A rotation tell, so a rolling ball reads as rolling.
       _fill.color = const Color(
         0x88FFFFFF,
       ).withValues(alpha: 0x88 / 255 * opacity);
@@ -223,7 +172,6 @@ class ShapeView extends GameView {
     final view = frame.visible;
     final board = frame.board;
 
-    // Cull to what this screen can actually see.
     final x0 = math.max(board.left, view.left).floorToDouble();
     final x1 = math.min(board.right, view.right).ceilToDouble();
     final y0 = math.max(board.top, view.top).floorToDouble();

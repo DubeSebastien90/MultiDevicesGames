@@ -1,11 +1,6 @@
 part of 'pitch_cars_sim.dart';
 
-/// Building the starting grid, the track ribbon and the finish checkerboard.
 extension _TrackBuilding on PitchCarsSim {
-  /// Staggered two-lane grid rather than one row across the ribbon — the
-  /// track is only [PitchCarsConfig.trackWidthWorld] wide, so four cars
-  /// abreast would spawn overlapping and the outer two would sit hard
-  /// against the edge with no room for a shot to deviate.
   Vector2 _startPositionFor(int index) {
     final reversedIndex = _order.length - 1 - index;
     final lane = reversedIndex.isEven ? -1 : 1;
@@ -37,8 +32,6 @@ extension _TrackBuilding on PitchCarsSim {
               ShapeProps.radius: scale.carVisualRadius,
               ShapeProps.color: _colorOf[_order[i]]!.value.toARGB32(),
               ShapeProps.spin: true,
-              // The entity id is the phone id, so a car already knows whose it is;
-              // this says it in the one place `ShapeView` looks.
               ShapeProps.player: _order[i],
             },
           ).createFixture(
@@ -52,20 +45,6 @@ extension _TrackBuilding on PitchCarsSim {
     }
   }
 
-  /// The road, as a single entity carrying the centerline.
-  ///
-  /// This used to be one box per segment — sixty to a hundred and thirty of
-  /// them, depending on the table — and the union of those boxes is not the
-  /// shape the physics tests. `PitchTrack.isOnTrack` asks whether a car is
-  /// within half a width of the centerline *polyline*, which rounds off every
-  /// bend and puts a half-disc past each end; a chain of rectangles has square
-  /// outer corners and stops flat. Cars sat on tarmac that was not drawn, and
-  /// `ShapeView`'s own corner rounding shaved every segment besides.
-  ///
-  /// So the centerline goes over the wire once and `PitchCarsView` strokes it,
-  /// round-capped and round-joined, which *is* that set rather than an
-  /// approximation of it. Fewer entities than before, and no way for the two
-  /// to disagree: both ends read [PitchTrack.collisionOutline].
   void _buildTrackEntities() {
     final pts = track.collisionOutline;
     if (pts.length < 2) return;
@@ -81,23 +60,6 @@ extension _TrackBuilding on PitchCarsSim {
     );
   }
 
-  /// Kerbs on the outside of every bend tight enough to throw a car off it.
-  ///
-  /// Which bends those are is [CornerWalls]'s business; this turns each one
-  /// into something a car can hit and something a player can see.
-  ///
-  /// A `ChainShape` rather than a row of thin boxes, and that is not a detail.
-  /// Box2D chains carry ghost vertices — each edge knows about its neighbours —
-  /// which is what stops a fast car catching on the joint between two segments
-  /// and being flung back across the road. A line of separate box fixtures has
-  /// no such thing, and a barrier assembled from them snags. The cars are
-  /// `bullet: true` besides, so a hard shot is swept against this rather than
-  /// teleported through it.
-  ///
-  /// The body carries an id like every other, but no `addBody`: a wall never
-  /// moves, so pushing its transform into the 60 Hz stream would be sixty
-  /// messages a second saying the same thing. It goes out once, with the road,
-  /// as a drawing.
   void _buildCornerWalls() {
     final walls = CornerWalls.of(track);
 
@@ -127,10 +89,6 @@ extension _TrackBuilding on PitchCarsSim {
     }
   }
 
-  /// One entity carrying a polyline, positioned at the middle of its own
-  /// bounding box with the points local to that — the convention every shape
-  /// in this codebase follows, and what keeps the box the platform culls
-  /// against the shape's own rather than the whole board's.
   Entity _polylineEntity({
     required String id,
     required String kind,
@@ -168,16 +126,10 @@ extension _TrackBuilding on PitchCarsSim {
     );
   }
 
-  /// Finish band center. On a line the band ends flush with the road's end,
-  /// so the whole checkerboard sits on tarmac — centred on the end, its far
-  /// half ran straight off along the last tangent, past a road that usually
-  /// curves away there. On a loop it straddles 0, the start/finish point a
-  /// lap measures from, where the starting grid's row 0 already sits.
   double get _finishCenter => track.closed
       ? 0.0
       : math.max(track.length - _finishBandLen / 2, _finishBandLen / 2);
 
-  /// Where the band begins: the progress a car needs before it can finish.
   double get _finishStart => track.closed
       ? track.length - _finishBandLen / 2
       : _finishCenter - _finishBandLen / 2;
@@ -186,15 +138,6 @@ extension _TrackBuilding on PitchCarsSim {
       PitchCarsConfig.finishLineCols *
       (track.widthWorld / PitchCarsConfig.finishLineRows);
 
-  /// Whether arclength [s] falls inside the finish band, wrapping around
-  /// for a closed track since the band there straddles arclength 0.
-  ///
-  /// On a line, anything from the band's start on is inside: there is no road
-  /// past it to be on. That includes the round cap past the end, which the
-  /// checkerboard is painted over — and which only ever projects to exactly
-  /// `track.length`, the band's far edge. Tested as a distance from the centre,
-  /// that edge was in or out on a rounding error, and a car parked on the
-  /// chequers in the cap failed to finish on roughly half of all tracks.
   bool _inFinishZone(double s) {
     if (!track.closed) return s >= _finishStart - 1e-6;
     var delta = (s - _finishCenter).abs();
@@ -202,17 +145,6 @@ extension _TrackBuilding on PitchCarsSim {
     return delta <= _finishBandLen / 2;
   }
 
-  /// The checkerboard, bent along the road.
-  ///
-  /// Each tile is a quad whose corners sit on the centerline's own normals at
-  /// the tile's two column boundaries, so the band curves with the road the
-  /// way the ribbon does. Neighbouring tiles share their corners exactly —
-  /// no seams, no overlap — and none of it reaches past `widthWorld / 2`.
-  ///
-  /// On a line the pattern carries on over the round cap past the road's
-  /// end — tarmac a car can stand on, so it would be odd left bare. Those
-  /// extra columns run straight on along the last tangent and are clipped by
-  /// the view to the cap's own disc ([PitchCarsConfig.finishClip]).
   void _buildFinishLineEntities() {
     final rows = PitchCarsConfig.finishLineRows;
     final tileSize = track.widthWorld / rows;

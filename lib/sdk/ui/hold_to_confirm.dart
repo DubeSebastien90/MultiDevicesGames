@@ -6,17 +6,6 @@ import '../audio/game_audio.dart';
 import '../audio/sounds.dart';
 import 'sticker/sticker.dart';
 
-/// Press anywhere and keep pressing: a ring fills, and at the end of it the
-/// answer is yes.
-///
-/// A hold rather than a button because both hands are busy holding phones
-/// against each other, and a stray tap while sliding a phone into place should
-/// not claim "I am ready". Letting go does not throw the progress away either —
-/// it drains, slower than it filled, so a finger that slips is a stumble and not
-/// a restart.
-///
-/// [content] sits beside the ring — or above it, when the screen is too narrow
-/// for beside to mean anything.
 class HoldToConfirm extends StatefulWidget {
   const HoldToConfirm({
     super.key,
@@ -32,14 +21,10 @@ class HoldToConfirm extends StatefulWidget {
     this.audio = const SilentLocalAudio(),
   });
 
-  /// Shown next to the ring. The reason someone is holding at all.
   final Widget content;
 
-  /// Fired once, the moment the ring fills.
   final VoidCallback onConfirmed;
 
-  /// Already confirmed somewhere else — a reconnect, or a rebuild. The ring
-  /// starts full rather than inviting a hold that would do nothing.
   final bool confirmed;
 
   final String label;
@@ -48,23 +33,10 @@ class HoldToConfirm extends StatefulWidget {
   final Duration hold;
   final Duration decay;
 
-  /// Shown under the ring, and the one part of this screen that may be
-  /// touched without holding anything.
-  ///
-  /// It is a slot rather than part of [content] because of how the two are hit
-  /// tested: [content] is made transparent to pointers so the hold underneath
-  /// gets them all, while this is left alive, so a button here takes its own
-  /// press. Without that, every tap on a chip would fill the ring a little and
-  /// a dozen impatient taps would confirm a position nobody confirmed.
   final Widget? footer;
 
-  /// The air around the whole arrangement. The placement screen widens it to
-  /// two stripe widths, because its content grows to whatever it is given and
-  /// the gutter is the only thing holding it off the edge stripes.
   final EdgeInsets padding;
 
-  /// Where the gauge is heard: a tick per step of the ring, rising as it
-  /// fills. This phone's own speaker only — the finger is on this glass.
   final LocalAudio audio;
 
   @override
@@ -82,22 +54,13 @@ class _HoldToConfirmState extends State<HoldToConfirm>
         ..addStatusListener(_onStatus)
         ..addListener(_onProgress);
 
-  /// The highest gauge step already sounded, -1 for none.
-  ///
-  /// Follows the ring down as it drains, silently, so a finger that slips and
-  /// comes back picks the climb up where the ring is rather than replaying
-  /// the low notes.
   int _step = -1;
 
-  /// The idle animation: something alive on screen while people shuffle phones
-  /// around. Fades out as the hold takes over, so the two never compete.
   late final AnimationController _spin = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 2600),
   )..repeat();
 
-  /// Set the instant the hold completes, rather than waiting for a round trip —
-  /// the finger earned "Ready" already.
   bool _done = false;
 
   @override
@@ -118,11 +81,6 @@ class _HoldToConfirmState extends State<HoldToConfirm>
       return;
     }
 
-    // Being told it is no longer confirmed has to undo it. This latched once
-    // and stayed latched, and because Flutter reuses this State for the next
-    // round, a second round opened already saying "Ready" — with the hold
-    // disabled, since it thought the job was done. Nobody could confirm, and
-    // the host waited for a phone that had no way to answer.
     if (!widget.confirmed && _done) {
       _done = false;
       _progress.value = 0;
@@ -136,7 +94,6 @@ class _HoldToConfirmState extends State<HoldToConfirm>
       steps.length - 1,
     );
     if (_progress.status != AnimationStatus.forward) {
-      // Draining: nothing to hear, only to remember.
       if (_progress.value == 0) {
         _step = -1;
       } else if (step < _step) {
@@ -183,15 +140,6 @@ class _HoldToConfirmState extends State<HoldToConfirm>
 
     return Stack(
       children: [
-        // The hold target, and it really is the whole screen: underneath
-        // everything, catching every pointer the layer above lets through.
-        //
-        // Which is all of them but one. The picture and the ring are wrapped in
-        // an [IgnorePointer] below, so a finger anywhere on them falls straight
-        // through to here; only the footer's buttons are left hittable, and a
-        // button that takes the press is a press this never sees. That is the
-        // whole trick — no rectangle is carved out of the hold, and no tap on a
-        // chip can nudge the ring.
         Positioned.fill(
           child: Listener(
             behavior: HitTestBehavior.opaque,
@@ -205,13 +153,8 @@ class _HoldToConfirmState extends State<HoldToConfirm>
             padding: widget.padding,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // "Next to" on a portrait phone means underneath.
                 final tall = constraints.maxWidth <= 520;
 
-                // [Expanded], not a bare child: the picture is handed whatever
-                // the ring and the footer do not want. That is what makes the
-                // gutter hold on a short phone — the fixed things keep their
-                // size and the one thing that can be drawn smaller is.
                 final body = tall
                     ? Column(
                         children: [
@@ -243,7 +186,6 @@ class _HoldToConfirmState extends State<HoldToConfirm>
   }
 }
 
-/// The loading circle: idle sweep, hold progress, and the word in the middle.
 class _HoldRing extends StatelessWidget {
   const _HoldRing({
     required this.progress,
@@ -267,18 +209,13 @@ class _HoldRing extends StatelessWidget {
         animation: Listenable.merge([progress, spin]),
         builder: (context, _) {
           final value = progress.value;
-          // Green once the promise is made, purple while it is being made —
-          // the purple of the standings card, so the one thing on this screen
-          // that moves under your finger wears the flow's accent.
+
           final arc = done ? St.go : St.premium;
           return CustomPaint(
             painter: _HoldRingPainter(
               progress: value,
               spin: spin.value,
               arc: arc,
-              // The idle sweep in the same purple, washed out and fading as the
-              // hold takes over, so a comet going round never reads as the
-              // hold itself.
               idle: St.premium.withValues(alpha: 0.3 * (1 - value)),
             ),
             child: Center(
@@ -300,8 +237,6 @@ class _HoldRing extends StatelessWidget {
   }
 }
 
-/// A round white sticker — ink rim, hard shadow — with the gauge running in a
-/// band between two ink rings.
 class _HoldRingPainter extends CustomPainter {
   _HoldRingPainter({
     required this.progress,
@@ -310,20 +245,15 @@ class _HoldRingPainter extends CustomPainter {
     required this.idle,
   });
 
-  /// 0 to 1: how much of the hold has been served.
   final double progress;
 
-  /// 0 to 1, looping: where the idle sweep has got to.
   final double spin;
 
   final Color arc;
   final Color idle;
 
-  /// Matches the edge stripes' width, so the ring and the bands on the glass
-  /// are strokes of one weight rather than two.
   static const _band = 18.0;
 
-  /// The sticker outline, as thick as every other sticker's.
   static const _rim = 3.0;
 
   static const _shadow = 5.0;
@@ -347,12 +277,10 @@ class _HoldRingPainter extends CustomPainter {
       ..strokeWidth = _band
       ..strokeCap = StrokeCap.round;
 
-    // The idle sweep — a comet chasing the ring, fading as the hold fills.
     if (idle.a > 0.01) {
       canvas.drawArc(box, spin * 2 * math.pi, 1.1, false, gauge..color = idle);
     }
 
-    // The hold itself, from the top, clockwise.
     if (progress > 0) {
       canvas.drawArc(
         box,
@@ -363,8 +291,6 @@ class _HoldRingPainter extends CustomPainter {
       );
     }
 
-    // The rims last, so the gauge sits in a channel rather than over its
-    // edges.
     final rim = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = _rim

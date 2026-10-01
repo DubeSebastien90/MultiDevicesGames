@@ -4,11 +4,8 @@ import 'dart:io';
 
 import 'transport.dart';
 
-/// Port the host binds. Fixed so the QR payload (and typed-IP fallback) stay
-/// short; if it is taken we walk upward a few slots.
 const int kDefaultPort = 8080;
 
-/// Host side: `dart:io` WebSocket server over the local LAN.
 class WebSocketHostTransport implements HostTransport {
   WebSocketHostTransport({this.port = kDefaultPort});
 
@@ -18,7 +15,6 @@ class WebSocketHostTransport implements HostTransport {
   final _peers = StreamController<PeerLink>.broadcast();
   final _links = <_WebSocketPeerLink>[];
 
-  /// The address joiners should connect to, once [start] has run.
   Uri? get address => _address;
   Uri? _address;
 
@@ -29,49 +25,51 @@ class WebSocketHostTransport implements HostTransport {
   Future<Uri> start() async {
     HttpServer? bound;
     var lastError = Object();
-    // A previous run's socket can linger in TIME_WAIT; try a few ports.
+
     for (var p = port; p < port + 10; p++) {
       try {
-        bound = await HttpServer.bind(InternetAddress.anyIPv4, p, shared: false);
+        bound = await HttpServer.bind(
+          InternetAddress.anyIPv4,
+          p,
+          shared: false,
+        );
         break;
       } on SocketException catch (e) {
         lastError = e;
       }
     }
     if (bound == null) {
-      throw StateError('Could not bind a port in $port..${port + 9}: $lastError');
+      throw StateError(
+        'Could not bind a port in $port..${port + 9}: $lastError',
+      );
     }
     _server = bound;
 
     final ips = await localIPv4Addresses();
-    _address = Uri.parse('ws://${ips.isEmpty ? '127.0.0.1' : ips.first}:${bound.port}');
-
-    bound.listen(
-      (HttpRequest req) async {
-        if (!WebSocketTransformer.isUpgradeRequest(req)) {
-          // Handy when poking the host from a browser.
-          req.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.text
-            ..write('MultiDevicesGame host — connect a WebSocket here');
-          await req.response.close();
-          return;
-        }
-        try {
-          final socket = await WebSocketTransformer.upgrade(req);
-          final link = _WebSocketPeerLink(
-            socket,
-            req.connectionInfo?.remoteAddress.address ?? 'unknown',
-          );
-          _links.add(link);
-          link.onClosed.then((_) => _links.remove(link));
-          _peers.add(link);
-        } catch (_) {
-          // Failed upgrade: drop it, the joiner will retry.
-        }
-      },
-      onError: (Object _) {},
+    _address = Uri.parse(
+      'ws://${ips.isEmpty ? '127.0.0.1' : ips.first}:${bound.port}',
     );
+
+    bound.listen((HttpRequest req) async {
+      if (!WebSocketTransformer.isUpgradeRequest(req)) {
+        req.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.text
+          ..write('MultiDevicesGame host — connect a WebSocket here');
+        await req.response.close();
+        return;
+      }
+      try {
+        final socket = await WebSocketTransformer.upgrade(req);
+        final link = _WebSocketPeerLink(
+          socket,
+          req.connectionInfo?.remoteAddress.address ?? 'unknown',
+        );
+        _links.add(link);
+        link.onClosed.then((_) => _links.remove(link));
+        _peers.add(link);
+      } catch (_) {}
+    }, onError: (Object _) {});
 
     return _address!;
   }
@@ -96,9 +94,7 @@ class _WebSocketPeerLink implements PeerLink {
         try {
           final decoded = jsonDecode(raw);
           if (decoded is Map<String, dynamic>) _messages.add(decoded);
-        } catch (_) {
-          // Ignore malformed frames rather than killing the connection.
-        }
+        } catch (_) {}
       },
       onDone: _handleClosed,
       onError: (Object _) => _handleClosed(),
@@ -137,7 +133,6 @@ class _WebSocketPeerLink implements PeerLink {
   }
 }
 
-/// Client side: connects to `ws://host:port`.
 class WebSocketTransport implements Transport {
   WebSocketTransport(this.uri);
 
@@ -151,10 +146,9 @@ class WebSocketTransport implements Transport {
 
   @override
   Future<void> connect() async {
-    // Without a timeout a wrong IP hangs for ~2 minutes on the OS default,
-    // which reads as "the app froze".
-    final socket = await WebSocket.connect(uri.toString())
-        .timeout(const Duration(seconds: 6));
+    final socket = await WebSocket.connect(
+      uri.toString(),
+    ).timeout(const Duration(seconds: 6));
     _socket = socket;
     socket.listen(
       (dynamic raw) {
@@ -188,8 +182,6 @@ class WebSocketTransport implements Transport {
   }
 }
 
-/// Every usable IPv4 address, private/LAN ranges first — that is the one a
-/// joiner on the same WiFi can actually reach.
 Future<List<String>> localIPv4Addresses() async {
   try {
     final interfaces = await NetworkInterface.list(
@@ -211,7 +203,6 @@ Future<List<String>> localIPv4Addresses() async {
   }
 }
 
-/// Higher = more likely to be the LAN the other phone is on.
 int _privateRank(String ip) {
   if (ip.startsWith('192.168.')) return 3;
   if (ip.startsWith('10.')) return 2;
@@ -220,6 +211,6 @@ int _privateRank(String ip) {
     final second = int.tryParse(m.group(1)!) ?? 0;
     if (second >= 16 && second <= 31) return 2;
   }
-  if (ip.startsWith('169.254.')) return -1; // link-local, usually useless
+  if (ip.startsWith('169.254.')) return -1;
   return 0;
 }

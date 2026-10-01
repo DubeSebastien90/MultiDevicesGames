@@ -8,12 +8,6 @@ import '../../sdk/contract/view.dart';
 import '../../sdk/render/shape_view.dart';
 import 'hungry_hippos_config.dart';
 
-/// The dish, then the marbles and hippos on top of it, then the tells: a
-/// charge filling up, a shove going off, a hippo seeing stars.
-///
-/// Everything that moves is an ordinary entity, so [ShapeView] draws it and the
-/// platform interpolates it. The bowl is not a thing in the simulation at all,
-/// only a force, and would otherwise be invisible.
 class HungryHipposView extends ShapeView {
   HungryHipposView(this.context) : super(roster: context.roster);
 
@@ -29,12 +23,8 @@ class HungryHipposView extends ShapeView {
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
 
-  /// How long each hippo has been charging, counted here rather than sent:
-  /// shared state only says *that* it is charging, and a meter that fills a
-  /// frame late on one phone than another does not matter to anybody.
   final _chargingFor = <String, double>{};
 
-  /// Shoves still fading out, by the sim's `count:x:y` tag.
   final _flashes = <String, _Flash>{};
   final _seenShoves = <String, String>{};
 
@@ -44,7 +34,6 @@ class HungryHipposView extends ShapeView {
     ..style = PaintingStyle.stroke
     ..color = const Color(HungryHipposConfig.colorRipple);
 
-  /// How far apart the ripples round the middle of the pond are.
   static const _rippleGap = 1.6;
 
   @override
@@ -53,12 +42,8 @@ class HungryHipposView extends ShapeView {
     final centre = Offset(board.centerX, board.centerY);
     _drawPond(canvas, frame, centre);
 
-    // Wide enough to reach under every hippo, so the dish looks like the thing
-    // they are all leaning into.
     final radius = _dishRadius(frame);
 
-    // A soft dip rather than a flat disc: the marbles behave as though the
-    // middle is lower, and the picture should agree with the physics.
     _dish.shader = ui.Gradient.radial(centre, radius, [
       const Color(0x40FFFFFF),
       const Color(0x00FFFFFF),
@@ -70,8 +55,6 @@ class HungryHipposView extends ShapeView {
     canvas.drawCircle(centre, radius, _rim);
   }
 
-  /// A dazed hippo is drawn faded, so its player — and everyone else — can see
-  /// it is out of the game for a moment.
   @override
   double entityOpacity(Frame frame, RenderEntity e) {
     if (e.kind != 'hippo') return 1;
@@ -85,7 +68,6 @@ class HungryHipposView extends ShapeView {
     _drawShoves(canvas, frame);
   }
 
-  /// A ring closing around a charging hippo, full when the charge is.
   void _drawCharges(Canvas canvas, Frame frame) {
     for (final e in frame.ofKind('hippo')) {
       final player = e.props[ShapeProps.player] as String? ?? e.id;
@@ -111,7 +93,6 @@ class HungryHipposView extends ShapeView {
     }
   }
 
-  /// An expanding ring where a lunge went off, as wide as what it shoved.
   void _drawShoves(Canvas canvas, Frame frame) {
     final shoves = frame.sharedState['shoves'];
     if (shoves is Map) {
@@ -152,9 +133,6 @@ class HungryHipposView extends ShapeView {
     return hippos[player] as String?;
   }
 
-  /// The water: a darker edge round the table, and rings spreading from the
-  /// middle of it, centred on the board so they are one set of rings across
-  /// every phone rather than a set per screen.
   void _drawPond(Canvas canvas, Frame frame, Offset centre) {
     final view = frame.visible;
     final board = frame.board;
@@ -172,7 +150,6 @@ class HungryHipposView extends ShapeView {
       _dish,
     );
 
-    // Only the rings this screen can see.
     final corners = [
       Offset(view.left, view.top),
       Offset(view.right, view.top),
@@ -189,15 +166,8 @@ class HungryHipposView extends ShapeView {
     }
   }
 
-  /// Straight from the simulation, which sized it. Working it out again here
-  /// would be a second implementation of one fact, and the rim people aim at
-  /// has to be the rim the marbles were dealt into.
   double _dishRadius(Frame frame) =>
       (frame.sharedState['dish'] as num?)?.toDouble() ?? 0;
-
-  // No HUD. The marbles are on the table: a count of them in the corner was
-  // the same fact written twice, once where the players are looking and once
-  // where they are not.
 }
 
 class _Flash {

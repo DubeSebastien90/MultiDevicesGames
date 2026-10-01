@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
@@ -18,27 +17,11 @@ import 'standings_card.dart';
 import 'sticker/sticker.dart';
 import 'table_notice.dart';
 
-/// The connection screen, and only that: the QR, who has arrived, and — on the
-/// host — the button that starts the evening.
-///
-/// Deliberately says nothing about phone placement. That belongs to the
-/// arrangement screen, because it changes with every minigame while this screen
-/// never does — you set the room up once and let people in, then decide what to
-/// play.
-///
-/// The host advertises the game by name over UDP so friends can find it in
-/// their join list without typing anything. The QR is on screen for the same
-/// reason it always was — broadcast is the first thing a hostile network drops,
-/// and the game has to survive that. The plain IP address used to be here too
-/// and is not any more: nobody was ever asked to type one, and a row of digits
-/// with no instruction attached is a puzzle, not a fallback.
 class LobbyView extends StatelessWidget {
   const LobbyView({super.key, required this.controller});
 
   final AppController controller;
 
-  /// Below this much height the lobby scrolls as a whole instead of holding
-  /// still — see [_build].
   static const _stillHeight = 640.0;
 
   @override
@@ -49,10 +32,6 @@ class LobbyView extends StatelessWidget {
     final seats = _seats(controller);
     final title = host?.name ?? client.sessionName ?? 'Lobby';
 
-    // Type set at twice its size does not push the bottom of the lobby off the
-    // bottom of the phone — it overflows the cards, which are drawn to a size.
-    // A third larger is as far as this layout stretches, and past that the
-    // words stop growing rather than the Play button leaving.
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: _build(context, client, host, seats, title),
@@ -69,15 +48,10 @@ class LobbyView extends StatelessWidget {
     final gap = SizedBox(height: host == null ? 16 : 14);
 
     final top = <Widget>[
-      // The back button *is* Leave. On every other screen it undoes the step
-      // that got you here, and the step that got you here was opening — or
-      // joining — this lobby.
       StickerHeader(title, size: 26, onBack: controller.leave),
       gap,
       if (host != null) _InviteCard(host: host) else const _StatusCard(),
       gap,
-      // The roster and the picker are one card: "who is here" and "who is
-      // which animal" are one question at a table.
       _CharacterPicker(client: client, seats: seats, compact: host != null),
       gap,
       if (client.warning != null || host?.warning != null) ...[
@@ -92,9 +66,6 @@ class LobbyView extends StatelessWidget {
       colors: playerColors(controller),
       offline: awayPhoneIds(controller),
       compact: host != null,
-      // Asked about first. The button sits a thumb's width from the character
-      // picker on a screen people prod while chatting, and there is no undo
-      // behind it: the round deltas are gone the moment the totals are.
       onReset: host == null
           ? null
           : () async {
@@ -104,12 +75,6 @@ class LobbyView extends StatelessWidget {
 
     final bottom = <Widget>[
       if (host != null) ...[
-        // Debug builds only. Two of the three things that set this are
-        // internal failures — a game's `planBoard` refusing the table, or its
-        // `createSim` throwing — and their text is a class name and an
-        // exception, which is a bug report, not a message for whoever is
-        // hosting games night. The third, the playlist running out for a
-        // shrunken table, is already said properly by [TableChangeScreen].
         if (PlatformConfig.showDebugUi && host.planError != null) ...[
           const SizedBox(height: 14),
           _PlanErrorBanner(
@@ -137,11 +102,6 @@ class LobbyView extends StatelessWidget {
                 builder: (context, box) {
                   const padding = EdgeInsets.fromLTRB(20, 12, 20, 20);
 
-                  // A screen meant to hold still: everything on it is either
-                  // a control or a fact about the table, and both are things
-                  // a host looks up mid-sentence. So on any phone with the
-                  // room, nothing moves — the standings take what is left and
-                  // scroll inside themselves.
                   if (box.maxHeight >= _stillHeight) {
                     return Padding(
                       padding: padding,
@@ -156,9 +116,6 @@ class LobbyView extends StatelessWidget {
                     );
                   }
 
-                  // A phone too short to hold it all — the first iPhone SE,
-                  // a small Android, big system type — scrolls instead of
-                  // overflowing, with the standings at a height of their own.
                   return SingleChildScrollView(
                     padding: padding,
                     child: Column(
@@ -183,12 +140,6 @@ class LobbyView extends StatelessWidget {
   }
 }
 
-/// A game whose `planBoard` produced something unusable. Shown here because
-/// this is where the round would have started, and it never did.
-///
-/// Built only under [kDebugMode] — see the call site for why. Left in the app's
-/// error colours rather than the stickers on purpose: it is a developer's
-/// banner, and it should not look like part of the design.
 class _PlanErrorBanner extends StatelessWidget {
   const _PlanErrorBanner({required this.message, required this.onDismiss});
 
@@ -228,8 +179,6 @@ class _PlanErrorBanner extends StatelessWidget {
   }
 }
 
-/// What a phone that is not the host sees where the QR would be: there is
-/// nothing for it to do here but wait, and saying so is the whole card.
 class _StatusCard extends StatelessWidget {
   const _StatusCard();
 
@@ -290,20 +239,8 @@ class _StatusCard extends StatelessWidget {
   );
 }
 
-/// Secondary text on a white card, a shade warmer than [St.muted] on yellow.
 const _mutedWarm = Color(0xFF6B5A1E);
 
-/// The way in: a QR the size of a sticker, and the way to make it big.
-///
-/// No address and no join code. Friends on the same WiFi find this game by name
-/// in their own join list; the QR is what covers the network that will not let
-/// them. Neither of those is a string anybody types, so neither is on screen.
-///
-/// The code is never drawn large here. A lobby is read at arm's length by the
-/// person holding it, while the scanning happens across a table, in whatever
-/// light the room has, which wants the code bigger than this card could ever
-/// draw it. So the sticker is a button, and [showJoinCodeSticker] is where the
-/// code actually lives.
 class _InviteCard extends StatelessWidget {
   const _InviteCard({required this.host});
 
@@ -336,18 +273,11 @@ class _InviteCard extends StatelessWidget {
 
   String get _line {
     if (host.discoveryFailure != null) {
-      // Worth saying, because the join list they are staring at is never going
-      // to fill in. The QR is the only way in then, so it is the only thing
-      // this offers.
       return 'This network hides the game. Have friends scan this code.';
     }
     return 'Friends scan to join the next round';
   }
 
-  /// Debug builds only. Nobody is asked to type an address in a shipped build —
-  /// there is no field for it outside debug. It is here because the join
-  /// list's own Type Address button is, and that button needs something to
-  /// read off.
   List<Widget> _debugAddress() {
     if (!PlatformConfig.showDebugUi) return const [];
     return [
@@ -360,12 +290,6 @@ class _InviteCard extends StatelessWidget {
   }
 }
 
-/// Play, or why not — and the games list beside it.
-///
-/// The button says why it will not go, instead of a line of explanation under
-/// a button that has gone grey for reasons of its own. There is one thing a
-/// host can do about most of those reasons, and the tune button beside it is
-/// where they do it.
 class _HostBar extends StatelessWidget {
   const _HostBar({required this.host, required this.onPickGames});
 
@@ -401,9 +325,6 @@ class _HostBar extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          // Once anybody has scored, the evening is under way
-                          // and this is the next of several rather than the
-                          // first.
                           host.scores.isUsed ? 'Next round!' : 'Play',
                           style: St.display(28, color: St.white),
                         ),
@@ -417,9 +338,6 @@ class _HostBar extends StatelessWidget {
                   ),
           ),
           const SizedBox(width: 14),
-          // The playlist, down to its icon: a thing you set once and then stop
-          // looking at. Beside Play rather than under it because it is the fix
-          // for a Play that will not go.
           Stack(
             clipBehavior: Clip.none,
             children: [
@@ -462,7 +380,6 @@ class _HostBar extends StatelessWidget {
   }
 }
 
-/// Where Play would be: a dashed outline, a padlock, and the reason.
 class _Locked extends StatelessWidget {
   const _Locked({required this.label});
 
@@ -526,16 +443,6 @@ class _DashedOutline extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
-/// Ask before throwing the evening's scores away, and answer whether to.
-///
-/// A guard rather than an undo, because there is nothing to undo *to*: the
-/// totals and every round's delta go together, and the games they came from
-/// are not going to be replayed to get them back.
-///
-/// Public, and returning the answer rather than doing the deed, so the
-/// question can be put to a test without a lobby, a host and a socket behind
-/// it. Dismissing it any other way — a tap on the scrim, a route popped from
-/// elsewhere — reads as no.
 Future<bool> confirmResetScores(BuildContext context) async {
   final sure = await showStickerSheet<bool>(
     context,
@@ -565,8 +472,6 @@ class _ConfirmResetSheet extends StatelessWidget {
               const SizedBox(height: 22),
               Row(
                 children: [
-                  // Backing out is the default, so it gets the back button
-                  // every other screen uses for exactly that.
                   StickerBackButton(
                     onTap: () => Navigator.of(context).pop(false),
                   ),
@@ -575,9 +480,6 @@ class _ConfirmResetSheet extends StatelessWidget {
                     child: StickerButton(
                       height: 52,
                       radius: 18,
-                      // Red: the colour for a thing that did not go your way,
-                      // and the right one for a button that throws an
-                      // evening's scores out.
                       color: St.back,
                       onTap: () => Navigator.of(context).pop(true),
                       child: Text(
@@ -596,18 +498,11 @@ class _ConfirmResetSheet extends StatelessWidget {
   }
 }
 
-/// The room left between the cards and the bottom bar, given to the standings.
-///
-/// Below [_floor] there is no card worth drawing — a heading and no room for a
-/// single name is a worse answer than the space it would take — so it stands
-/// down and leaves the room to the cards above.
 class _StandingsSlot extends StatelessWidget {
   const _StandingsSlot({required this.child});
 
   final Widget child;
 
-  /// Roughly a heading and two names. It decides whether to draw at all, not
-  /// how tall to draw, so being a few pixels out costs nothing.
   static const _floor = 130.0;
 
   @override
@@ -621,14 +516,6 @@ class _StandingsSlot extends StatelessWidget {
   );
 }
 
-/// The standings, in the lobby: a purple band, then everybody by score.
-///
-/// Draws nothing until somebody scores. Some games are co-operative and an
-/// all-zero table is noise, so a game that never awards points simply never
-/// makes this appear.
-///
-/// As tall as its rows, up to the room it is given; past that the rows scroll
-/// under the band, which never moves.
 class _Standings extends StatelessWidget {
   const _Standings({
     required this.scores,
@@ -710,7 +597,6 @@ class _Standings extends StatelessWidget {
               children: [
                 ListView.separated(
                   shrinkWrap: true,
-                  // Inside a page that may itself scroll, on a short phone.
                   primary: false,
                   padding: const EdgeInsets.fromLTRB(10, 10, 10, 18),
                   itemCount: ranked.length,
@@ -725,8 +611,6 @@ class _Standings extends StatelessWidget {
                     odd: i.isOdd,
                   ),
                 ),
-                // The last row fades out rather than being cut by the card's
-                // edge, which is what says there is more below.
                 const Positioned(
                   left: 0,
                   right: 0,
@@ -753,7 +637,6 @@ class _Standings extends StatelessWidget {
   }
 }
 
-/// One person's line: where they came, who they are, and what they have.
 class _StandingRow extends StatelessWidget {
   const _StandingRow({
     required this.place,
@@ -778,9 +661,6 @@ class _StandingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Somebody who is not here is the grey character, whatever colour they
-    // last wore: between rounds that colour has gone back to the palette and
-    // may be on somebody else by now.
     final art = away ? PlayerPalette.away : color;
     final podium = place <= 3;
     final disc = compact ? 28.0 : 30.0;
@@ -824,10 +704,7 @@ class _StandingRow extends StatelessWidget {
             dimension: portrait,
             child: art == null
                 ? null
-                : PlayerArt.of(
-                    art,
-                    PlayerArtSlot.face,
-                  ).widget(size: portrait),
+                : PlayerArt.of(art, PlayerArtSlot.face).widget(size: portrait),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -887,24 +764,14 @@ class _StandingRow extends StatelessWidget {
   }
 }
 
-/// Who is holding one of the characters.
 class _Seat {
   const _Seat({required this.label, required this.connected});
 
   final String label;
 
-  /// A phone the session remembers that is not on the wire right now. It keeps
-  /// its character — walking away does not hand it to somebody else — and the
-  /// name over that character says so by being struck through.
   final bool connected;
 }
 
-/// Who holds what, by colour id.
-///
-/// The host holds the roster directly; every other phone is told the same list
-/// in the lobby broadcast, in the same shape. Read once per build and handed
-/// down, because it answers two questions on this screen — whose name goes over
-/// which character, and how many people are here.
 Map<String, _Seat> _seats(AppController controller) {
   final client = controller.client!;
   final host = controller.host;
@@ -926,12 +793,6 @@ Map<String, _Seat> _seats(AppController controller) {
   };
 }
 
-/// Which character you are, at a table where that is how people tell you apart.
-///
-/// Everyone arrives already wearing one, so this is never a gate — it is here
-/// for the person who wants to be the frog because they are always the frog.
-/// A character somebody else has taken keeps their name over it rather than
-/// being hidden, which is what makes this the roster as well as the picker.
 class _CharacterPicker extends StatelessWidget {
   const _CharacterPicker({
     required this.client,
@@ -942,8 +803,6 @@ class _CharacterPicker extends StatelessWidget {
   final ClientSession client;
   final Map<String, _Seat> seats;
 
-  /// The host's lobby has a bottom bar to make room for, so it is a touch
-  /// tighter.
   final bool compact;
 
   static const _columns = 4;
@@ -953,8 +812,6 @@ class _CharacterPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final mine = client.myColor;
 
-    // Phones that have dropped keep their character but are not at the table,
-    // so they are not in the count. It is read as "how many of us are playing".
     final here = seats.values.where((s) => s.connected).length;
 
     final gapX = compact ? 22.0 : 18.0;
@@ -982,15 +839,11 @@ class _CharacterPicker extends StatelessWidget {
               StickerPill('$here/${PlayerPalette.size}', size: 16),
             ],
           ),
-          // Room above the first row for the name tags, which hang over the
-          // top edge of their tile.
           SizedBox(height: compact ? 14 : 16),
           LayoutBuilder(
             builder: (context, box) {
               final room = box.maxWidth - inset * 2;
-              // The gaps give first on a narrow phone, so a character is
-              // never drawn smaller than [_minSide] to keep the design's
-              // spacing.
+
               final gap = math.max(
                 6.0,
                 math.min(gapX, (room - _minSide * _columns) / (_columns - 1)),
@@ -1016,7 +869,6 @@ class _CharacterPicker extends StatelessWidget {
                               side: side,
                               radius: compact ? 16 : 18,
                               mine: c.id == mine?.id,
-                              // Mine is never "taken" from my own point of view.
                               owner: c.id == mine?.id ? null : seats[c.id],
                               onPick: () => client.pickColor(c),
                             ),
@@ -1034,14 +886,6 @@ class _CharacterPicker extends StatelessWidget {
   }
 }
 
-/// One character to pick, with the name of whoever has it over its head.
-///
-/// The character rather than a disc of paint, because the disc was a promise
-/// about something nobody had seen yet: a player chose Green in the lobby and
-/// then had to find out, once the round started, which of the eight animals on
-/// the board was theirs. This is the same character, in the same shades, that
-/// they will be looking for a minute later — facing them rather than seen from
-/// above, because a picker is read upright and up close, not across a table.
 class _CharacterTile extends StatelessWidget {
   const _CharacterTile({
     super.key,
@@ -1058,7 +902,6 @@ class _CharacterTile extends StatelessWidget {
   final double radius;
   final bool mine;
 
-  /// Somebody else, or null — either free, or [mine].
   final _Seat? owner;
 
   final VoidCallback onPick;
@@ -1068,16 +911,13 @@ class _CharacterTile extends StatelessWidget {
   void _onTap(BuildContext context) {
     final seat = owner;
     if (seat != null) {
-      // Taken is not a dead tile: it says who has it, which is the answer to
-      // the question the tap was asking.
       showStickerToast(
         context,
         '${seat.label} already has the ${Cast.of(color).name}!',
       );
       return;
     }
-    // No button sound: picking plays the character's own voice instead (see
-    // [ClientSession.pickColor]).
+
     if (!mine) onPick();
   }
 
@@ -1092,8 +932,6 @@ class _CharacterTile extends StatelessWidget {
         : Color.alphaBlend(color.skinLight.withValues(alpha: .2), St.white);
 
     return Semantics(
-      // The colour, still: it is the word people say out loud across a table,
-      // and a screen reader has no picture to go on.
       label: taken ? '${color.name}, ${seat.label}' : color.name,
       selected: mine,
       button: !taken,
@@ -1119,8 +957,6 @@ class _CharacterTile extends StatelessWidget {
                     radius: radius,
                     shadow: mine ? 4 : 0,
                   ),
-                  // Faded and grey rather than hidden when somebody else has
-                  // it: which characters are gone is worth seeing.
                   child: Opacity(
                     opacity: taken ? .4 : 1,
                     child: ColorFiltered(
@@ -1154,7 +990,6 @@ class _CharacterTile extends StatelessWidget {
   }
 }
 
-/// "YOU" over your own character, the owner's name over anybody else's.
 class _Tag extends StatelessWidget {
   const _Tag({required this.mine, required this.seat});
 
@@ -1163,9 +998,6 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A phone that has dropped has not stopped being that character; it has
-    // stopped being here, and a struck-through name says that without needing
-    // a legend.
     final gone = !mine && seat != null && !seat!.connected;
     return Container(
       constraints: const BoxConstraints(maxWidth: 74),

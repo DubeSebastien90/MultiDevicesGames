@@ -11,26 +11,6 @@ import '../monetization/paywall_view.dart';
 import '../monetization/premium_status.dart';
 import 'sticker/sticker.dart';
 
-/// Open the run's game list, as a screen of its own.
-///
-/// It was a bottom sheet, and a dozen games is a screen's worth of list: the
-/// sheet spent its height pretending to be one, and a drag down its middle
-/// closed it instead of scrolling it — a modal sheet reads that gesture as
-/// dismissal, which is exactly the gesture somebody makes to see game eleven.
-/// So this is a full screen with a back button, and the heading and the
-/// All/None pair stay put while the grid moves under them.
-///
-/// Host-only by construction — it takes a [HostSession], and joiners do not
-/// have one. Choosing is not a democracy: whoever set the table decides what
-/// the evening consists of, and everyone else is told where to put their phone.
-///
-/// Rebuilt from the session rather than from a copy of it, so a tick lands on
-/// this screen and on the lobby underneath at the same instant.
-///
-/// Also the one place a non-Premium host runs into the paywall by picking
-/// games at all: choosing the lineup is itself a Premium feature, so a free
-/// host's tap opens [showPaywall] instead of ticking a box that [HostSession]
-/// would have refused anyway.
 Future<void> showGamesScreen(
   BuildContext context,
   HostSession host,
@@ -63,9 +43,6 @@ Future<void> showGamesScreen(
                       listenable: Listenable.merge([host, premium]),
                       builder: (context, _) => GamePicker(
                         offers: host.offers,
-                        // Not `!premium.isPremium`: that reads an unanswered
-                        // fetch as a refusal, and sends somebody who has paid
-                        // to the paywall.
                         selectionLocked: premium.isReady && !premium.isPremium,
                         premiumError: premium.error,
                         onRetryPremium: premium.retry,
@@ -93,27 +70,6 @@ Future<void> showGamesScreen(
   ),
 );
 
-/// Which games the evening consists of: tap the ones you want, hold one to
-/// read what it is.
-///
-/// The body of [showGamesScreen], and sized like one: the controls hold still
-/// and the tiles scroll, so this wants a bounded height rather than a place in
-/// somebody else's scroll view.
-///
-/// Everything starts ticked. A table that never opens this plays the whole
-/// catalogue, which is exactly what it did before there was anything to open.
-///
-/// Games this table cannot play stay in the grid, faded, with their phone
-/// count turned red. "Hot Potato, 3+" tells you to fetch another person; a
-/// game silently missing from the list tells you nothing at all.
-///
-/// They stay tickable, though, and the fading is not a refusal. The list is
-/// usually opened while people are still arriving — with nobody calibrated yet
-/// *every* game is the wrong size, and a settings screen where nothing can be
-/// set is not a settings screen — and a tick is about the evening rather than
-/// about this minute, so it survives a phone going flat. Playing a game that
-/// does not fit is refused where it matters, at the session: the run steps
-/// over it and [HostSession.startGame] declines it.
 class GamePicker extends StatelessWidget {
   const GamePicker({
     super.key,
@@ -130,7 +86,6 @@ class GamePicker extends StatelessWidget {
 
   final List<GameOffer> offers;
 
-  /// Put [game] in the run, or take it out.
   final void Function(MultiscreenGame game, bool chosen) onChoose;
 
   final VoidCallback? onAll;
@@ -138,40 +93,21 @@ class GamePicker extends StatelessWidget {
   final bool selectionLocked;
   final VoidCallback? onSelectionLockedTap;
 
-  /// A locked Premium game was tapped. Opens the paywall — the tile itself has
-  /// no tick to toggle, since [HostSession.chooseGame] refuses it anyway.
   final void Function(GameOffer offer)? onLockedTap;
 
-  /// Why the Premium state could not be established, if it could not.
-  ///
-  /// Shown above the grid, because the padlocks in it may be wrong: a host who
-  /// bought Premium last week and opened the app somewhere with no signal sees
-  /// exactly what a host who never paid sees, and only one of them is being
-  /// told the truth. Saying so costs a line and turns "my purchase vanished"
-  /// into "it will check again in a moment".
   final String? premiumError;
 
-  /// Look again. Wired to [PremiumStatus.retry].
   final Future<void> Function()? onRetryPremium;
 
   static const _pad = 20.0;
   static const _gapX = 18.0;
 
-  /// Tiles per row for a grid [width] wide: two on a phone, so each game's
-  /// picture is big enough to recognise at a glance, and three from tablet
-  /// width, where two would make every tile the size of a phone.
   static int _columnsFor(double width) => width >= _tabletWidth ? 3 : 2;
 
-  /// Where a grid stops being a phone's: Material's tablet breakpoint.
   static const _tabletWidth = 600.0;
 
-  /// How far a tile's name ribbon hangs above the tile.
   static const _ribbon = 14.0;
 
-  /// What a tap on this game does, or null for a tap that does nothing yet.
-  ///
-  /// One answer for the tile and for the info sheet's button, so the two
-  /// cannot disagree about whether a game is for sale.
   VoidCallback? _actionFor(GameOffer offer) {
     if (offer.lockPending) return null;
     if (offer.isLocked) {
@@ -202,17 +138,11 @@ class GamePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Still waiting on the store. Derived from the tiles rather than passed
-    // alongside them, so the controls and the tiles cannot disagree about it.
     final pending = offers.any((o) => o.lockPending);
     final inRun = offers
         .where((o) => o.chosen && !o.isLocked && !o.lockPending)
         .length;
 
-    // Twelve taps to play one game is not a choice anybody makes twice, so the
-    // two ends of the list are one tap each. Disabled rather than sent to the
-    // paywall while pending: we do not yet know whether this host would need
-    // one.
     VoidCallback? end(VoidCallback? action) =>
         pending ? null : (selectionLocked ? onSelectionLockedTap : action);
 
@@ -272,9 +202,6 @@ class GamePicker extends StatelessWidget {
               ],
             ),
           ),
-        // The grid, and only the grid, is what moves. Everything above it is a
-        // control, and a control that scrolls away is one you have to go and
-        // find again.
         Expanded(
           child: Stack(
             children: [
@@ -312,8 +239,6 @@ class GamePicker extends StatelessWidget {
                   );
                 },
               ),
-              // The last row fades into the paper rather than being cut off by
-              // the screen's edge.
               const Positioned(
                 left: 0,
                 right: 0,
@@ -339,7 +264,6 @@ class GamePicker extends StatelessWidget {
   }
 }
 
-/// All, None — the two ends of the list.
 class _EndButton extends StatelessWidget {
   const _EndButton({required this.label, required this.onTap});
 
@@ -357,16 +281,6 @@ class _EndButton extends StatelessWidget {
   );
 }
 
-/// Shown when the store could not be reached, above tiles that may be lying.
-///
-/// The wording is the point. "Couldn't check your purchase" says the app failed
-/// at something; "you have not bought this" — which is what a padlock says
-/// without this banner — accuses the reader of something, and is the sentence
-/// that turns a flaky network into a refund request and a one-star review.
-///
-/// The retry is not decoration either: without it, the only remedies a paying
-/// customer can think of are reinstalling the app and asking for their money
-/// back, and one of those makes the problem worse.
 class _PremiumTrouble extends StatefulWidget {
   const _PremiumTrouble({required this.onRetry});
 
@@ -386,8 +300,6 @@ class _PremiumTroubleState extends State<_PremiumTrouble> {
     try {
       await onRetry();
     } finally {
-      // The screen rebuilds off PremiumStatus, so a success simply replaces
-      // this widget; this only matters when it failed again.
       if (mounted) setState(() => _retrying = false);
     }
   }
@@ -404,9 +316,6 @@ class _PremiumTroubleState extends State<_PremiumTrouble> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              // Deliberately not the exception text. "PlatformException(23, …)"
-              // tells the reader nothing they can act on and reads like the
-              // purchase itself broke.
               'Could not check your purchase. If you have bought Premium, it '
               'will unlock once this device can reach the store.',
               style: St.body(13, weight: FontWeight.w500),
@@ -435,20 +344,6 @@ class _PremiumTroubleState extends State<_PremiumTrouble> {
   }
 }
 
-/// One game: its art, its name on a ribbon, and whatever it has earned.
-///
-/// The whole state of this screen is drawn on the tiles, which is why there is
-/// no line of prose under the heading:
-///
-/// - **In the run**: the ribbon in colour, tilted, a shadow, full-colour art
-///   and a tick.
-/// - **Ticked, but the table is the wrong size**: the ribbon and the tick stay
-///   — it *is* ticked — but the art fades and the phone count turns red. A
-///   bright tile promising a game that will not be played tonight is a lie.
-/// - **Not ticked**: a white ribbon and grey art.
-/// - **Premium, not bought**: a padlock and a PREMIUM tag, and nothing to tick.
-/// - **Waiting on the store**: grey and inert, with no claim about money
-///   either way.
 class _Tile extends StatelessWidget {
   const _Tile({
     required this.offer,
@@ -486,8 +381,6 @@ class _Tile extends StatelessWidget {
       button: true,
       selected: ticked,
       child: GestureDetector(
-        // The whole cell, not just the picture: the gap above a tile is where
-        // a thumb lands half the time.
         behavior: HitTestBehavior.opaque,
         onTap: withButtonSound(onTap),
         onLongPress: onLongPress,
@@ -532,9 +425,6 @@ class _Tile extends StatelessWidget {
                           bottom: 6,
                           child: _PlayersBadge(
                             manifest: offer.manifest,
-                            // Only a game that could otherwise be played is
-                            // flagged: red on a padlocked tile would be two
-                            // reasons shouting at once.
                             short: !offer.fitsTable && !locked && !pending,
                           ),
                         ),
@@ -603,11 +493,6 @@ class _Tile extends StatelessWidget {
   }
 }
 
-/// The game's picture, full-bleed.
-///
-/// Labelled with the title, so a screen reader still says the game's name. A
-/// game nobody has drawn yet is its title on white, so it takes the same
-/// place in the grid.
 class _GameArt extends StatelessWidget {
   const _GameArt({required this.manifest});
 
@@ -694,12 +579,6 @@ class _PremiumPill extends StatelessWidget {
   );
 }
 
-/// The fewest phones a game needs, on every tile — red on a game this table
-/// is too small for.
-///
-/// A number rather than the sentence: "3+" is the whole requirement, and the
-/// sentence would not fit on a tile. A game played in pairs carries a second
-/// mark after it, for "and an even count".
 class _PlayersBadge extends StatelessWidget {
   const _PlayersBadge({required this.manifest, this.short = false});
 
@@ -738,8 +617,6 @@ class _PlayersBadge extends StatelessWidget {
   }
 }
 
-/// What a game is, on a long press: its art, its name, what you do and how it
-/// ends, and the one thing you can do about it from here.
 class _GameInfoSheet extends StatelessWidget {
   const _GameInfoSheet({
     required this.offer,
@@ -758,8 +635,7 @@ class _GameInfoSheet extends StatelessWidget {
     final manifest = offer.manifest;
     final locked = offer.isLocked;
     final pending = offer.lockPending;
-    // A free host's tap sells the lineup, so the button says so rather than
-    // promising to add a game it cannot.
+
     final sells = locked || (selectionLocked && !pending);
 
     final (label, icon, bg, fg) = pending

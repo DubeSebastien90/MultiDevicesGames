@@ -9,29 +9,6 @@ import '../../sdk/physics/play_area.dart';
 import '../../sdk/score/scoreboard.dart';
 import 'paint_war_config.dart';
 
-/// Paint the table. Everyone starts on a circle of their own paint; walking
-/// off it leaves a wet trail, and walking back onto it fills in everything the
-/// trail closed off. Touch somebody else's wet trail and they are wiped off the
-/// board — their paint with them — and start again somewhere empty.
-///
-/// Forty-five seconds, then the biggest territory wins.
-///
-/// ## The paint is a grid
-///
-/// The board is cut into [PaintWarConfig.cellSize] squares, and each belongs to
-/// one player or nobody. A second grid holds the wet trails. Filling a loop is
-/// a flood from the outside: every cell that can still reach the edge of the
-/// board without crossing the painter's own colour stays as it is, and
-/// everything else is theirs — including anybody else's paint caught inside.
-///
-/// ## What goes on the wire
-///
-/// The host resends the whole shared state whenever any of it changes, so
-/// nothing in it may change every tick. The paint goes as one run-length string
-/// that only moves when somebody captures, is cut or comes back; a trail goes
-/// as its corners, which only move when the path bends. The stretch from the
-/// last corner to the player is drawn to wherever their body is, which the
-/// phones already have.
 class PaintWarSim implements GameSim {
   PaintWarSim(this.context) {
     _buildGrid();
@@ -40,40 +17,29 @@ class PaintWarSim implements GameSim {
 
   final BoardContext context;
 
-  /// Where a player may walk: the screens and the seams between them.
   late final _area = PlayArea.of(context.coverage);
 
-  // -- the grid ---------------------------------------------------------------
   late final double _gx;
   late final double _gy;
   late final int _gw;
   late final int _gh;
 
-  /// Whether each cell is on a screen (or a seam between two).
   late final Uint8List _inArea;
 
-  /// Who has painted each cell: a player's index, or -1.
   late final Int8List _owner;
 
-  /// Whose wet trail runs through each cell: a player's index, or -1.
   late final Int8List _trail;
 
-  /// Cells on the board at all — the 100% a territory is measured against.
   int _areaCells = 0;
 
-  /// Cells inside a spawn circle, as offsets from its middle cell.
   late final List<(int, int)> _spawnDisc;
 
-  /// Cells within a trail's half-width of a point, likewise.
   late final List<(int, int)> _trailDisc;
 
-  /// Bumped whenever the paint changes, so its string is rebuilt only then.
   int _paintVersion = 0;
   int _encodedVersion = -1;
   String _encoded = '';
 
-  // -- the round --------------------------------------------------------------
-  // 'briefing' | 'countdown' | 'playing' | 'over' | 'finished'
   String _phase = 'briefing';
   double _briefing = 0;
   double _countdown = PaintWarConfig.countdownSeconds;
@@ -85,11 +51,7 @@ class PaintWarSim implements GameSim {
 
   late final List<_Player> _players;
 
-  /// A boup a capture, at one of its pitches. Its own generator: which pitch
-  /// plays must not depend on anything else in the round.
   final _boupPick = math.Random(5);
-
-  // ------------------------------------------------------------------ build
 
   void _buildGrid() {
     const cell = PaintWarConfig.cellSize;
@@ -131,7 +93,6 @@ class PaintWarSim implements GameSim {
     _gy + (j + 0.5) * PaintWarConfig.cellSize,
   );
 
-  /// The cell under a point, or -1 off the grid.
   int _cellAt(double x, double y) {
     final i = ((x - _gx) / PaintWarConfig.cellSize).floor();
     final j = ((y - _gy) / PaintWarConfig.cellSize).floor();
@@ -154,7 +115,6 @@ class PaintWarSim implements GameSim {
     _placeEveryoneHome();
   }
 
-  /// Everyone on a fresh circle in the middle of their own phone.
   void _placeEveryoneHome() {
     for (final p in _players) {
       final home = context.slices[p.index].screen;
@@ -167,8 +127,6 @@ class PaintWarSim implements GameSim {
       _paintCircle(p);
     }
   }
-
-  // ------------------------------------------------------------------- step
 
   @override
   void step(double dt) {
@@ -192,12 +150,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  // -- the briefing -----------------------------------------------------------
-
-  /// Three lines, and everyone doing what they say with the real rules: the
-  /// second line's loop really is painted and really is filled in when they
-  /// get back, which is the whole game in a second and a half. Nobody can be
-  /// cut here — the check that does it is only run in [_stepPlaying].
   void _stepBriefing(double dt) {
     final before = _briefing;
     _briefing += dt;
@@ -214,30 +166,24 @@ class PaintWarSim implements GameSim {
         final axis = _local(p);
         final home = context.slices[p.index].screen;
         (double, double) at(double across, double up) => (
-          home.centerX +
-              math.cos(axis.right) * across +
-              math.cos(axis.up) * up,
-          home.centerY +
-              math.sin(axis.right) * across +
-              math.sin(axis.up) * up,
+          home.centerX + math.cos(axis.right) * across + math.cos(axis.up) * up,
+          home.centerY + math.sin(axis.right) * across + math.sin(axis.up) * up,
         );
 
         if (step == 0) {
-          // A small ring inside their own paint: moving, painting nothing.
           const r = PaintWarConfig.demoStrollRadius;
           p.script = [
             for (var k = 1; k <= 8; k++)
-              at(r * math.sin(k * math.pi / 4), r - r * math.cos(k * math.pi / 4)),
+              at(
+                r * math.sin(k * math.pi / 4),
+                r - r * math.cos(k * math.pi / 4),
+              ),
             at(0, 0),
           ];
         } else if (step == 1) {
-          // Out, round, and back in: the loop that grows the territory.
           const across = PaintWarConfig.demoLoopAcross;
           const up = PaintWarConfig.demoLoopUp;
-          // Ending exactly where they started: a loop that stopped a few
-          // millimetres short left the count to walk them the rest, and a
-          // body turning round to take two steps and turning back reads as a
-          // jolt towards the middle of the screen.
+
           p.script = [at(across, 0), at(across, up), at(0, up), at(0, 0)];
         }
       }
@@ -256,7 +202,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  /// Walk the next point of a demonstration, at walking pace.
   void _followScript(_Player p, double dt) {
     p.prevX = p.x;
     p.prevY = p.y;
@@ -285,8 +230,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  /// The count, spent walking back to the middle of their own phone and
-  /// turning to face the way everyone started.
   void _stepWalkingHome(double dt) {
     for (final p in _players) {
       final home = context.slices[p.index].screen;
@@ -298,8 +241,7 @@ class PaintWarSim implements GameSim {
         p
           ..x += dx / away * stride
           ..y += dy / away * stride;
-        // Only turned to face the walk when there is a walk to face: a
-        // shuffle of a few millimetres is not worth spinning round for.
+
         if (away > PaintWarConfig.characterRadius) {
           p.facingAngle = _turnTowards(
             p.facingAngle,
@@ -319,7 +261,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  /// This player's screen's own axes, as world angles.
   ({double right, double up}) _local(_Player p) {
     final turn = context.slices[p.index].screen.turnRadians;
     return (right: turn, up: turn - math.pi / 2);
@@ -332,8 +273,6 @@ class PaintWarSim implements GameSim {
     if (d.abs() <= maxStep) return to;
     return from + (d.isNegative ? -maxStep : maxStep);
   }
-
-  // -- the round itself -------------------------------------------------------
 
   void _stepPlaying(double dt) {
     _elapsed += dt;
@@ -367,8 +306,6 @@ class PaintWarSim implements GameSim {
       _paint(p);
     }
 
-    // After everybody has moved and filled, so somebody who got home this tick
-    // has a dry trail that can no longer be cut.
     for (final cutter in _players) {
       if (!cutter.alive) continue;
       final cell = _cellAt(cutter.x, cutter.y);
@@ -380,8 +317,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  /// Where [p] is standing decides everything: on their own paint a trail is
-  /// filled in, off it the trail grows.
   void _paint(_Player p) {
     final cell = _cellAt(p.x, p.y);
     if (cell < 0) return;
@@ -390,15 +325,12 @@ class PaintWarSim implements GameSim {
       if (p.trailCells.isNotEmpty) {
         _capture(p);
       } else if (p.corners.isNotEmpty) {
-        // Stepped off and straight back without laying any paint: there is
-        // nothing to fill, only a trail to forget.
         p.corners.clear();
         p.runAngle = null;
       }
       return;
     }
 
-    // Leaving home: the trail starts where they stepped off.
     if (p.trailCells.isEmpty && p.corners.isEmpty) {
       p.corners.add((p.prevX, p.prevY));
       p.runAngle = null;
@@ -420,9 +352,6 @@ class PaintWarSim implements GameSim {
     _trackCorner(p);
   }
 
-  /// Keep only the trail's corners: a new one where the path bends, or after
-  /// a long straight run. What is sent is these; the stretch after the last
-  /// one is drawn to the player.
   void _trackCorner(_Player p) {
     final (lx, ly) = p.corners.last;
     final dx = p.x - lx;
@@ -444,8 +373,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  /// Home with a trail: it dries into paint, and everything it closed off from
-  /// the edge of the board is filled in with it.
   void _capture(_Player p) {
     final me = p.index;
     for (final k in p.trailCells) {
@@ -456,8 +383,6 @@ class PaintWarSim implements GameSim {
     p.corners.clear();
     p.runAngle = null;
 
-    // Flood the outside in: from every edge cell and every cell off the
-    // screens, through everything that is not the painter's.
     final reached = Uint8List(_gw * _gh);
     final queue = <int>[];
     void seed(int k) {
@@ -490,8 +415,6 @@ class PaintWarSim implements GameSim {
     final bites = Sounds.buttonPress;
     _playAt(p.x, p.y, bites[_boupPick.nextInt(bites.length)]);
 
-    // Anybody whose whole territory was just swallowed has nowhere to go
-    // home to.
     for (final other in _players) {
       if (other == p || !other.alive || other.cells > 0) continue;
       _eliminate(other, atX: other.x, atY: other.y);
@@ -506,7 +429,6 @@ class PaintWarSim implements GameSim {
     if (owner >= 0) _players[owner].cells++;
   }
 
-  /// Cut: off the board, and every drop of their paint with them.
   void _eliminate(_Player v, {required double atX, required double atY}) {
     v
       ..alive = false
@@ -525,11 +447,10 @@ class PaintWarSim implements GameSim {
     v.runAngle = null;
     _paintVersion++;
 
-    // Where it was cut, and on their own phone if that is somewhere else.
     final at = context.nearestPhone(atX, atY);
     if (at != null) _playOn(at, PaintWarConfig.cutTrail);
     if (at != v.phoneId) _playOn(v.phoneId, PaintWarConfig.cutTrail);
-    // And out, in their own voice, on their own phone.
+
     final out = context.roster.byPhone(v.phoneId);
     if (out != null) context.audio.playOnPhone(out, out.soundSad);
   }
@@ -545,9 +466,6 @@ class PaintWarSim implements GameSim {
     _paintCircle(p);
   }
 
-  /// Where a fresh circle takes the most clean board: well inside the glass,
-  /// on as little paint as possible, never on a wet trail, and — between two
-  /// equally empty spots — as far from everybody else as it can be.
   (double, double) _bestSpawn(_Player p) {
     for (final margin in [PaintWarConfig.spawnMargin, 0.0]) {
       final best = _searchSpawn(p, margin);
@@ -567,7 +485,11 @@ class PaintWarSim implements GameSim {
     var bestWhite = -1;
     var bestRoom = -1.0;
 
-    for (var y = board.top + clearance; y <= board.bottom - clearance; y += step) {
+    for (
+      var y = board.top + clearance;
+      y <= board.bottom - clearance;
+      y += step
+    ) {
       for (
         var x = board.left + clearance;
         x <= board.right - clearance;
@@ -612,7 +534,6 @@ class PaintWarSim implements GameSim {
     return best;
   }
 
-  /// A circle of [radius] round (x, y) lies wholly on the glass.
   bool _fits(double x, double y, double radius) {
     if (!_area.contains(x, y)) return false;
     for (var k = 0; k < 16; k++) {
@@ -624,7 +545,6 @@ class PaintWarSim implements GameSim {
     return true;
   }
 
-  /// A fresh circle of [p]'s paint where they stand, over whatever was there.
   void _paintCircle(_Player p) {
     final centre = _cellAt(p.x, p.y);
     if (centre < 0) return;
@@ -649,13 +569,11 @@ class PaintWarSim implements GameSim {
         ..moveScale = 0
         ..touchDown = false;
     }
-    // Paid the instant the clock runs out, on the territories as they stand.
+
     _paid = context.scores.awardPlacements(
       Scoreboard.tiersBy({for (final p in _players) p.phoneId: p.cells}),
     );
   }
-
-  // -- sound ------------------------------------------------------------------
 
   void _playOn(String phoneId, SoundCue cue) {
     final player = context.roster.byPhone(phoneId);
@@ -666,8 +584,6 @@ class PaintWarSim implements GameSim {
     final phone = context.nearestPhone(x, y);
     if (phone != null) _playOn(phone, cue);
   }
-
-  // -- input ------------------------------------------------------------------
 
   @override
   void onTouch(TouchEvent touch) {
@@ -711,8 +627,6 @@ class PaintWarSim implements GameSim {
     }
   }
 
-  // -- what the phones see ----------------------------------------------------
-
   @override
   Iterable<Entity> get entities sync* {
     for (final p in _players) {
@@ -733,12 +647,6 @@ class PaintWarSim implements GameSim {
         angle: p.facingAngle,
       );
 
-      // The stick, as two entities rather than as shared state: the whole of
-      // the shared state is resent whenever any of it changes, and that
-      // carries the paint — a finger in it would send the paint sixty times a
-      // second. Entity positions go every tick anyway. Only while the drag is
-      // actually steering, as in Dodgeball: a finger resting inside the dead
-      // zone draws nothing.
       if (p.touchDown && p.moveAngle != null) {
         final props = {'phoneId': p.phoneId, 'index': p.index};
         yield Entity(
@@ -765,8 +673,6 @@ class PaintWarSim implements GameSim {
 
   static String _q(double v) => v.toStringAsFixed(2);
 
-  /// The paint, row after row, as runs: a letter for whose (`.` for nobody)
-  /// and how many cells of it. Rebuilt only when the paint changed.
   String get _paintString {
     if (_encodedVersion == _paintVersion) return _encoded;
     final out = StringBuffer();
@@ -800,9 +706,7 @@ class PaintWarSim implements GameSim {
         'step': (_briefing / PaintWarConfig.briefingStepSeconds).floor(),
       if (_phase == 'countdown')
         'countdown': (_countdown * 10).roundToDouble() / 10,
-      // Whole seconds: a value that changes every tick is a packet every tick.
       'left': (PaintWarConfig.roundSeconds - _elapsed).ceil(),
-      // The grid: fixed for the round.
       'gx': _gx,
       'gy': _gy,
       'gw': _gw,
@@ -827,9 +731,6 @@ class PaintWarSim implements GameSim {
     return map;
   }
 
-  // -- scoring and the end ----------------------------------------------------
-
-  /// How much of the board [phoneId] has painted, 0 to 1.
   double shareOf(String phoneId) {
     if (_areaCells == 0) return 0;
     for (final p in _players) {
@@ -838,7 +739,6 @@ class PaintWarSim implements GameSim {
     return 0;
   }
 
-  /// Cells [phoneId] has painted right now.
   int cellsOf(String phoneId) {
     for (final p in _players) {
       if (p.phoneId == phoneId) return p.cells;
@@ -846,11 +746,9 @@ class PaintWarSim implements GameSim {
     return 0;
   }
 
-  /// Whether [phoneId] is on the board, rather than waiting to respawn.
   bool isAlive(String phoneId) =>
       _players.any((p) => p.phoneId == phoneId && p.alive);
 
-  /// Whether a wet trail of [phoneId]'s runs through the point.
   bool trailAt(String phoneId, double x, double y) {
     final k = _cellAt(x, y);
     if (k < 0) return false;
@@ -858,7 +756,6 @@ class PaintWarSim implements GameSim {
     return t >= 0 && _players[t].phoneId == phoneId;
   }
 
-  /// Who has painted the point, or null.
   String? ownerAt(double x, double y) {
     final k = _cellAt(x, y);
     if (k < 0 || _owner[k] < 0) return null;
@@ -891,8 +788,6 @@ class PaintWarSim implements GameSim {
         context.scores.view.entryFor(best.phoneId)?.label ?? best.phoneId;
     return '$label painted the most';
   }
-
-  // -- reset ------------------------------------------------------------------
 
   @override
   void reset() {
@@ -934,7 +829,6 @@ class _Player {
 
   double x = 0, y = 0;
 
-  /// Where they were a tick ago: where a trail starts, and where a corner goes.
   double prevX = 0, prevY = 0;
   double facingAngle = 0;
 
@@ -942,17 +836,13 @@ class _Player {
   double respawnIn = 0;
   double deadX = 0, deadY = 0;
 
-  /// How many cells of paint are theirs.
   int cells = 0;
 
-  /// The wet trail: every cell it covers, and the corners it is drawn by.
   final trailCells = <int>[];
   final corners = <(double, double)>[];
 
-  /// The direction of the trail since its last corner, once it has one.
   double? runAngle;
 
-  /// A demonstration walk, point by point. Empty outside the briefing.
   List<(double, double)> script = const [];
 
   double? moveAngle;
@@ -960,7 +850,5 @@ class _Player {
   bool touchDown = false;
   double touchDownX = 0, touchDownY = 0;
 
-  /// Where the finger is now, as against where it came down: only the drawn
-  /// stick needs it.
   double touchX = 0, touchY = 0;
 }

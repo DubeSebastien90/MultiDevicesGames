@@ -12,16 +12,6 @@ import '../../sdk/render/player_animation.dart';
 import 'city_maze.dart';
 import 'cops_robbers_config.dart';
 
-/// A city from above: asphalt streets with a dashed line down the middle,
-/// blocks of buildings between them, coins in the road — and everybody as
-/// their own character from the lobby.
-///
-/// The cops wear a flashing light, red then blue, that washes the road round
-/// them; the robbers carry a sack of loot. Same characters, told apart at a
-/// glance by what they carry.
-///
-/// Everything off the streets is city: a bigger phone's spare glass is built
-/// on, so the maze is exactly the rectangle every screen shows.
 class CopsRobbersView extends GameView {
   CopsRobbersView({
     required this.phoneId,
@@ -35,7 +25,6 @@ class CopsRobbersView extends GameView {
 
   static const _messageMargin = 0.06;
 
-  /// World units a second below which a character counts as standing still.
   static const _walkingSpeed = 0.5;
 
   final _fill = Paint();
@@ -44,16 +33,12 @@ class CopsRobbersView extends GameView {
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round;
 
-  /// The city as last built: its blocks, one path per roof colour, and the
-  /// dashes down the middle of its streets.
   String? _mazeRaw;
   CityMaze? _maze;
   List<Path> _blocks = const [];
   Path _blockOutline = Path();
   Path _dashes = Path();
 
-  /// The blocks that stand on a seam, as filled rectangles rather than
-  /// strokes: one path per roof colour, like [_blocks].
   List<Path> _seamBlocks = const [];
   Path _seamOutline = Path();
 
@@ -65,8 +50,6 @@ class CopsRobbersView extends GameView {
     final state = frame.sharedState;
     final view = frame.visible;
 
-    // The city past the streets: whatever of this phone the maze does not
-    // reach is built on.
     _fill.color = const Color(CopsRobbersConfig.colorCity);
     canvas.drawRect(
       Rect.fromLTWH(view.left, view.top, view.width, view.height),
@@ -87,7 +70,6 @@ class CopsRobbersView extends GameView {
     final maze = _maze!;
     final tile = math.min(tw, th);
 
-    // The streets.
     _fill.color = const Color(CopsRobbersConfig.colorStreet);
     canvas.drawRect(
       Rect.fromLTWH(ox, oy, maze.cols * tw, maze.rows * th),
@@ -100,7 +82,6 @@ class CopsRobbersView extends GameView {
     canvas.drawPath(_dashes, _line);
     _line.strokeCap = StrokeCap.round;
 
-    // The blocks: a shadow on the road, the roofs, and a lighter rim.
     final wall = tile * CopsRobbersConfig.blockThickness;
     canvas.save();
     canvas.translate(tile * 0.05, tile * 0.07);
@@ -127,13 +108,12 @@ class CopsRobbersView extends GameView {
     _drawCoins(canvas, state['dots'] as String?, maze, ox, oy, tw, th, tile);
     _drawDeaths(canvas, frame, tile);
 
-    // The cops' lights first, on the road, so the characters stand in them.
     for (final e in frame.ofKind('cop')) {
       _drawSirenGlow(canvas, frame, e, tile);
     }
     for (final e in frame.ofKind('robber')) {
       _drawCharacter(canvas, frame, e, tile);
-      // Over the character, slung off its back, so it shows round the body.
+
       _drawLoot(canvas, e, tile);
     }
     for (final e in frame.ofKind('cop')) {
@@ -144,12 +124,6 @@ class CopsRobbersView extends GameView {
     _drawWords(canvas, frame);
   }
 
-  /// The city from the maze: each closed side between two tiles is a stretch
-  /// of building, roofed in one of a few colours picked by where it is — so
-  /// the same maze is the same city on every phone.
-  ///
-  /// A block standing on a seam is built out across it instead, far enough to
-  /// show on both screens — see [seamBlock].
   void _build(
     CityMaze maze,
     double ox,
@@ -170,8 +144,6 @@ class CopsRobbersView extends GameView {
     final thickness = math.min(tw, th) * CopsRobbersConfig.blockThickness;
 
     void wall(double x0, double y0, double x1, double y1, int c, int r) {
-      // Neighbouring stretches share a roof often enough to read as blocks
-      // rather than confetti: the colour follows a coarse patch of the grid.
       final patch = ((c ~/ 3) * 7 + (r ~/ 2) * 3) % roofs.length;
       final onSeam = seamBlock(x0, y0, x1, y1, thickness, seams);
       if (onSeam != null) {
@@ -202,7 +174,6 @@ class CopsRobbersView extends GameView {
         if (c == 0) wall(x, y, x, y + th, c, r);
         if (r == 0) wall(x, y, x + tw, y, c, r);
 
-        // A dash down the middle of every street, between two tile centres.
         final cx = x + tw / 2;
         final cy = y + th / 2;
         if (maze.open(c, r, 1, 0)) {
@@ -224,15 +195,6 @@ class CopsRobbersView extends GameView {
     _dashes = dashes;
   }
 
-  /// The block to draw for the wall from ([x0], [y0]) to ([x1], [y1]) if it
-  /// stands on one of [seams]; null if it does not.
-  ///
-  /// The maze is mirrored, so its middle wall lies on the middle of the board —
-  /// which is where two rows of phones meet — and a block [thickness] thick is
-  /// thinner than two bezels. Drawn as it is, it vanishes into the dead glass,
-  /// and the way across looks open where it is not. So a block along a seam is
-  /// built out across the whole of it and [seamPeek] of a block onto each
-  /// screen: the maze is untouched, only what shows of it.
   static WorldRect? seamBlock(
     double x0,
     double y0,
@@ -247,8 +209,6 @@ class CopsRobbersView extends GameView {
     final midX = (x0 + x1) / 2;
     final midY = (y0 + y1) / 2;
     for (final seam in seams) {
-      // Only a wall running along the seam: one across it shows on both sides
-      // already.
       final along = seam.width > seam.height;
       if (along != horizontal) continue;
       if (horizontal) {
@@ -271,9 +231,6 @@ class CopsRobbersView extends GameView {
     return null;
   }
 
-  /// How much of a seam block shows on each screen, as a share of a block's
-  /// thickness: half, so each side sees about as much roof as it would of an
-  /// ordinary block on its own glass.
   static const double seamPeek = 0.5;
 
   void _drawCoins(
@@ -309,15 +266,12 @@ class CopsRobbersView extends GameView {
     }
   }
 
-  // -- the players ------------------------------------------------------------
-
   Color _colourOf(Frame frame, String key) {
     final phone = frame.sharedState['phoneId_$key'] as String? ?? '';
     return roster.byPhone(phone)?.color.value ??
         Color((frame.sharedState['color_$key'] as num?)?.toInt() ?? 0xFFFFFFFF);
   }
 
-  /// Their own character from the lobby, walking while they move.
   void _drawCharacter(Canvas canvas, Frame frame, RenderEntity e, double tile) {
     final here = Offset(e.x, e.y);
     final before = _lastSeen[e.id];
@@ -345,11 +299,9 @@ class CopsRobbersView extends GameView {
     );
   }
 
-  /// Which half of the siren is lit: red, then blue.
   static bool _redPhase(Frame frame) =>
       (frame.timeMs / CopsRobbersConfig.sirenPeriodMs).floor().isEven;
 
-  /// The light a siren throws on the road round a cop.
   void _drawSirenGlow(Canvas canvas, Frame frame, RenderEntity e, double tile) {
     final colour = Color(
       _redPhase(frame)
@@ -372,8 +324,6 @@ class CopsRobbersView extends GameView {
     _fill.shader = null;
   }
 
-  /// The light bar itself, across the cop's head: one half lit, the other dim,
-  /// swapping.
   void _drawSiren(Canvas canvas, Frame frame, RenderEntity e, double tile) {
     final red = _redPhase(frame);
     final w = tile * 0.5;
@@ -403,7 +353,6 @@ class CopsRobbersView extends GameView {
     canvas.restore();
   }
 
-  /// A sack of loot, slung behind a robber.
   void _drawLoot(Canvas canvas, RenderEntity e, double tile) {
     final back = Offset(
       e.x - math.cos(e.angle) * tile * 0.4,
@@ -447,9 +396,6 @@ class CopsRobbersView extends GameView {
     }
   }
 
-  // -- words ------------------------------------------------------------------
-
-  /// This phone's team, or null on a phone nobody is playing at.
   int? _myTeam(Map<String, Object?> state) {
     for (var i = 0; i < 8; i++) {
       if (state['phoneId_p$i'] == phoneId) {
@@ -505,24 +451,14 @@ class CopsRobbersView extends GameView {
     }
   }
 
-  /// What a phone says at half time. What was grabbed only for the side that
-  /// was robbing: the cops never had the chance, and 'you grabbed 0' reads as
-  /// a failure that was not one.
   static String switchLine({required bool wasRobbing, required int grabbed}) =>
       wasRobbing ? 'SWITCH! You grabbed $grabbed' : 'SWITCH!';
 
-  /// One line across this phone's own glass, turned to its slot so it reads
-  /// upright for whoever is holding it.
   void _drawCentered(Canvas canvas, Frame frame, String text, double size) {
     if (text.isEmpty) return;
     final me = frame.me;
     final width = me.halfWidth * 2;
-    // Laid out in logical pixels, at the size it is actually seen, and drawn
-    // with the canvas scaled back down to world units — Flood's way. Laid out
-    // in world units the line was a sub-point font magnified fifty-fold by the
-    // camera: Skia redraws glyphs at the final size, but Impeller on iOS
-    // rasterises them near the laid-out size and stretches the result, which
-    // is what made every briefing blurry on an iPhone.
+
     final px = me.logicalPxPerWorldUnit;
     final builder =
         ui.ParagraphBuilder(

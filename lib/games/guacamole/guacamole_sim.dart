@@ -8,7 +8,6 @@ import '../../sdk/model/player_color.dart';
 import '../../sdk/score/scoreboard.dart';
 import 'guacamole_config.dart';
 
-/// Where one mole can appear: a quarter of one phone's screen.
 class Hole {
   const Hole({
     required this.index,
@@ -20,20 +19,14 @@ class Hole {
 
   final int index;
 
-  /// Whose screen this hole is on. Kept for diagnostics and tests only — the
-  /// game deliberately does **not** use it to decide anything, because a hole
-  /// being on your phone gives you no claim on what pops out of it.
   final String phoneId;
 
   final double centerX;
   final double centerY;
 
-  /// The mole's radius here, in world units. Uniform across the board, but
-  /// carried per hole so a future board with mismatched screens can vary it.
   final double radius;
 }
 
-/// A mole's life, in order.
 enum MolePhase { rising, up, sinking, squished }
 
 class _Mole {
@@ -46,33 +39,11 @@ class _Mole {
   PlayerColor? owner;
   MolePhase phase = MolePhase.rising;
 
-  /// Seconds spent in the current phase.
   double t = 0;
 
-  /// How long this mole was told to stay up when it spawned. Recorded per mole
-  /// rather than read from the clock, so a mole that appeared while the round
-  /// was slow does not suddenly retract early when the ramp tightens.
   double upSeconds = GuacamoleConfig.visibleSecondsStart;
 }
 
-/// Avocados pop out of holes all over the table. Squish one and its **owner**
-/// scores — whoever's finger did it.
-///
-/// The rule reads oddly until you watch it played: a mole is one player's
-/// colour, and with four players only a quarter of the moles on your own screen
-/// are yours. Yours are mostly on other people's phones, so the game is played
-/// leaning across the table.
-///
-/// That physical fact is also why scoring credits the *mole*, never the finger.
-/// A touch arrives tagged with the phone whose glass was pressed
-/// ([TouchEvent.phoneId]), and once people are reaching, that phone is usually
-/// not the person who reached. The tapper is genuinely unknowable — so the game
-/// never asks. Points follow the colour, which is unambiguous, and a wrong tap
-/// punishes itself by handing a point to a rival.
-///
-/// No physics: this is a schedule and a hit test. It implements [GameSim]
-/// directly rather than extending the Forge2D base, because a world with no
-/// bodies in it would only be a slower way to do nothing.
 class GuacamoleSim implements GameSim {
   GuacamoleSim(this.context, {math.Random? random})
     : _random = random ?? math.Random() {
@@ -87,12 +58,8 @@ class GuacamoleSim implements GameSim {
   final BoardContext context;
   final math.Random _random;
 
-  /// Which voice an avocado pops up with, and which pitch of boup a squish
-  /// gets. Its own generator rather than [_random], so a sound cannot change
-  /// where a seeded round puts its moles.
   final _soundPick = math.Random(9);
 
-  /// The voice last played, so the same one never comes twice in a row.
   int _lastVoice = -1;
 
   late final List<Hole> _holes;
@@ -102,24 +69,12 @@ class GuacamoleSim implements GameSim {
   double _elapsed = 0;
   double _sinceSpawn = 0;
 
-  /// Squishes credited to each phone this round. Counted here and paid out on
-  /// the placement ladder once the minute is up, so a busy round is worth no
-  /// more to the evening than a quiet one.
   final _squished = <String, int>{};
 
-  /// What each phone was paid when the round ended.
   Map<String, int> _paid = const {};
 
-  /// Squishes credited to [phoneId] so far this round.
   int squishedBy(String phoneId) => _squished[phoneId] ?? 0;
 
-  /// Whose turn it is to get a mole, as a shuffled bag.
-  ///
-  /// Spawn *position* is uniform over every hole, as it should be — but the
-  /// *colour* is dealt from a bag that is refilled and reshuffled once empty.
-  /// Independent random colours would let one player get noticeably fewer moles
-  /// than another across a 60-second round purely by luck, and losing to the
-  /// dice is not losing to a person.
   final _bag = <PlayerColor>[];
 
   int get playerCount => _players.length;
@@ -127,12 +82,6 @@ class GuacamoleSim implements GameSim {
   double get secondsLeft =>
       math.max(0, GuacamoleConfig.roundSeconds - _elapsed);
 
-  // ------------------------------------------------------------------ build
-
-  /// Four holes per screen, in a 2x2, inset from the edges.
-  ///
-  /// Built from the compiled slices, so this is where the phones actually are
-  /// rather than where the plan hoped they would be.
   static List<Hole> _buildHoles(List<PhoneSlice> slices) {
     final holes = <Hole>[];
     var index = 0;
@@ -164,15 +113,12 @@ class GuacamoleSim implements GameSim {
     return holes;
   }
 
-  // ------------------------------------------------------------------- step
-
   @override
   void step(double dt) {
     if (outcome != null) return;
 
     _elapsed += dt;
-    // Paid on the tick the minute runs out: the platform stops stepping the
-    // moment `outcome` goes non-null, so there is no tick after this one.
+
     if (_elapsed >= GuacamoleConfig.roundSeconds) {
       _paid = context.scores.awardPlacements(
         Scoreboard.tiersBy({
@@ -207,15 +153,12 @@ class GuacamoleSim implements GameSim {
           mole.t = 0;
         }
       case MolePhase.sinking:
-        // Escaped. Costs nobody anything — the only penalty in this game is
-        // the point you did not get.
         if (mole.t >= GuacamoleConfig.sinkSeconds) _retire(mole);
       case MolePhase.squished:
         if (mole.t >= GuacamoleConfig.squishSeconds) _retire(mole);
     }
   }
 
-  /// How far through the difficulty ramp we are, 0 to 1.
   double get _ramp {
     final t = GuacamoleConfig.roundSeconds * GuacamoleConfig.rampFraction;
     if (t <= 0) return 1;
@@ -241,7 +184,6 @@ class GuacamoleSim implements GameSim {
     return n;
   }
 
-  /// Never fewer than one, so a two-player table is not becalmed.
   int get _targetLive =>
       math.max(1, (playerCount * GuacamoleConfig.moleTargetPerPlayer).round());
 
@@ -269,7 +211,6 @@ class GuacamoleSim implements GameSim {
     _playOn(hole.phoneId, voices[voice]);
   }
 
-  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
   void _playOn(String phoneId, SoundCue cue) {
     final player = context.roster.byPhone(phoneId);
     if (player != null) context.audio.playOnPhone(player, cue);
@@ -282,11 +223,6 @@ class GuacamoleSim implements GameSim {
     return null;
   }
 
-  /// A uniformly random hole that is not already occupied.
-  ///
-  /// Uniform over the whole board on purpose: no bias toward the tapping
-  /// player's own screen, and no attempt to place a player's moles near where
-  /// they are sitting. Reaching is the game.
   Hole? _freeHole() {
     final occupied = <int>{
       for (final m in _pool)
@@ -317,13 +253,6 @@ class GuacamoleSim implements GameSim {
       ..t = 0;
   }
 
-  // ------------------------------------------------------------------ input
-
-  /// A finger came down somewhere on the board.
-  ///
-  /// [TouchEvent.phoneId] is deliberately ignored. It says which glass was
-  /// pressed, not who pressed it, and conflating the two would quietly reward
-  /// players for moles that happened to spawn in front of them.
   @override
   void onTouch(TouchEvent touch) {
     if (touch.phase != TouchPhase.down) return;
@@ -337,7 +266,6 @@ class GuacamoleSim implements GameSim {
       ..phase = MolePhase.squished
       ..t = 0;
 
-    // On the phone it was squished on, whoever it belonged to.
     final bites = Sounds.buttonPress;
     final hole = hit.hole;
     if (hole != null) {
@@ -351,11 +279,6 @@ class GuacamoleSim implements GameSim {
     }
   }
 
-  /// The topmost squishable mole under a finger.
-  ///
-  /// Generous by a margin: fingers are wide, the target is small, and this is a
-  /// party game. A mole on its way back down does not count: once it turns to
-  /// go, it has got away.
   _Mole? _moleAt(double x, double y) {
     _Mole? best;
     var bestDistance = double.infinity;
@@ -381,15 +304,6 @@ class GuacamoleSim implements GameSim {
     return best;
   }
 
-  // -------------------------------------------------------------- entities
-
-  /// Holes first, then moles, so a mole always draws over its own hole.
-  ///
-  /// A hole is a static entity that exists for the whole round; the platform
-  /// sends its descriptor once and never mentions it again. The mole's
-  /// animation phase rides in [sharedState] rather than the transform, because
-  /// the transform is the only thing interpolated and a popping mole is a
-  /// discrete state change, not a smooth glide between two snapshots.
   @override
   Iterable<Entity> get entities sync* {
     for (final hole in _holes) {
@@ -423,13 +337,6 @@ class GuacamoleSim implements GameSim {
     }
   }
 
-  /// Per-mole animation state, keyed by id.
-  ///
-  /// This is the one place the contract's grain is worth explaining. Entity
-  /// *props* are immutable for an entity's lifetime, and the transform is
-  /// interpolated — neither can carry "this mole is 40% risen". Pooled ids are
-  /// reused, so a mole's phase genuinely changes under a stable id. Shared
-  /// state is the channel for exactly that: small, slow-ish, never interpolated.
   @override
   Map<String, Object?> get sharedState {
     final phases = <String, Object?>{};
@@ -448,18 +355,12 @@ class GuacamoleSim implements GameSim {
     };
   }
 
-  /// Built once: `outcome` is polled several times a tick and this one carries
-  /// a line per phone.
   GameOutcome? _outcome;
 
   @override
   GameOutcome? get outcome {
     if (_elapsed < GuacamoleConfig.roundSeconds) return null;
 
-    // Everybody played the same round and nobody is eliminated, so this is not
-    // a win or a loss — it is what you personally managed. Each phone gets its
-    // own tally under the platform's "Well played!", and the standings card
-    // below it does the comparing.
     return _outcome ??= GameOutcome.perPhone({
       for (final id in context.phoneIds) id: _tallyFor(id),
     }, summary: _roundLeader());
@@ -472,12 +373,6 @@ class GuacamoleSim implements GameSim {
     return 'You squished $n avocado${n == 1 ? '' : 's'}$pts';
   }
 
-  /// Who did best **this round**.
-  ///
-  /// Deliberately from the round's own count rather than the session leader:
-  /// by the third game of a playlist the phone with the highest total may have
-  /// squished nothing at all here, and announcing it as the winner of a round
-  /// it lost is worse than saying nothing.
   String _roundLeader() {
     final view = context.scores.view;
     final ranked = [
@@ -503,7 +398,7 @@ class GuacamoleSim implements GameSim {
     _sinceSpawn = 0;
     _squished.clear();
     _paid = const {};
-    // The latched verdict belongs to the round that just ended.
+
     _outcome = null;
   }
 

@@ -8,13 +8,6 @@ import '../../audio/ui_audio.dart';
 import 'sticker_background.dart';
 import 'sticker_tokens.dart';
 
-/// The sticker button: ink border, hard shadow, and a press that sinks it onto
-/// its own shadow.
-///
-/// The sink *is* the feedback, so there is no ripple. It also boups, through
-/// [withButtonSound], like every other button in the app — a disabled one
-/// stays silent and is drawn washed out — solid, so nothing behind it shows
-/// through.
 class StickerButton extends StatefulWidget {
   const StickerButton({
     super.key,
@@ -44,7 +37,6 @@ class StickerButton extends StatefulWidget {
   final double? height;
   final EdgeInsetsGeometry padding;
 
-  /// For an icon-only button, so a screen reader has something to say.
   final String? tooltip;
 
   @override
@@ -65,8 +57,6 @@ class _StickerButtonState extends State<StickerButton> {
     setState(() => _down = true);
   }
 
-  /// Holds the button down for the rest of [St.minPress] when the finger
-  /// leaves early, so a flick of a tap sinks like a deliberate one.
   void _lift() {
     if (!_down) return;
     final held = DateTime.now().difference(_downAt ?? DateTime.now());
@@ -116,8 +106,6 @@ class _StickerButtonState extends State<StickerButton> {
             : null,
         transform: Matrix4.translationValues(sink, sink, 0),
         decoration: St.sticker(
-          // Blended toward white rather than faded: a translucent button lets
-          // the drifting shapes show through it.
           color: _enabled
               ? w.color
               : Color.alphaBlend(St.white.withValues(alpha: .55), w.color),
@@ -138,7 +126,6 @@ class _StickerButtonState extends State<StickerButton> {
   }
 }
 
-/// A sticker that does nothing when touched: a card.
 class StickerCard extends StatelessWidget {
   const StickerCard({
     super.key,
@@ -160,8 +147,6 @@ class StickerCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final double tiltDeg;
 
-  /// Clip the contents to the inside of the border — for a card with a
-  /// coloured band or a picture running to its edge.
   final bool clip;
 
   @override
@@ -188,11 +173,9 @@ class StickerCard extends StatelessWidget {
   }
 }
 
-/// The red back button every sub-screen header starts with.
 class StickerBackButton extends StatelessWidget {
   const StickerBackButton({super.key, this.onTap});
 
-  /// Defaults to popping the route.
   final VoidCallback? onTap;
 
   @override
@@ -207,7 +190,6 @@ class StickerBackButton extends StatelessWidget {
   );
 }
 
-/// Back button, then the title in Lilita.
 class StickerHeader extends StatelessWidget {
   const StickerHeader(
     this.title, {
@@ -240,7 +222,6 @@ class StickerHeader extends StatelessWidget {
   );
 }
 
-/// A small pill: a count, "YOU", "away".
 class StickerPill extends StatelessWidget {
   const StickerPill(
     this.label, {
@@ -284,11 +265,6 @@ class StickerPill extends StatelessWidget {
   );
 }
 
-/// A red-edged warning on yellow: something went wrong, and here is what.
-///
-/// For the few messages the designs do not draw — a failed connection, a
-/// sideways iPad — dressed as a sticker so they read as part of the screen
-/// rather than a Material error box that wandered in.
 class StickerNotice extends StatelessWidget {
   const StickerNotice({
     super.key,
@@ -333,8 +309,6 @@ class StickerNotice extends StatelessWidget {
   );
 }
 
-/// A whole sticker screen: yellow paper, drifting shapes, safe area, and the
-/// content held to a phone's width on a tablet.
 class StickerPage extends StatelessWidget {
   const StickerPage({
     super.key,
@@ -364,11 +338,6 @@ class StickerPage extends StatelessWidget {
   );
 }
 
-/// A text field on a white sticker, with an optional label above it.
-///
-/// The label sits outside the field rather than as a hint inside it: a hint
-/// disappears the moment there is a value, which is wrong for fields that all
-/// look alike once filled in.
 class StickerField extends StatelessWidget {
   const StickerField({
     super.key,
@@ -438,7 +407,6 @@ class StickerField extends StatelessWidget {
   }
 }
 
-/// A full-width action: an icon and a label in Lilita, on a coloured sticker.
 class StickerWideButton extends StatelessWidget {
   const StickerWideButton({
     super.key,
@@ -460,8 +428,6 @@ class StickerWideButton extends StatelessWidget {
   final double height;
   final double fontSize;
 
-  /// Pins the label to the left and puts this at the far end — a chevron on a
-  /// row that opens a page. Without it, everything is centred.
   final Widget? trailing;
 
   @override
@@ -503,8 +469,6 @@ class StickerWideButton extends StatelessWidget {
   }
 }
 
-/// Ink on yellow, at whatever size the caller needs — the sticker screens'
-/// spinner, instead of Material's, which takes the theme's colour.
 class StickerSpinner extends StatelessWidget {
   const StickerSpinner({super.key, this.size = 36});
 
@@ -521,11 +485,6 @@ class StickerSpinner extends StatelessWidget {
   );
 }
 
-/// A coloured disc with an icon on it, tilted: the big mark at the top of a
-/// screen that has one thing to say — you won, you lost, the connection went.
-///
-/// One vocabulary for all of them, so a player reads the colour before the
-/// words on any of them.
 class StickerMark extends StatelessWidget {
   const StickerMark({
     super.key,
@@ -561,12 +520,6 @@ class StickerMark extends StatelessWidget {
   );
 }
 
-/// A whole screen that is only waiting: the spinner, and what it is waiting
-/// for.
-///
-/// Every dead moment lands here rather than on a bare [Scaffold], which would
-/// take the app's dark theme and read as a different app for as long as the
-/// wait lasts.
 class StickerLoadingScreen extends StatelessWidget {
   const StickerLoadingScreen({super.key, this.message});
 

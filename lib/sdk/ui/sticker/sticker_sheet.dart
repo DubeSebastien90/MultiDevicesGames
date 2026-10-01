@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '../../audio/ui_audio.dart';
 import 'sticker_tokens.dart';
 
-/// Opens a sticker sheet: ink scrim, and the sheet sliding up 40px as it fades
-/// in. A tap on the scrim closes it.
 Future<T?> showStickerSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -19,7 +17,6 @@ Future<T?> showStickerSheet<T>(
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Padding(
-          // Above the keyboard too: the create-lobby sheet has a text field.
           padding: EdgeInsets.fromLTRB(
             14,
             0,
@@ -52,7 +49,6 @@ Future<T?> showStickerSheet<T>(
   );
 }
 
-/// The white sheet itself: radius 32, 3px border, hard shadow.
 class StickerSheetShell extends StatelessWidget {
   const StickerSheetShell({super.key, required this.children});
 
@@ -72,7 +68,6 @@ class StickerSheetShell extends StatelessWidget {
   );
 }
 
-/// The round white close button in a sheet's corner.
 class SheetCloseButton extends StatelessWidget {
   const SheetCloseButton({super.key});
 
@@ -96,7 +91,6 @@ class SheetCloseButton extends StatelessWidget {
   );
 }
 
-/// An ink pill with yellow words that slides up, and leaves after 1.7s.
 void showStickerToast(
   BuildContext context,
   String message, {

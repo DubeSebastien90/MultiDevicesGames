@@ -8,8 +8,6 @@ import '../../sdk/layout/phone_spec.dart';
 import 'paint_war_sim.dart';
 import 'paint_war_view.dart';
 
-/// Paint the table: walk out of your colour, loop back, and everything the loop
-/// closed off is yours. Touch somebody's wet trail and they are wiped off.
 class PaintWarGame implements MultiscreenGame {
   const PaintWarGame();
 
@@ -23,15 +21,10 @@ class PaintWarGame implements MultiscreenGame {
     players: PlayerCount.range(min: 2, max: 8),
   );
 
-  /// The same table as Arena and Dodgeball: phones on their sides, two rows
-  /// facing each other for an even table — a pair one above the other — and
-  /// bricks for an odd one, one more on top, rows centred.
   @override
   BoardPlan planBoard(LobbyInfo lobby) {
     final n = lobby.phones.length;
-    // Only a lone phone gets a row — a table of two is a grid of one column:
-    // one phone above the other, long edges touching, for a squarer floor than
-    // two phones end to end.
+
     if (n < 2) {
       return Layouts.row(
         lobby.phones,
