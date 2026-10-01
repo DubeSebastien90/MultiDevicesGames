@@ -1,6 +1,5 @@
 part of 'pitch_cars_sim.dart';
 
-/// Records which car last touched which, for the off-track reset rule.
 class _CarContactListener extends ContactListener {
   _CarContactListener(this.sim);
   final PitchCarsSim sim;
@@ -25,8 +24,6 @@ class _CarContactListener extends ContactListener {
     }
   }
 
-  /// A car meeting a wall or another car hard enough to be heard. One sound
-  /// per impact, even when it is two cars: it is one bang.
   void _crash(Contact contact) {
     final bodyA = contact.fixtureA.body;
     final bodyB = contact.fixtureB.body;
@@ -36,8 +33,7 @@ class _CarContactListener extends ContactListener {
     final aCar = sim._order.contains(a);
     final bCar = sim._order.contains(b);
     if (!aCar && !bCar) return;
-    // A finished car is a sensor, and a falling one is off the road: neither
-    // is touching anything.
+
     for (final (id, isCar) in [(a, aCar), (b, bCar)]) {
       if (isCar &&
           (sim._finished.contains(id) || sim._fallenFor.containsKey(id))) {
@@ -53,7 +49,6 @@ class _CarContactListener extends ContactListener {
       return;
     }
 
-    // Between the two cars, or at the car that hit the wall.
     final car = aCar ? bodyA : bodyB;
     final at = aCar && bCar
         ? (bodyA.position + bodyB.position) / 2

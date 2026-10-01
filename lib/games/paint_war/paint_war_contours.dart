@@ -1,56 +1,16 @@
 import 'dart:typed_data';
 
-/// Smooth outlines for the paint, from the grid the rules keep it in.
-///
-/// The sim paints in cells because cells make the rules exact: a loop is
-/// filled by a flood, a cut is a lookup, an area is a count. Drawn as cells,
-/// though, every edge is a staircase. So each phone traces the edge of every
-/// territory instead, and rounds it off:
-///
-/// 1. **Marching squares** walks the grid a square of four cell centres at a
-///    time and puts a point on every side where one centre is inside and the
-///    next is not — halfway between them. That already turns every staircase
-///    step into a diagonal.
-/// 2. The segments are **joined into closed loops**. Outlines and holes come
-///    out alike; filling them even-odd is what makes a hole a hole.
-/// 3. Each loop is **relaxed** with Taubin smoothing. On a shallow slope
-///    marching squares leaves a long flat run and then a one-cell step;
-///    corner-cutting alone only rounds the step off, which reads as a ripple.
-///    Pulling every point toward its neighbours spreads the step over the run —
-///    but done plainly it also shrinks the whole shape, which lost half of a
-///    small block and opened a gap between two neighbours. Taubin alternates
-///    that pull with a slightly stronger push back out, which irons out the
-///    steps and leaves the size alone.
-/// 4. **Chaikin** corner-cutting finishes it: every corner is replaced by two
-///    points a quarter of the way along its sides.
-///
-/// Two territories side by side share the same halfway points, so their
-/// outlines meet rather than leaving a hairline of paper between them.
 class PaintContours {
   const PaintContours._();
 
-  /// Taubin's pull and push, and how many rounds of the pair. The push has to
-  /// be a little stronger than the pull for the shape to keep its size.
   static const double relaxPull = 0.5;
   static const double relaxPush = -0.53;
   static const int relaxRounds = 12;
 
-  /// How many points either side each point is pulled toward, a cell apart.
-  /// A step on a shallow slope is a run of several cells: pulling toward only
-  /// the two nearest points smooths the corner of the step and leaves the
-  /// ripple, so the pull looks further along.
-  ///
-  /// Never more than a twelfth of the loop: on a small shape the far points
-  /// are across a corner rather than along a step, and pulling toward them
-  /// shrinks it however hard Taubin pushes back.
   static const int relaxReach = 4;
 
-  /// Rounds of corner-cutting after that. Each doubles the points.
   static const int smoothing = 2;
 
-  /// The paint as a grid of owners — a painter's index, or -1 — decoded from
-  /// the sim's run-length string: a letter per owner (`.` for nobody), then
-  /// how many cells of it, row after row.
   static Int8List decode(String raw) {
     final runs = <(int, int)>[];
     var cells = 0;
@@ -77,11 +37,6 @@ class PaintContours {
     return owners;
   }
 
-  /// Every closed outline of [owner]'s paint, smoothed, in world coordinates.
-  ///
-  /// The grid is [gw] cells across, each [cell] wide, its corner at ([gx],
-  /// [gy]). Outside the grid counts as unpainted, so a territory against the
-  /// edge of the board is outlined along that edge.
   static List<List<(double, double)>> outlines(
     Int8List owners, {
     required int owner,
@@ -94,11 +49,9 @@ class PaintContours {
     bool inside(int i, int j) =>
         i >= 0 && j >= 0 && i < gw && j < gh && owners[j * gw + i] == owner;
 
-    // A point on a side between two cell centres, as one integer: the square
-    // to the right of or below a centre, and which of the two sides it is.
     final stride = gw + 2;
-    int across(int i, int j) => ((j + 1) * stride + (i + 1)) * 2; // i ~ i+1
-    int down(int i, int j) => ((j + 1) * stride + (i + 1)) * 2 + 1; // j ~ j+1
+    int across(int i, int j) => ((j + 1) * stride + (i + 1)) * 2;
+    int down(int i, int j) => ((j + 1) * stride + (i + 1)) * 2 + 1;
 
     final links = <int, List<int>>{};
     void link(int a, int b) {
@@ -106,9 +59,6 @@ class PaintContours {
       (links[b] ??= <int>[]).add(a);
     }
 
-    // Each square is the four centres (i, j), (i+1, j), (i+1, j+1), (i, j+1).
-    // Diagonal-only neighbours are kept apart (the two saddle cases), which is
-    // what the flood in the sim does too.
     for (var j = -1; j < gh; j++) {
       for (var i = -1; i < gw; i++) {
         final a = inside(i, j);
@@ -151,7 +101,7 @@ class PaintContours {
       final base = key ~/ 2;
       final i = base % stride - 1;
       final j = base ~/ stride - 1;
-      // Centres sit at (i + 0.5) cells; a side point is halfway to the next.
+
       return vertical
           ? (gx + (i + 0.5) * cell, gy + (j + 1) * cell)
           : (gx + (i + 1) * cell, gy + (j + 0.5) * cell);
@@ -178,9 +128,6 @@ class PaintContours {
     return loops;
   }
 
-  /// Taubin smoothing: each round, every point is moved toward the average of
-  /// the [relaxReach] points either side of it by [relaxPull], then away by
-  /// [relaxPush]. A loop too short to smooth is left alone — it is a speck.
   static List<(double, double)> _relax(List<(double, double)> loop) {
     final n = loop.length;
     if (n < 5) return loop;
@@ -219,9 +166,6 @@ class PaintContours {
     return [for (var k = 0; k < n; k++) (xs[k], ys[k])];
   }
 
-  /// Drops the points in the middle of straight runs: a long flat edge is
-  /// dozens of halfway points in a line, and cutting their corners is work
-  /// that changes nothing.
   static List<(double, double)> _straighten(List<(double, double)> loop) {
     final n = loop.length;
     final out = <(double, double)>[];

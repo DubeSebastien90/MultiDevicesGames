@@ -1,29 +1,7 @@
 part of 'pitch_cars_sim.dart';
 
-/// Off-track recovery, lap progress and finish/turn resolution.
 extension _Progress on PitchCarsSim {
-  /// Cars that have left the road: let them fall, then put them back.
-  ///
-  /// This used to happen in one tick — a car crossed the edge and was already
-  /// home again before the frame was drawn, which looked like it had *stopped*
-  /// at the edge. Two things were wrong with that. Nobody watching could see
-  /// that a car had been knocked anywhere, and a car knocked off came back to
-  /// the exact spot it was standing on, so shoving a rival cost them nothing
-  /// and there was no reason to aim at anybody.
-  ///
-  /// Now the car sails on for [PitchCarsConfig.fallSeconds] — as a sensor, so
-  /// it passes through everything on its way out — and then reappears:
-  ///
-  /// - **Its own fault** (the player flicked themselves off): back where the
-  ///   turn started, as before. Losing the shot is the whole penalty.
-  /// - **Knocked off by somebody**: back on the centerline
-  ///   [PitchCarsScale.knockBackWorld] *behind* where it went over.
-  ///
-  /// Where it lands is settled the moment it leaves, not when it arrives. The
-  /// turn can end mid-fall, and `_preTurnPosition` means somebody else by then.
   void _resolveOffTrack(double dt) {
-    // The visual clock runs on past the landing until the phones, drawing
-    // behind the sim, have seen the car land too.
     const visualEnd =
         PitchCarsConfig.fallSeconds +
         PitchCarsConfig.fallVisualLagSeconds +
@@ -47,8 +25,6 @@ extension _Progress on PitchCarsSim {
         if (elapsed >= PitchCarsConfig.fallSeconds) {
           _land(id);
         } else {
-          // Held at a steady tumble rather than set once, which angular
-          // damping would wind down long before the car hits the bottom.
           carOf(id).angularVelocity =
               PitchCarsConfig.fallSpinTurnsPerSecond * 2 * math.pi;
         }
@@ -77,12 +53,6 @@ extension _Progress on PitchCarsSim {
     if (ownFault) {
       target = _preTurnPosition.clone();
     } else {
-      // Measured from the last progress recorded while the car was still *on*
-      // the road, not from projecting where it is now. Projection is only
-      // meaningful for a point near the centerline: a car that has flown into
-      // the void can sit nearest some entirely different stretch of a track
-      // that wanders back past itself, and taking the knockback from there
-      // sent it most of a lap backwards instead of a road's width.
       final fell = _rawProgress[id] ?? 0.0;
       final back = math.max(0.0, fell - scale.knockBackWorld);
       final point = track.pointAtArclength(back);
@@ -93,13 +63,9 @@ extension _Progress on PitchCarsSim {
     _fallTarget[id] = target;
     _fallAngle[id] = carOf(id).angle;
     _fallVisualFor[id] = 0;
-    // Through everything on the way down. A car tumbling into the void should
-    // not clip a rival still on the road, and should not be stopped by the
-    // kerb it has already cleared.
+
     _fixtureOf[id]?.setSensor(true);
 
-    // Nearest rather than exact: by the time it counts as off the road, the
-    // car can already be past the edge of the glass.
     final pos = carOf(id).position;
     final phone = context.nearestPhone(pos.x, pos.y);
     if (phone != null) _playOn(phone, PitchCarsConfig.falling);
@@ -117,9 +83,6 @@ extension _Progress on PitchCarsSim {
       ..linearVelocity = Vector2.zero()
       ..angularVelocity = 0;
 
-    // Progress is tracked as a running total of small deltas, and this is a
-    // jump rather than a delta — so both halves are restated together. Without
-    // it the road given up would be handed straight back on the next step.
     final landedArc = track.progressAt(resetTo.x, resetTo.y);
     final lost = (_rawProgress[id] ?? landedArc) - landedArc;
     if (lost > 0) {
@@ -160,9 +123,7 @@ extension _Progress on PitchCarsSim {
   void _updateProgress() {
     for (final id in _order) {
       if (_finished.contains(id)) continue;
-      // A car in the void is not getting anywhere. Left running, its projection
-      // onto the centerline would keep drifting while it tumbled — and could
-      // sail past the finish threshold, winning the race from off the board.
+
       if (_fallenFor.containsKey(id)) continue;
       final pos = carOf(id).position;
       final raw = track.progressAt(pos.x, pos.y);
@@ -190,11 +151,7 @@ extension _Progress on PitchCarsSim {
     _finished.add(id);
     _finishOrder.add(id);
     _fixtureOf[id]?.setSensor(true);
-    // Across the line, in their own voice — unless this is the finish that
-    // ends the race. The results screen cheers every winner itself a moment
-    // later, and a second cheer on top of it is one too many. Never for the
-    // last car below either, which is placed by elimination rather than by
-    // getting there.
+
     final endsTheRace = _order.length - _finished.length <= 1;
     final player = context.roster.byPhone(id);
     if (player != null && !endsTheRace) {

@@ -6,15 +6,10 @@ import '../monetization/premium_status.dart';
 import 'sticker/sticker.dart';
 import 'screen_size_screen.dart';
 
-/// Where the privacy policy is published. The page lives in its own repo
-/// (BubbleGamesPrivacy) on GitHub Pages, so it can be corrected without shipping
-/// a build.
 final Uri kPrivacyPolicyUrl = Uri.parse(
   'https://dubesebastien90.github.io/BubbleGamesPrivacy/',
 );
 
-/// The formal odds and ends: what this screen measures, and the buttons that
-/// belong nowhere else.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -40,12 +35,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.onMetricsChanged(m);
   }
 
-  /// The measuring kit: typed millimetres, native re-detect, and the card flow.
-  ///
-  /// A page rather than the dialog it used to be. The kit is three fields, two
-  /// buttons and a paragraph explaining why any of it matters, and a dialog
-  /// sized to the shorter of those was always going to cut something off — on
-  /// a phone in landscape, with a keyboard up, it cut off most of it.
   void _calibrate() {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -55,8 +44,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// The paywall's restore, reachable without first tapping a locked game —
-  /// the place a player who reinstalled goes looking for it.
   Future<void> _reloadPurchases() async {
     setState(() => _restoring = true);
     final outcome = await widget.premium.restore();
@@ -65,9 +52,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showStickerToast(context, restoreMessage(outcome));
   }
 
-  /// Opens the policy in an in-app browser sheet (SFSafariViewController on
-  /// iOS, a Custom Tab on Android) rather than throwing the player out to the
-  /// browser app: they are reading one page, and should land back here.
   Future<void> _openPrivacyPolicy() async {
     var opened = false;
     try {
@@ -115,8 +99,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// One row of the settings list: what it does on the left, a chevron saying
-/// it goes somewhere on the right.
 class _SettingsButton extends StatelessWidget {
   const _SettingsButton({required this.label, required this.icon, this.onTap});
 

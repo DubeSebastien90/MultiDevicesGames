@@ -5,8 +5,6 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'sticker/sticker.dart';
 
-/// True where a camera scanner is actually available. Desktop builds fall back
-/// to typing the address, which is why that path is never hidden away.
 bool get qrScanSupported {
   try {
     return Platform.isAndroid || Platform.isIOS;
@@ -15,7 +13,6 @@ bool get qrScanSupported {
   }
 }
 
-/// Scans the host's QR and returns its raw payload (`ws://ip:port`).
 class ScanSheet extends StatefulWidget {
   const ScanSheet({super.key});
 
@@ -67,8 +64,6 @@ class _ScanSheetState extends State<ScanSheet> {
             style: St.body(15, weight: FontWeight.w500, color: St.muted),
           ),
           Expanded(
-            // The camera feed as a sticker: clipped to the card's rounded
-            // shape, inside its ink border.
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
               child: StickerCard(

@@ -9,7 +9,6 @@ import '../client/viewport_game.dart';
 import '../contract/sim.dart' show TouchPhase;
 import '../contract/view.dart';
 
-/// The gameplay screen: one phone's window onto the shared board.
 class GameView extends StatefulWidget {
   const GameView({super.key, required this.controller});
 
@@ -31,10 +30,6 @@ class _GameViewState extends State<GameView> {
     super.initState();
     _game = ViewportGame(session: widget.controller.client!);
 
-    // Snapshots arrive 60 times a second and deliberately do not notify the
-    // widget tree — that is what keeps rendering in the Flame loop. The game's
-    // shared state rides along with them, so poll it slowly and rebuild the
-    // HUD only when something a human can read actually changed.
     _hudTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       final client = widget.controller.client!;
       final signature = '${client.sharedState}';
@@ -55,8 +50,6 @@ class _GameViewState extends State<GameView> {
     setState(() => _showDebug = !_showDebug);
     _statsTimer?.cancel();
     if (_showDebug) {
-      // The readouts change every frame; refreshing the panel a few times a
-      // second is enough and keeps it out of the render loop.
       _statsTimer = Timer.periodic(
         const Duration(milliseconds: 250),
         (_) => setState(() {}),
@@ -64,16 +57,6 @@ class _GameViewState extends State<GameView> {
     }
   }
 
-  /// Raw local input, forwarded untouched.
-  ///
-  /// Deliberately [PointerEvent.localPosition] and not the global position: the
-  /// whole surface may be turned to match a phone laid sideways on the table,
-  /// and the local frame is the turned one. Reading global coordinates here
-  /// would send the host a finger that never moves the way the player's did.
-  ///
-  /// The listener fills the surface with no padding, so local coordinates start
-  /// at the first lit pixel — which is exactly what the host's transform
-  /// expects.
   void _pointer(PointerEvent event, String phase) {
     widget.controller.client!.sendTouch(
       event.localPosition.dx,
@@ -82,7 +65,6 @@ class _GameViewState extends State<GameView> {
     );
   }
 
-  /// The game's own overlay, if it has one.
   Widget? get _hud {
     final client = widget.controller.client!;
     final view = client.view;
@@ -104,13 +86,6 @@ class _GameViewState extends State<GameView> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B1020),
-      // The app never rotates; the *board* does. Turning the whole gameplay
-      // surface — canvas, HUD and buttons together — is what makes a phone laid
-      // on its side read upright to the person at the table.
-      // Deliberately not turned. A phone placed at an angle occupies an angled
-      // slot in the *world*, and the camera already turns to match it — so the
-      // world arrives upright on this screen and the HUD reads normally. Doing
-      // it here as well would rotate everything a second time.
       body: Stack(
         children: [
           Positioned.fill(child: GameWidget(game: _game)),
@@ -127,14 +102,10 @@ class _GameViewState extends State<GameView> {
           Positioned(
             left: 10,
             top: 8,
-            // Wrap rather than Row so dropping the badge in release leaves no
-            // gap where it used to be.
             child: Wrap(
               spacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                // Which phone this is, and where it sits in the board. Useful
-                // while building a layout, noise to a player.
                 if (PlatformConfig.showDevChrome)
                   _Badge(
                     text: layout == null
@@ -142,12 +113,6 @@ class _GameViewState extends State<GameView> {
                         : '${client.phoneId} · '
                               '${layout.index + 1}/${layout.total}',
                   ),
-                // The game's own HUD, and nothing else of the platform's.
-                //
-                // A running total used to sit here. It came off: a score is
-                // read between games, on a screen built for it, and a number
-                // ticking over the corner of a round is one more thing asking
-                // to be looked at while somebody is trying to play.
                 ?_hud,
               ],
             ),
@@ -233,7 +198,6 @@ class _HudButton extends StatelessWidget {
   );
 }
 
-/// Everything you need to argue about whether the seam is working.
 class _DebugPanel extends StatelessWidget {
   const _DebugPanel({
     required this.controller,
@@ -295,9 +259,6 @@ class _DebugPanel extends StatelessWidget {
             'buffer is hiding.',
             style: TextStyle(fontSize: 9.5, color: Colors.white38),
           ),
-          // The grid and dead-zone toggles used to live here, back when one
-          // renderer drew every game. They belong to ShapeView now, and a game
-          // that draws its own pixels was never going to honour them.
           const Divider(height: 14, color: Colors.white24),
           _row(
             'rtt',
@@ -323,8 +284,6 @@ class _DebugPanel extends StatelessWidget {
           if (controller.host != null) ...[
             const Divider(height: 14, color: Colors.white24),
             TextButton.icon(
-              // Back to the arrangement screen for the *same* game, which is
-              // what you want when a measurement turned out wrong.
               onPressed: () => controller.host!.recalibrate(),
               icon: const Icon(Icons.tune, size: 15),
               label: const Text(

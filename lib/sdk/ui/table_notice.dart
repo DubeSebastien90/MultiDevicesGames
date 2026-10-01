@@ -4,22 +4,11 @@ import '../app_controller.dart';
 import '../audio/ui_audio.dart';
 import 'sticker/sticker.dart';
 
-/// Something the table needs to know, on whichever screen it is looking at.
-///
-/// Shown on the placement screen as well as the lobby, and that is the point of
-/// it: the message that matters most — somebody arrived or left, so the board
-/// has been laid out again and everybody's Ready was thrown away — happens while
-/// people are staring at the placement screen. It was being written down on the
-/// host and read by nobody.
 class TableNotice extends StatelessWidget {
   const TableNotice({super.key, required this.controller});
 
   final AppController controller;
 
-  /// What to say, from whichever side of the session this phone is on.
-  ///
-  /// The host holds it directly; every other phone is told in the lobby
-  /// broadcast. Same string either way.
   String? get _message =>
       controller.host?.warning ?? controller.client?.warning;
 

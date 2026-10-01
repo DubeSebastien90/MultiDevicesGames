@@ -8,12 +8,6 @@ import '../../sdk/layout/phone_spec.dart';
 import 'hot_potato_sim.dart';
 import 'hot_potato_view.dart';
 
-/// Sit in a circle and get rid of it before the fuse runs out.
-///
-/// The game that proves two halves of the contract at once: physics is optional
-/// (its sim extends [GameSim] directly and links no engine), and a board need
-/// not be a row or a column — this one is a ring of phones each turned to face
-/// its own player.
 class HotPotatoGame implements MultiscreenGame {
   const HotPotatoGame();
 
@@ -24,13 +18,9 @@ class HotPotatoGame implements MultiscreenGame {
     tagline: 'Swipe it to a neighbour before the fuse runs out.',
     goal: "Don't be holding it — or next to it — when it blows.",
     icon: 'assets/icons/icones_minijeux/hotpotato.svg',
-    // Two phones would just be passing it back and forth across a table.
     players: PlayerCount.range(min: 3, max: 8),
   );
 
-  /// A ring. Every phone turned outward to face the person it belongs to, and
-  /// deliberate space between them — the potato crossing that space is the game
-  /// working, not a gap in the board.
   @override
   BoardPlan planBoard(LobbyInfo lobby) => Layouts.circle(
     lobby.phones,

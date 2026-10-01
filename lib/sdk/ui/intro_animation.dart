@@ -1,23 +1,3 @@
-/// The curtain between the lobby and the first game of a run.
-///
-/// Somebody presses Play and every phone at the table plays the same animation
-/// before showing where to stand. It is the one moment the table looks like one
-/// thing rather than six, which is the whole pitch of the platform — so it is
-/// worth the seconds it costs, and it is worth it happening *together*.
-///
-/// The animation decides its own length. `SM1` holds on `Idle` — eyes closed —
-/// until the `startGame` trigger fires, then plays `Lock_In` once. Two signals
-/// mark the end and the first one wins: the `EyesOpenDone` event, and the
-/// state machine coming to rest. They normally land on the same frame; see
-/// [_IntroController] for why neither arrives on its own. Either way the timing
-/// belongs to whoever drew the animation rather than to a number guessed here.
-///
-/// **It never waits forever.** Every phone was told to play within a few
-/// milliseconds of every other, and every phone is playing the same one-shot,
-/// so they land together. But a file that does not load, an event that gets
-/// renamed, a state machine that never settles — none of those may strand a
-/// phone behind a black screen while the rest of the table plays. That is what
-/// [duration] is: a net under the event, not the thing that decides the timing.
 library;
 
 import 'dart:async';
@@ -37,87 +17,42 @@ class IntroAnimation extends StatefulWidget {
     this.duration = fallbackAfter,
   });
 
-  /// Called once, when the curtain should lift. Always called — on the event,
-  /// on a failed load, and on a file that never says it finished.
   final VoidCallback onDone;
 
-  /// The colour of the person holding *this* phone.
-  ///
-  /// Written into the artboard before the animation starts, so six phones play
-  /// the same character in six different colours — which is the whole point of
-  /// the moment. Null leaves whatever the artist drew.
   final Color? playerColor;
 
-  /// How long to wait for `EyesOpenDone` before giving up and carrying on.
-  ///
-  /// Comfortably longer than the animation: this is the failure path, and a
-  /// net set too tight would cut the artwork off mid-blink on a slow phone.
   final Duration duration;
 
   static const fallbackAfter = Duration(seconds: 6);
 
-  /// How long the file plays as drawn: a second holding on `Idle` — the
-  /// transition to `Lock_In` waits for it to finish — then a second of
-  /// `Lock_In`.
   static const drawnSeconds = 2.0;
 
-  /// How long it is played for here: a second and a half of each. Long enough
-  /// for the [Sounds.introChime] that starts with it to have all but rung out
-  /// when the curtain lifts, rather than being cut across by the next screen
-  /// halfway through.
   static const playedSeconds = 3.0;
 
-  /// The rate the animation's clock runs at against the real one.
   static const pace = drawnSeconds / playedSeconds;
 
   static const asset = 'assets/sdk/animations/startanimationColors.riv';
 
-  /// The state machine that holds the two states, and the input that starts it.
   static const stateMachine = 'SM1';
   static const startTrigger = 'startGame';
 
-  /// Signalled by the state machine at the end of `Lock_In`.
   static const doneEvent = 'EyesOpenDone';
 
-  /// The view model the artboard exposes, and the colour property on it.
   static const viewModel = 'PersoVM';
   static const colorProperty = 'skinColor';
 
-  /// Whether the Rive runtime came up at launch.
-  ///
-  /// Set once by [initRuntime]. False means every intro is skipped instantly
-  /// rather than each one discovering the same failure and holding the table
-  /// up while it does.
   static bool get available => _available;
   static bool _available = false;
 
-  /// Whether this platform can be trusted to draw a Rive file.
-  ///
-  /// **Windows cannot, as of `rive_native` 0.1.11.** The runtime starts, the
-  /// file loads and the artboard parses — and then the first rendered frame
-  /// takes the whole process down, with no Dart exception, on both the Flutter
-  /// and the Rive renderer. There is nothing to catch: a native crash is not an
-  /// error a `try` can see, which is why this is a check up front rather than a
-  /// rescue afterwards. Proved by `integration_test/native_smoke_test.dart`,
-  /// which is the only thing in the suite that runs native code at all.
-  ///
-  /// Windows is where this is developed, not where it is played — the table is
-  /// phones — so the trade is a desktop build with no curtain against a desktop
-  /// build that dies on Play. macOS and Linux are untested and left in: there
-  /// is no evidence either way, and excluding them on suspicion would take the
-  /// intro away from platforms that may be perfectly fine.
   static bool get platformSupportsRive =>
       !kIsWeb && defaultTargetPlatform != TargetPlatform.windows;
 
-  /// Bring the Rive runtime up. Called once, from `main`, before `runApp`.
-  ///
-  /// Failure is not fatal and not even reported to the user: the intro is
-  /// decoration, and a table that cannot play it should still be able to play
-  /// the games.
   static Future<void> initRuntime() async {
     if (!platformSupportsRive) {
-      debugPrint('[intro] not rendered on $defaultTargetPlatform — see '
-          'IntroAnimation.platformSupportsRive');
+      debugPrint(
+        '[intro] not rendered on $defaultTargetPlatform — see '
+        'IntroAnimation.platformSupportsRive',
+      );
       _available = false;
       return;
     }
@@ -125,7 +60,9 @@ class IntroAnimation extends StatefulWidget {
       await rive.RiveNative.init();
       _available = true;
     } on Object catch (e) {
-      debugPrint('[intro] Rive runtime unavailable, intros will be skipped: $e');
+      debugPrint(
+        '[intro] Rive runtime unavailable, intros will be skipped: $e',
+      );
       _available = false;
     }
   }
@@ -134,38 +71,16 @@ class IntroAnimation extends StatefulWidget {
   State<IntroAnimation> createState() => _IntroAnimationState();
 }
 
-/// Keeps the state machine alive for one frame past the end.
-///
-/// `rive_native` drains reported events at the *start* of `advanceAndApply`,
-/// so an event signalled on one frame is only delivered on the next. `Lock_In`
-/// has no exit transition: it finishes, the machine settles, the widget stops
-/// advancing — and there is no next frame, so `EyesOpenDone` is reported
-/// natively and never delivered. The curtain then hung on its last frame until
-/// the safety net fired, which is exactly what a three-second pause looked
-/// like.
-///
-/// So when the machine first says it is done, this asks for one more frame.
-/// That frame drains the event, and the settle is reported straight after.
-/// Whichever of the two reaches [IntroAnimation.onDone] first wins; it is
-/// idempotent.
-///
-/// [onSettled] is worth having on its own, and not only as a backstop for the
-/// event: it needs no name to match, so a renamed or deleted event in the
-/// editor costs the animation nothing.
 base class _IntroController extends rive.RiveWidgetController {
   _IntroController(super.file, {super.stateMachineSelector});
 
   VoidCallback? onSettled;
 
-  /// Whether the machine has ever been running. Without this the very first
-  /// frame — `Idle`, a still frame, which settles immediately — would read as
-  /// 'the animation is over' before the trigger had done anything.
   bool _ran = false;
   bool _flushed = false;
 
   @override
   bool advance(double elapsedSeconds) {
-    // Slowed evenly, wait and animation alike — see [IntroAnimation.pace].
     if (super.advance(elapsedSeconds * IntroAnimation.pace)) {
       _ran = true;
       _flushed = false;
@@ -173,7 +88,6 @@ base class _IntroController extends rive.RiveWidgetController {
     }
     if (!_ran) return false;
     if (!_flushed) {
-      // One more frame, purely so the events from the last one are delivered.
       _flushed = true;
       return true;
     }
@@ -192,19 +106,17 @@ class _IntroAnimationState extends State<IntroAnimation> {
   void initState() {
     super.initState();
 
-    // Started here rather than when the file lands, so a slow decode eats into
-    // the net rather than extending the wait indefinitely.
     _net = Timer(widget.duration, () {
-      debugPrint('[intro] ${IntroAnimation.doneEvent} never arrived — '
-          'lifting the curtain anyway');
+      debugPrint(
+        '[intro] ${IntroAnimation.doneEvent} never arrived — '
+        'lifting the curtain anyway',
+      );
       _finish();
     });
 
     if (IntroAnimation.available) {
       unawaited(_load());
     } else {
-      // Nothing to show. Leave immediately, after this frame so the phase does
-      // not change during a build.
       WidgetsBinding.instance.addPostFrameCallback((_) => _finish());
     }
   }
@@ -221,9 +133,6 @@ class _IntroAnimationState extends State<IntroAnimation> {
         return;
       }
 
-      // Named rather than default: the file may grow a second state machine,
-      // and picking whichever one happens to be first is how an intro quietly
-      // starts playing the wrong thing.
       final controller = _IntroController(
         file,
         stateMachineSelector: rive.StateMachineSelector.byName(
@@ -233,24 +142,9 @@ class _IntroAnimationState extends State<IntroAnimation> {
       controller.stateMachine.addEventListener(_onRiveEvent);
       _paint(controller);
 
-      // The state machine owns the transition; this only says 'now'. Fired
-      // once, here, because nothing on this screen can ask for it twice — the
-      // curtain has no button on it, and the phone is showing it because the
-      // host already pressed Play.
-      //
-      // `trigger()` is deprecated in favour of data binding, which would need
-      // the .riv to expose a ViewModel — an editor change, not a code one. The
-      // pubspec is pinned to the 0.14.x line, so it cannot vanish under a `pub
-      // upgrade`, and this is the only deprecated call in the codebase.
-      // Removing the condition on Idle → Lock_In in the editor would retire it
-      // for good.
       // ignore: deprecated_member_use
       controller.stateMachine.trigger(IntroAnimation.startTrigger)?.fire();
 
-      // The chime, on the same instant the animation starts. Local, like the
-      // animation itself: every phone at the table was told to play within a
-      // few milliseconds of every other, and each rings its own. Not played
-      // when there is no animation to go with it.
       UiAudio.speaker.play(Sounds.introChime);
 
       setState(() {
@@ -258,23 +152,11 @@ class _IntroAnimationState extends State<IntroAnimation> {
         _controller = controller;
       });
     } on Object catch (e) {
-      // A missing file, a state machine under another name, a runtime that
-      // will not have it. All of them are 'carry on', never a stuck phone.
       debugPrint('[intro] ${IntroAnimation.asset} did not start: $e');
       if (mounted) _finish();
     }
   }
 
-  /// Put this phone's colour on the character.
-  ///
-  /// Done before the trigger fires, so the eyes open on a character that is
-  /// already the right colour rather than one that changes a frame in.
-  ///
-  /// Never fatal. A file exported without its view model, or with the property
-  /// renamed, means the animation plays in whatever colour it was drawn — which
-  /// is a worse intro, not a broken round. The failure is worth a line in the
-  /// log because nothing else about it is visible: everyone would simply be the
-  /// same colour, and nobody would know why.
   void _paint(rive.RiveWidgetController controller) {
     final color = widget.playerColor;
     if (color == null) return;
@@ -282,8 +164,10 @@ class _IntroAnimationState extends State<IntroAnimation> {
       final instance = controller.dataBind(rive.DataBind.auto());
       final property = instance.color(IntroAnimation.colorProperty);
       if (property == null) {
-        debugPrint('[intro] no "${IntroAnimation.colorProperty}" on '
-            '${IntroAnimation.viewModel} — the character keeps its own colour');
+        debugPrint(
+          '[intro] no "${IntroAnimation.colorProperty}" on '
+          '${IntroAnimation.viewModel} — the character keeps its own colour',
+        );
         return;
       }
       property.value = color;
@@ -292,7 +176,6 @@ class _IntroAnimationState extends State<IntroAnimation> {
     }
   }
 
-  /// The end of `Lock_In`, as the animation itself reports it.
   void _onRiveEvent(rive.Event event) {
     if (event.name == IntroAnimation.doneEvent) _finish();
   }
@@ -315,14 +198,10 @@ class _IntroAnimationState extends State<IntroAnimation> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    // The same ground the rest of the app sits on, so the curtain does not
-    // flash a different colour on its way in or out.
+
     return ColoredBox(
       color: const Color(0xFF0B1020),
       child: controller == null
-          // Deliberately blank rather than a spinner. This lasts a frame or two
-          // on a file this size, and a spinner that appears and vanishes reads
-          // as a stutter.
           ? const SizedBox.expand()
           : rive.RiveWidget(controller: controller, fit: rive.Fit.contain),
     );

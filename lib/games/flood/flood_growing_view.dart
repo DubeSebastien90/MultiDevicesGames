@@ -5,13 +5,6 @@ import '../../sdk/model/world_rect.dart';
 import '../flood_common/flood_sim.dart';
 import '../flood_common/flood_view.dart';
 
-/// Option A's look: the shared flood, plus a waterline that gets angrier as the
-/// taps get stronger.
-///
-/// The ramp is the mechanic, so it has to be visible without a number on
-/// screen. As `power` climbs the foam band grows and warms — by the end of a
-/// long round the line between the colours is a wide, bright, churning strip
-/// instead of the thin seam it started as.
 class FloodGrowingView extends FloodView {
   FloodGrowingView(super.context);
 
@@ -28,8 +21,6 @@ class FloodGrowingView extends FloodView {
         (frame.sharedState[FloodState.power] as num?)?.toDouble() ?? 1.0;
     if (power <= 1.01) return;
 
-    // Grows with the ramp and saturates, so a very long round does not end up
-    // with foam covering the board.
     final intensity = ((power - 1) / 2).clamp(0.0, 1.0);
     final reach = 0.4 + intensity * 1.8;
 

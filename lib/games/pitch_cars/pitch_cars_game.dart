@@ -21,14 +21,6 @@ class PitchCarsGame implements MultiscreenGame {
     players: PlayerCount.range(min: 2, max: 8),
   );
 
-  /// A winding path, different every round.
-  ///
-  /// The platform's own helper rather than a generator of this game's: the
-  /// track is built from the compiled board — it recovers the chain and reads
-  /// the seams off the connectors — so what it needs is a chain of phones each
-  /// meeting only the one before it, which is exactly what [Layouts.path]
-  /// promises. Two things this game used to keep for itself are now the
-  /// helper's, and every game gets them.
   @override
   BoardPlan planBoard(LobbyInfo lobby) => Layouts.path(
     lobby.phones,

@@ -13,13 +13,6 @@ import '../../sdk/render/shape_view.dart';
 import 'hot_potato_art.dart';
 import 'hot_potato_config.dart';
 
-/// Hot Potato's look: everybody's arms, in their colours, juggling a potato that gets redder, spins
-/// faster and smokes harder as the fuse burns down.
-///
-/// Where the potato is, how high, how fast it spins — all of that arrives as
-/// transforms from the sim, identical on every screen. The *heat* does not: an
-/// entity's props are sent once, so the colour, the swell, the glow and the
-/// smoke are all read here off the fuse in `sharedState`.
 class HotPotatoView extends ShapeView {
   HotPotatoView({this.phoneId = '', super.roster = Roster.empty})
     : super(grid: false, playfield: const Color(_cloth)) {
@@ -27,35 +20,21 @@ class HotPotatoView extends ShapeView {
     HotPotatoArt.preload();
   }
 
-  /// A picnic table under a blue gingham cloth: light, and blue, so the
-  /// orange potato and the red of the heat are the warmest things on it.
   static const _cloth = 0xFFF2F9FF;
   static const _gingham = Color(0x66A9D6F2);
 
-  /// One square of the check, in world units.
   static const _check = 1.4;
 
-  /// This screen's phone, so the holder's screen can be the one that burns.
   final String phoneId;
-
-  // No HUD. The fuse belongs on the potato — how long is left is a thing to
-  // read off the object being passed around, not off a corner of the screen —
-  // and a phone that has it does not need telling: it is the one with the
-  // potato drawn on it.
 
   final _fill = Paint();
 
-  /// Smoke is local: it drifts on this phone's own clock and nobody else needs
-  /// to agree on where a wisp went. The phones sit apart, so there is no seam
-  /// for two screens' smoke to disagree across.
   final _smoke = <_Puff>[];
   final _random = math.Random();
   double _smokeOwed = 0;
 
-  /// Bits of potato from the bang. Local, like the smoke.
   final _chunks = <_Chunk>[];
 
-  /// How long the blast has been on screen here, for its bloom.
   double _blastAge = -1;
 
   @override
@@ -65,8 +44,6 @@ class HotPotatoView extends ShapeView {
     final heat = _heatOf(frame);
     final dt = frame.dt.clamp(0.0, 0.1);
 
-    // Once it has gone off the pressure is over: the red lets go quickly
-    // rather than blinking off, so it reads as relief and not as a glitch.
     final calmDown = frame.sharedState['exploded'] == true
         ? 1 - (math.max(_blastAge, 0.0) / 0.4).clamp(0.0, 1.0)
         : 1.0;
@@ -82,8 +59,6 @@ class HotPotatoView extends ShapeView {
     final shadow = frame.byId('potato-shadow');
     final blast = frame.byId('blast');
 
-    // How high it is, recovered from how far it has been nudged off its
-    // shadow — the sim draws height as a shift toward the middle of the table.
     final height = potato == null || shadow == null
         ? 0.0
         : math.sqrt(
@@ -105,10 +80,6 @@ class HotPotatoView extends ShapeView {
     _drawChunks(canvas);
   }
 
-  /// The cloth, with its check laid from the world origin rather than from
-  /// this screen's edge, so it runs unbroken from one phone to the next. Bands
-  /// one way and bands the other, both see-through: where they cross is
-  /// darker, which is what makes it gingham.
   @override
   void renderBackground(Canvas canvas, Frame frame) {
     final view = frame.visible;
@@ -142,16 +113,12 @@ class HotPotatoView extends ShapeView {
     }
   }
 
-  /// Fill with a gradient. The colour goes back to opaque first: a paint's
-  /// colour still scales a shader's opacity, so whatever alpha the last puff
-  /// of smoke left behind would otherwise fade the whole gradient with it.
   void _shade(ui.Shader shader) {
     _fill
       ..color = const Color(0xFFFFFFFF)
       ..shader = shader;
   }
 
-  /// 0 when the fuse is lit, 1 when it goes off.
   double _heatOf(Frame frame) {
     final left = (frame.sharedState['secondsLeft'] as num?)?.toDouble();
     final fuse =
@@ -161,10 +128,6 @@ class HotPotatoView extends ShapeView {
     return (1 - left / fuse).clamp(0.0, 1.0);
   }
 
-  // ---------------------------------------------------------------- layers
-
-  /// The holder's screen reddens from the edges in, harder and faster-pulsing
-  /// as the end comes.
   void _drawVignette(Canvas canvas, Frame frame, double heat) {
     if (heat <= 0) return;
     final view = frame.visible;
@@ -172,7 +135,7 @@ class HotPotatoView extends ShapeView {
     final radius =
         math.sqrt(view.width * view.width + view.height * view.height) / 2;
 
-    final beat = 1.5 + heat * 6; // Beats per second.
+    final beat = 1.5 + heat * 6;
     final pulse =
         0.8 + 0.2 * math.sin(frame.timeMs / 1000 * beat * 2 * math.pi);
     final strength = math.pow(heat, 1.4) * 0.7 * pulse;
@@ -196,9 +159,6 @@ class HotPotatoView extends ShapeView {
     _fill.shader = null;
   }
 
-  /// An arm and hand in its player's colour, the palm on the hand end of the
-  /// entity. Somebody the roster does not know — a view built without one —
-  /// gets the grey the arms used to be.
   void _drawArm(Canvas canvas, RenderEntity arm) {
     final length = arm.propDouble(ShapeProps.width);
     final seat = arm.props[HotPotatoConfig.propSeat] as String?;
@@ -242,7 +202,7 @@ class HotPotatoView extends ShapeView {
     double height,
   ) {
     final centre = Offset(potato.x, potato.y);
-    // Near the end it throbs, as if it were about to split.
+
     final throb =
         1 +
         0.07 *
@@ -257,7 +217,6 @@ class HotPotatoView extends ShapeView {
       math.pow(heat, 1.2).toDouble(),
     )!;
 
-    // The glow: nothing when it is fresh, a red halo by the end.
     if (heat > 0.05) {
       _shade(
         ui.Gradient.radial(centre, r * (1.4 + 1.6 * heat), [
@@ -281,7 +240,6 @@ class HotPotatoView extends ShapeView {
       return;
     }
 
-    // Lumpy, not round — a circle spinning looks like it is standing still.
     final shape = Rect.fromCenter(
       center: Offset.zero,
       width: r * 2.4,
@@ -302,7 +260,6 @@ class HotPotatoView extends ShapeView {
     canvas.drawOval(shape, _fill);
     _fill.shader = null;
 
-    // Eyes of the potato — the marks that make the spin readable.
     _fill.color = Color.lerp(body, const Color(0xFF3A1A08), 0.55)!;
     for (final (x, y, s) in const [
       (0.55, -0.2, 0.13),
@@ -322,13 +279,6 @@ class HotPotatoView extends ShapeView {
     canvas.restore();
   }
 
-  /// The drawn potato, centred on the origin, as long as the oval it replaced
-  /// is wide.
-  ///
-  /// Reddened the way the oval was: multiplied towards the hot colour as the
-  /// fuse burns, so the drawing's own shading and face stay readable through
-  /// it rather than being painted over. Never all the way: at full red the
-  /// white of the face would go red with the rest, and the face is the point.
   void _drawPotatoArt(Canvas canvas, PictureInfo art, double r, double heat) {
     final scale = r * 2.4 / HotPotatoArt.length;
     final tint = Color.lerp(
@@ -355,10 +305,7 @@ class HotPotatoView extends ShapeView {
   double _radius(double heat) =>
       HotPotatoConfig.potatoRadius * (1 + heat * HotPotatoConfig.swellAtZero);
 
-  // ----------------------------------------------------------------- smoke
-
   void _emitSmoke(Frame frame, RenderEntity potato, double heat, double dt) {
-    // Only the screens that can see it bother.
     final view = frame.visible.inflate(6);
     if (potato.x < view.left ||
         potato.x > view.right ||
@@ -396,7 +343,6 @@ class HotPotatoView extends ShapeView {
     }
   }
 
-  /// The bang: one thick burst of smoke, once, on this screen.
   void _blast(Frame frame, RenderEntity blast, double dt) {
     if (_blastAge >= 0) {
       _blastAge += dt;
@@ -423,8 +369,6 @@ class HotPotatoView extends ShapeView {
     }
   }
 
-  /// The potato in pieces: mostly skin, the colour it was when it went —
-  /// red-hot by then — and some pale flesh from the inside.
   void _burst(RenderEntity blast) {
     final r = HotPotatoConfig.potatoRadius;
     for (var i = 0; i < HotPotatoConfig.blastChunks; i++) {
@@ -473,7 +417,6 @@ class HotPotatoView extends ShapeView {
 
   void _drawChunks(Canvas canvas) {
     for (final c in _chunks) {
-      // Solid while they fly, fading only at the very end.
       final t = c.age / c.life;
       final alpha = t < 0.7 ? 1.0 : 1 - (t - 0.7) / 0.3;
       canvas
@@ -512,7 +455,7 @@ class HotPotatoView extends ShapeView {
       p.age += dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      // Smoke slows as it spreads.
+
       final drag = math.exp(-1.8 * dt);
       p.vx *= drag;
       p.vy *= drag;
@@ -523,7 +466,7 @@ class HotPotatoView extends ShapeView {
   void _drawSmoke(Canvas canvas) {
     for (final p in _smoke) {
       final t = p.age / p.life;
-      // Hotter smoke is thicker and darker, and starts as a glowing ember.
+
       final smoke = Color.lerp(
         const Color(0xFF9C9C9C),
         const Color(0xFF2E2A28),
@@ -543,15 +486,12 @@ class HotPotatoView extends ShapeView {
     }
   }
 
-  // ----------------------------------------------------------------- blast
-
   void _drawBlast(Canvas canvas, RenderEntity blast) {
     final full = blast.propDouble(ShapeProps.radius);
     final t = math.max(_blastAge, 0.0);
     final bloom = 1 - math.pow(1 - math.min(t / 0.35, 1), 3);
     final r = full * (0.3 + 0.7 * bloom);
-    // Bright, then gone by the time the first bits of potato land — a glow
-    // hanging on after the debris has cleared reads as a stuck frame.
+
     final fade = 1 - ((t - 0.3) / 0.8).clamp(0.0, 1.0);
     if (fade <= 0) return;
 
@@ -572,9 +512,6 @@ class HotPotatoView extends ShapeView {
     _fill.shader = null;
   }
 
-  // ----------------------------------------------------------------- misc
-
-  /// "Up" from a seat is toward the middle of the table.
   Offset _towardMiddle(Frame frame, double x, double y) {
     final dx = frame.board.centerX - x;
     final dy = frame.board.centerY - y;
@@ -635,6 +572,5 @@ class _Puff {
   final double size;
   final double grow;
 
-  /// How hot the potato was when this left it, 0 to 1.
   final double power;
 }

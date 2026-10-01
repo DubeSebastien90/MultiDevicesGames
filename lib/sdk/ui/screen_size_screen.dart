@@ -7,21 +7,6 @@ import '../platform/native_dpi_channel.dart';
 import 'card_calibrate_screen.dart';
 import 'sticker/sticker.dart';
 
-/// Correcting what the platform guessed about this screen — a page, not a
-/// dialog.
-///
-/// It used to be an [AlertDialog] wrapped around a collapsible card, which put
-/// three text fields, two buttons and a paragraph of explanation inside a box
-/// that could not show them all at once. Everything that was in there is still
-/// here; it is laid out as the flow lays out a screen, in the order somebody
-/// actually works in — see what the phone believes, try the automatic answers,
-/// then correct the numbers by hand.
-///
-/// Flutter reports a density *bucket*, not the panel's real DPI, so the derived
-/// millimetres can be several percent out — which is several millimetres of
-/// seam misalignment. A ruler across the glass beats any estimate, and this is
-/// the same trade the placement Confirm step already makes: when there is no
-/// sensor, the human is the sensor.
 class ScreenSizeScreen extends StatefulWidget {
   const ScreenSizeScreen({
     super.key,
@@ -41,8 +26,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
   late final TextEditingController _height;
   late final TextEditingController _bezel;
 
-  /// The numbers as they stand right now, so the drawing and the fact line
-  /// answer the fields as they are typed in rather than a round late.
   late DeviceMetrics _metrics = widget.metrics;
 
   bool _detecting = false;
@@ -64,7 +47,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
     super.dispose();
   }
 
-  /// Hand the typed numbers on, keeping whatever could not be parsed.
   void _push() {
     final m = _metrics;
     _publish(
@@ -81,8 +63,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
     widget.onChanged(m);
   }
 
-  /// Ask the platform again. Worth offering on its own: a phone that was
-  /// calibrated on an older build may simply have a better answer waiting.
   Future<void> _redetect() async {
     setState(() => _detecting = true);
     try {
@@ -101,7 +81,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
     }
   }
 
-  /// The card flow, which measures the panel by a thing of known size.
   Future<void> _calibrateWithCard() async {
     final result = await Navigator.of(context).push<DeviceMetrics>(
       MaterialPageRoute(
@@ -129,16 +108,8 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
             onBack: () => Navigator.of(context).pop(),
           ),
           const SizedBox(height: 22),
-
-          // What the phone believes, drawn rather than written: the same
-          // picture the settings page shows, and the thing every control
-          // below is trying to make true.
           DimensionsCard(metrics: m),
           const SizedBox(height: 14),
-
-          // The rest of what the old card reported, in one line. These are
-          // facts about the panel, not settings — the pixels and the dpi
-          // follow from the millimetres above.
           Text(
             '${m.activePxWidth.toInt()} × ${m.activePxHeight.toInt()} px'
             '   ·   ${m.dpi.toStringAsFixed(0)} dpi'
@@ -155,11 +126,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
             style: note,
           ),
           const SizedBox(height: 22),
-
-          // The two ways of not measuring anything by hand, first, because
-          // either one may make the fields below unnecessary. One colour:
-          // they are two halves of one offer — let the phone work its size
-          // out for you — and differ only in whether you have a card.
           StickerWideButton(
             onTap: _detecting ? null : _redetect,
             icon: Symbols.autorenew_rounded,
@@ -178,11 +144,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
             fontSize: 20,
           ),
           const SizedBox(height: 28),
-
-          // And the ruler, for whoever has one. Width and height side by side
-          // because they are one measurement taken twice; the bezel on its
-          // own line because it is a different thing entirely — the dead
-          // border, not the glass.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -210,10 +171,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
             onChanged: _push,
           ),
           const SizedBox(height: 28),
-
-          // The back button in the header is the same way out, but a page
-          // you have just typed into wants somewhere deliberate to say "that
-          // is it".
           StickerWideButton(
             onTap: () => Navigator.of(context).pop(),
             icon: Symbols.check_rounded,
@@ -229,7 +186,6 @@ class _ScreenSizeScreenState extends State<ScreenSizeScreen> {
   }
 }
 
-/// One millimetre field, named above rather than inside.
 class _Measurement extends StatelessWidget {
   const _Measurement({
     required this.label,
@@ -251,7 +207,6 @@ class _Measurement extends StatelessWidget {
   );
 }
 
-/// What this phone thinks it measures, drawn as the screen it is describing.
 class DimensionsCard extends StatelessWidget {
   const DimensionsCard({super.key, required this.metrics});
 
@@ -270,7 +225,6 @@ class DimensionsCard extends StatelessWidget {
             children: [
               Text('${metrics.heightMm.toStringAsFixed(0)} mm', style: measure),
               const SizedBox(width: 12),
-              // The phone lying on its side, as a sticker of its own.
               Expanded(
                 child: AspectRatio(
                   aspectRatio: 2,

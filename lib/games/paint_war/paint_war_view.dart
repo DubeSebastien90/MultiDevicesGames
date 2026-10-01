@@ -11,11 +11,6 @@ import '../../sdk/render/player_animation.dart';
 import 'paint_war_config.dart';
 import 'paint_war_contours.dart';
 
-/// The paper, the paint on it, the wet trails, and the painters.
-///
-/// The paint arrives as one run-length string and is turned into one path per
-/// colour only when that string changes — between captures there is nothing to
-/// rebuild, and drawing it is a handful of fills.
 class PaintWarView extends GameView {
   PaintWarView({
     required this.phoneId,
@@ -27,12 +22,9 @@ class PaintWarView extends GameView {
   final PlayerAnimations characters;
   final Roster roster;
 
-  /// Unpainted board: paper, so every colour of paint stands out on it and
-  /// "somewhere white" means what it says.
   static const _paper = Color(0xFFF7F4EC);
   static const _ink = Color(0xFF191510);
 
-  /// World units per second below which a painter counts as standing still.
   static const _walkingSpeed = 0.5;
 
   static const _messageMargin = 0.06;
@@ -43,18 +35,15 @@ class PaintWarView extends GameView {
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round;
 
-  /// The territories' own edge, see [_drawPaint].
   final _edge = Paint()
     ..style = PaintingStyle.stroke
     ..strokeJoin = StrokeJoin.round;
 
-  /// Plain strokes for the stick: the trail's round caps would blur its rings.
   final _stick = Paint()..style = PaintingStyle.stroke;
 
   final _lastSeen = <String, Offset>{};
   final _burstAt = <String, double>{};
 
-  /// The paint as last decoded, and the path for each painter's index.
   String? _paintRaw;
   Map<int, Path> _paintPaths = const {};
 
@@ -74,10 +63,8 @@ class PaintWarView extends GameView {
     _drawDeaths(canvas, frame);
     _drawPainters(canvas, frame);
 
-    // This phone's own stick, over its own painter.
     _drawJoystick(canvas, frame);
 
-    // Words over everything, on this phone's own glass.
     final phase = state['phase'];
     final size = frame.me.halfWidth * 2;
     if (phase == 'briefing') {
@@ -109,8 +96,6 @@ class PaintWarView extends GameView {
     }
   }
 
-  // -- the paint --------------------------------------------------------------
-
   void _drawPaint(Canvas canvas, Frame frame) {
     final state = frame.sharedState;
     final raw = state['paint'] as String?;
@@ -130,9 +115,7 @@ class PaintWarView extends GameView {
       final colour = _paintColour(frame, 'p${e.key}');
       _fill.color = colour;
       canvas.drawPath(e.value, _fill);
-      // And a thin edge in the same colour: two territories meet on the same
-      // line, and smoothing each on its own can leave a hairline of paper
-      // between them. A cell's width of edge closes it.
+
       _edge
         ..color = colour
         ..strokeWidth = cell;
@@ -140,7 +123,6 @@ class PaintWarView extends GameView {
     }
   }
 
-  /// One smooth, filled path per painter — see [PaintContours].
   static Map<int, Path> _decode(
     String raw, {
     required double gx,
@@ -169,8 +151,6 @@ class PaintWarView extends GameView {
   }
 
   static Path _pathOf(List<List<(double, double)>> loops) {
-    // Even-odd, so a loop inside a loop — a hole somebody else's paint left in
-    // yours — stays a hole.
     final path = Path()..fillType = PathFillType.evenOdd;
     for (final loop in loops) {
       final (x0, y0) = loop.first;
@@ -183,8 +163,6 @@ class PaintWarView extends GameView {
     }
     return path;
   }
-
-  // -- trails -----------------------------------------------------------------
 
   void _drawTrails(Canvas canvas, Frame frame) {
     final state = frame.sharedState;
@@ -210,7 +188,7 @@ class PaintWarView extends GameView {
         }
       }
       if (first) continue;
-      // From the last corner to wherever the painter is now.
+
       final body = frame.byId('player_$i');
       if (body != null) path.lineTo(body.x, body.y);
 
@@ -221,8 +199,6 @@ class PaintWarView extends GameView {
       canvas.drawPath(path, _stroke);
     }
   }
-
-  // -- painters ---------------------------------------------------------------
 
   void _drawPainters(Canvas canvas, Frame frame) {
     for (final e in frame.ofKind('player')) {
@@ -287,13 +263,6 @@ class PaintWarView extends GameView {
     }
   }
 
-  // -- the stick ---------------------------------------------------------------
-
-  /// The anchor the drag is measured from, under the finger that set it, and
-  /// the knob where the finger is — Dodgeball's stick, drawn the same way.
-  ///
-  /// Only this phone's: a joystick is a picture of one pair of hands, and
-  /// drawing everybody's would litter the paint with rings nobody can act on.
   void _drawJoystick(Canvas canvas, Frame frame) {
     RenderEntity? anchorE;
     RenderEntity? knobE;
@@ -308,8 +277,7 @@ class PaintWarView extends GameView {
     final anchor = Offset(anchorE.x, anchorE.y);
     final pushed = Offset(knobE.x, knobE.y) - anchor;
     const reach = PaintWarConfig.joystickRadius;
-    // Past the ring the knob stops travelling but the drag keeps steering, so
-    // full tilt looks like full tilt however far the hand has wandered.
+
     final tilt = pushed.distance > reach
         ? pushed * (reach / pushed.distance)
         : pushed;
@@ -323,8 +291,6 @@ class PaintWarView extends GameView {
       ..strokeWidth = math.max(frame.onePixel * 2, reach * 0.04);
     canvas.drawCircle(anchor, reach, _stick);
 
-    // The dead zone: where the painter stops, and the edge the speed ramps up
-    // from.
     _stick
       ..color = _ink.withAlpha(PaintWarConfig.joystickDeadZoneAlpha)
       ..strokeWidth = math.max(frame.onePixel, reach * 0.02);
@@ -337,7 +303,6 @@ class PaintWarView extends GameView {
       canvas.drawLine(anchor, knob, _stick);
     }
 
-    // The knob in the painter's own colour.
     final me = roster.byPhone(phoneId);
     _fill.color = (me?.color.value ?? _ink).withAlpha(
       PaintWarConfig.joystickKnobAlpha,
@@ -349,17 +314,12 @@ class PaintWarView extends GameView {
     canvas.drawCircle(knob, PaintWarConfig.joystickKnobRadius, _stick);
   }
 
-  // -- colours ----------------------------------------------------------------
-
-  /// A painter's own colour, the one their character wears.
   Color _colourOf(Frame frame, String key) {
     final phone = frame.sharedState['phoneId_$key'] as String? ?? '';
     return roster.byPhone(phone)?.color.value ??
         Color((frame.sharedState['color_$key'] as num?)?.toInt() ?? 0xFF888888);
   }
 
-  /// Their paint: the palette's own darker shade of the same colour, so a
-  /// painter standing on their territory is still told apart from it.
   Color _paintColour(Frame frame, String key) {
     final phone = frame.sharedState['phoneId_$key'] as String? ?? '';
     final seated = roster.byPhone(phone);
@@ -367,19 +327,10 @@ class PaintWarView extends GameView {
     return Color.lerp(_colourOf(frame, key), const Color(0xFF000000), 0.25)!;
   }
 
-  // -- words ------------------------------------------------------------------
-
-  /// One line across this phone's own glass, below its middle — turned to the
-  /// slot, so it reads upright for whoever holds the phone.
   void _drawCentered(Canvas canvas, Frame frame, String text, double size) {
     final me = frame.me;
     final width = me.halfWidth * 2;
-    // Laid out in logical pixels, at the size it is actually seen, and drawn
-    // with the canvas scaled back down to world units — Flood's way. Laid out
-    // in world units the line was a sub-point font magnified fifty-fold by the
-    // camera: Skia redraws glyphs at the final size, but Impeller on iOS
-    // rasterises them near the laid-out size and stretches the result, which
-    // is what made every briefing blurry on an iPhone.
+
     final px = me.logicalPxPerWorldUnit;
 
     final builder =

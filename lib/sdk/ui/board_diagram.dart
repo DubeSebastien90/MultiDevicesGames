@@ -8,18 +8,6 @@ import '../model/world_rect.dart';
 import 'link_palette.dart';
 import 'sticker/sticker.dart';
 
-/// A to-scale picture of the board the game actually compiled.
-///
-/// Drawn straight from the compiled screens, so it shows the real order, the
-/// real gaps, the real cross-alignment — **and the real angles**. A ring of
-/// phones facing outward draws as a ring of turned phones; a row draws as a
-/// row. Nothing here knows what shape a board is supposed to be.
-///
-/// Two earlier versions of this were wrong in instructive ways. The first laid
-/// chips out in a `Row` in join order, which broke the moment a game sorted its
-/// phones. The second used each screen's bounding box, which is fine until a
-/// phone is turned — and then a 72° phone in a circle draws as a fat upright
-/// rectangle that looks nothing like the thing on the table.
 class BoardDiagram extends StatelessWidget {
   const BoardDiagram({
     super.key,
@@ -31,26 +19,16 @@ class BoardDiagram extends StatelessWidget {
     this.maxExtent = 170,
   });
 
-  /// Every screen's place on the board, in board order.
   final List<PhoneSlice> slices;
 
-  /// The playfield, for proportions.
   final WorldRect board;
 
-  /// Every screen's edge stripes — *all* of them, not just this phone's. Seeing
-  /// both ends of a red join in the picture is what makes the red line on your
-  /// own glass mean something.
   final List<EdgeMarker> links;
 
-  /// Highlighted as "you".
   final String? meId;
 
-  /// Phone ids that have confirmed their position.
   final Set<String> confirmed;
 
-  /// The most room the drawing may take along its longer axis, or null to let
-  /// it fill whatever it is given — which is what the placement screen wants,
-  /// where the picture *is* the screen.
   final double? maxExtent;
 
   @override
@@ -64,14 +42,12 @@ class BoardDiagram extends StatelessWidget {
       );
     }
 
-    // Frame the union of the playfield and every screen, so a phone sticking
-    // out past the board — or a whole ring around it — is never clipped.
     var left = board.left;
     var top = board.top;
     var right = board.right;
     var bottom = board.bottom;
     for (final s in slices) {
-      final b = s.viewport; // bounding box: right for framing, not for drawing
+      final b = s.viewport;
       left = math.min(left, b.left);
       top = math.min(top, b.top);
       right = math.max(right, b.right);
@@ -83,8 +59,6 @@ class BoardDiagram extends StatelessWidget {
 
     final cap = maxExtent;
 
-    // [AspectRatio] already takes the largest size its constraints allow, so
-    // filling the space is simply a matter of not capping it.
     final picture = AspectRatio(
       aspectRatio: frameWidth / frameHeight,
       child: LayoutBuilder(
@@ -93,17 +67,11 @@ class BoardDiagram extends StatelessWidget {
           return Stack(
             clipBehavior: Clip.none,
             children: [
-              // The playfield, so a screen reaching past it is visible as
-              // exactly that.
               Positioned(
                 left: (board.left - left) * scale,
                 top: (board.top - top) * scale,
                 width: board.width * scale,
                 height: board.height * scale,
-                // The playfield as a white sticker: the card the phones are
-                // laid on, the same card every other screen puts its content
-                // on. Drawn exactly over the board's own rectangle, so the
-                // picture's proportions are untouched by the dressing.
                 child: DecoratedBox(
                   decoration: St.sticker(
                     radius: math.min(
@@ -115,8 +83,6 @@ class BoardDiagram extends StatelessWidget {
               ),
               for (final (i, slice) in slices.indexed)
                 _positionedScreen(slice, i, left, top, scale),
-              // Drawn over the screens so a join reads as one band even
-              // where two phones nearly touch.
               Positioned.fill(
                 child: CustomPaint(
                   painter: _LinkPainter(
@@ -146,11 +112,6 @@ class BoardDiagram extends StatelessWidget {
     );
   }
 
-  /// One screen, drawn at its true size *and its true angle*.
-  ///
-  /// Positioned by its centre rather than a corner, because a turned rectangle
-  /// has no corner worth measuring from — the same reason the layout itself is
-  /// centre-based.
   Widget _positionedScreen(
     PhoneSlice slice,
     int index,
@@ -198,9 +159,6 @@ class _Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Your own phone is blue; everyone else's a pale pink. One colour does
-    // the whole job of saying which one you are holding. Both are flat — the
-    // card under them carries the shadow.
     final fill = isMe ? St.blue : _otherFill;
     const edge = St.ink;
 
@@ -210,15 +168,10 @@ class _Screen extends StatelessWidget {
         border: Border.all(color: edge, width: 2.5),
         borderRadius: BorderRadius.circular(_radius),
       ),
-      // The chip's own size is the only thing the writing can be measured
-      // against, and only the layout knows it.
       child: LayoutBuilder(
         builder: (context, constraints) => Stack(
           alignment: Alignment.center,
           children: [
-            // A bar along the phone's own top edge. With everything turned, this
-            // is what tells you which way round to put it down — a rectangle
-            // alone cannot say which end is up.
             Align(
               alignment: Alignment.topCenter,
               child: FractionallySizedBox(
@@ -233,12 +186,6 @@ class _Screen extends StatelessWidget {
                 ),
               ),
             ),
-            // Turned back, so the writing stays readable however the phone
-            // lies, and grown to fill the room that leaves: [BoxFit.contain]
-            // scales up as willingly as down, so one column of text is tiny on
-            // an eight-phone board and large on a two-phone one without a
-            // single font size being chosen for either. The sizes below are
-            // therefore only ratios — the name stays bigger than the label.
             Transform.rotate(
               angle: -turnRadians,
               child: SizedBox.fromSize(
@@ -278,7 +225,6 @@ class _Screen extends StatelessWidget {
     );
   }
 
-  /// What this chip is called: YOU, or its place in the board's order.
   String get _name => isMe ? 'YOU' : '${index + 1}';
 
   static const _otherFill = Color(0xFFFFE4F2);
@@ -292,23 +238,7 @@ class _Screen extends StatelessWidget {
   );
   static const _checkSize = 10.0;
 
-  /// The largest box the writing may use, measured in the chip's own
-  /// coordinates — that is, before it is turned back upright.
-  ///
-  /// Two things decide it. The writing has a shape of its own — a short wide
-  /// block, since the label is longer than it is tall — and forcing the chip's
-  /// tall narrow proportions onto it is what kept the type small: the box ran
-  /// out of width long before it ran out of height. So the box is cut to the
-  /// writing's own aspect instead, measured below.
-  ///
-  /// Then the turn. The box is rotated by `turnRadians` with respect to the
-  /// chip, so it fits only while `a*|cos| + b*|sin|` is within the chip's width
-  /// and `a*|sin| + b*|cos|` within its height. With `a = aspect * b` both
-  /// collapse to a bound on `b`, and the smaller bound is the answer —
-  /// exactly, not by guesswork, and at no turn it simply fills the width.
   Size _writingBox(BuildContext context, Size chip) {
-    // Room for the top-edge bar, taken off both ends so the writing stays
-    // optically centred rather than pushed down.
     final h = math.max(chip.height - _barBand * 2, 1.0);
     final w = math.max(chip.width * _sideAir, 1.0);
 
@@ -320,13 +250,6 @@ class _Screen extends StatelessWidget {
     return Size(aspect * b, b);
   }
 
-  /// How wide the writing is per unit of height, at whatever size it ends up
-  /// being set — a pure shape, which is all the box above needs.
-  ///
-  /// Measured rather than assumed: the label is a name somebody typed, and a
-  /// guessed aspect would either waste half the chip or let the writing spill
-  /// over its edge. [FittedBox] still has the last word, so a measurement a
-  /// pixel out costs a pixel of margin and nothing worse.
   double _writingAspect(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
 
@@ -349,16 +272,11 @@ class _Screen extends StatelessWidget {
     return width / height;
   }
 
-  /// The strip at the top and bottom the writing keeps clear of, so it never
-  /// runs into the bar marking which end is up.
   static const _barBand = 6.0;
 
-  /// How much of the chip's width the writing may take, so a word does not end
-  /// flush against the border.
   static const _sideAir = 0.88;
 }
 
-/// The edge stripes, in the schema's own little coordinate space.
 class _LinkPainter extends CustomPainter {
   _LinkPainter({
     required this.links,
@@ -374,14 +292,11 @@ class _LinkPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Twice the old weight, in step with the bands drawn along the real glass
-    // edges: the picture and the phone say the same thing at the same volume.
     final stroke = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
-    // Outlined in ink like every sticker, which is also what keeps the pale
-    // colours — the yellow above all — from melting into the card.
+
     final outline = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6 + 2 * 2

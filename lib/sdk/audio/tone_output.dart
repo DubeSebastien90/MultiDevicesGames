@@ -1,22 +1,12 @@
-/// The seam between tones and whatever synthesises them.
-///
-/// Kept apart from [AudioOutput] because it is a different kind of thing: that
-/// one plays files, this one runs oscillators whose pitch is set every frame.
-/// Both happen to run on SoLoud today, but either could move to another engine
-/// without the other knowing.
 library;
 
 import 'package:flutter/foundation.dart';
 
 abstract class ToneOutput {
-  /// Start an oscillator under [handleId] at [hz] and [volume].
   void start(int handleId, double hz, double volume);
 
-  /// Move a running tone. Called once per rendered frame while it plays, so it
-  /// must be cheap and must not click — see `SoLoudToneOutput`.
   void set(int handleId, double hz, double volume);
 
-  /// Stop [handleId], fading over [fade].
   void stop(int handleId, {Duration fade = Duration.zero});
 
   void stopAll();
@@ -24,11 +14,6 @@ abstract class ToneOutput {
   Future<void> dispose();
 }
 
-/// What every phone gets unless it asks for more, and what tests run on.
-///
-/// Records starts and stops (not every frame's `set`, which would drown the
-/// log) so a test can see which tones began and ended, and reads back the last
-/// pitch each tone was set to.
 class SilentToneOutput implements ToneOutput {
   SilentToneOutput({this.keepLog = false});
 
@@ -38,7 +23,6 @@ class SilentToneOutput implements ToneOutput {
 
   List<String> get log => List.unmodifiable(_log);
 
-  /// The pitch [handleId] was last started or set at, or null if not playing.
   double? hzOf(int handleId) => _hz[handleId];
 
   @override

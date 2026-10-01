@@ -6,28 +6,6 @@ import '../../sdk/contract/sim.dart';
 import '../../sdk/score/scoreboard.dart';
 import 'subway_skater_config.dart';
 
-/// A corridor down a line of phones, and a queue of people running it.
-///
-/// The board is the corridor: three lanes across it, obstacles entering at one
-/// end and travelling to the other at a constant speed. Each player stands at
-/// the downstream edge of one phone, so an obstacle crossing that phone is the
-/// warning they get, and every player in the line gets the same warning.
-///
-/// **The line is the game.** Where you stand is worth points every tick — the
-/// front of the line is worth the most and the back is worth nothing — and the
-/// front is also where obstacles arrive first. Being clipped tumbles you the
-/// whole length of the corridor to the back and moves everybody behind you up
-/// one, so the order churns and nobody holds the front for a whole round.
-///
-/// **Your phone steers your runner, wherever they are in the line.** The one
-/// you joined on is yours for the whole round: climb a place or tumble to the
-/// back and it is still your colour your swipes move, on whichever screen it
-/// happens to be standing.
-///
-/// One other thing worth stating, because it looks like a bug otherwise: a
-/// skater is only hittable while standing still at its post. Tumbling and
-/// closing up the line are both invulnerable, or the shuffle after a hit would
-/// be a second punishment for the people it rewards.
 class SubwaySkaterSim implements GameSim {
   SubwaySkaterSim(this.context, {math.Random? random})
     : _random = random ?? math.Random() {
@@ -37,24 +15,16 @@ class SubwaySkaterSim implements GameSim {
   final BoardContext context;
   final math.Random _random;
 
-  /// Whether a car honks. Its own generator rather than [_random], so the
-  /// sounds cannot change which waves a seeded round deals.
   final _honkDice = math.Random(4);
 
   final _skaters = <String, _Skater>{};
 
-  /// Who is where, front of the line first. Slot *i* stands at the downstream
-  /// edge of the *i*th phone.
   final _order = <String>[];
 
   final _obstacles = <_Obstacle>[];
 
-  /// What is left of the blocks somebody has run through. Cosmetic, and on the
-  /// shared timeline like everything else, so the shatter happens at the same
-  /// instant on every screen that can see it.
   final _bursts = <_Burst>[];
 
-  /// The phones in board order, joined once — the front of the line first.
   String _boardOrder = '';
 
   double _elapsed = 0;
@@ -65,12 +35,8 @@ class SubwaySkaterSim implements GameSim {
 
   bool get _over => _elapsed >= SubwaySkaterConfig.roundSeconds;
 
-  /// Seconds remaining, whole — `sharedState` is diffed every tick, and a raw
-  /// float that always differs is a packet every tick.
   int get secondsLeft =>
       (SubwaySkaterConfig.roundSeconds - _elapsed).ceil().clamp(0, 999);
-
-  // ----------------------------------------------------------------- set-up
 
   void _build() {
     final board = context.board;
@@ -126,12 +92,6 @@ class SubwaySkaterSim implements GameSim {
     _outcome = null;
   }
 
-  /// Where slot [slot] stands: three fifths down its own phone.
-  ///
-  /// Read off the compiled board rather than divided out of the board's width,
-  /// so a table of mismatched phones puts each player the same fraction into
-  /// their *own* screen — which is what makes the warning the same length for
-  /// everybody rather than the same number of centimetres.
   double _anchorX(int slot) {
     final slices = context.slices;
     final i = slot.clamp(0, slices.length - 1);
@@ -141,16 +101,11 @@ class SubwaySkaterSim implements GameSim {
 
   double get _backAnchorX => _anchorX(_order.length - 1);
 
-  // ------------------------------------------------------------------- step
-
   @override
   void step(double dt) {
     if (_over) return;
     _elapsed += dt;
 
-    // Awarded on the very tick the round ends, not the one after: the platform
-    // stops stepping as soon as `outcome` goes non-null, so anything left for
-    // "next time" never happens.
     if (_over) {
       _awardOnce();
       return;
@@ -185,11 +140,6 @@ class SubwaySkaterSim implements GameSim {
         );
   }
 
-  /// One or two lanes blocked, never all three.
-  ///
-  /// A lane is chosen to stay open first and the blocks are dealt out of what is
-  /// left, so "there is always a way through" is a property of how the wave is
-  /// built rather than something to check afterwards and hope about.
   void _launchWave() {
     final open = _random.nextInt(SubwaySkaterConfig.lanes);
     final blocked = [
@@ -215,7 +165,6 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  /// [from] at the start of the round, [to] at the end of it.
   double _ramp(double from, double to) {
     final t = (_elapsed / SubwaySkaterConfig.roundSeconds).clamp(0.0, 1.0);
     return from + (to - from) * t;
@@ -232,9 +181,6 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  /// When a car's bonnet crosses onto a new phone, one time in
-  /// [SubwaySkaterConfig.honkOneIn] it honks there. The gap between two
-  /// screens is no phone at all, so it does not count as arriving anywhere.
   void _honkOnArrival(_Obstacle o) {
     final front = o.x + SubwaySkaterConfig.obstacleLength / 2;
     final y = SubwaySkaterConfig.laneCenter(context.board, o.lane);
@@ -246,13 +192,11 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  /// [cue] on [phoneId]'s phone, if somebody is sitting at it.
   void _playOn(String phoneId, SoundCue cue) {
     final player = context.roster.byPhone(phoneId);
     if (player != null) context.audio.playOnPhone(player, cue);
   }
 
-  /// [cue] on the phone under ([x], [y]), or the nearest one to it.
   void _playAt(double x, double y, SoundCue cue) {
     final phone = context.nearestPhone(x, y);
     if (phone != null) _playOn(phone, cue);
@@ -266,8 +210,6 @@ class SubwaySkaterSim implements GameSim {
 
       final riding = s.riding == null ? null : _obstacleById(s.riding!);
       if (riding != null && riding.active) {
-        // Carried along by the thing that hit you, the whole length of the
-        // corridor, in full view of everyone you were ahead of.
         s.tumbleFor += dt;
         s.x = riding.x;
         s.lane = riding.lane;
@@ -283,16 +225,13 @@ class SubwaySkaterSim implements GameSim {
       }
       if (riding != null) _land(s);
 
-      // Closing up the line, or sliding across to the lane you asked for.
       s.x = _toward(s.x, _anchorX(slot), SubwaySkaterConfig.climbSpeed * dt);
       s.y = _toward(
         s.y,
         SubwaySkaterConfig.laneCenter(board, s.lane),
         SubwaySkaterConfig.laneChangeSpeed * dt,
       );
-      // Back on their feet, so they turn to face the way they are going. The
-      // spin carries on the way it was already turning until it arrives — see
-      // [_uprightFrom] for why it never winds backwards.
+
       s.spin = _toward(
         s.spin,
         _uprightFrom(s.spin),
@@ -309,14 +248,6 @@ class SubwaySkaterSim implements GameSim {
     s.graceFor = SubwaySkaterConfig.graceSeconds;
   }
 
-  /// The next angle at or after [spin] that faces up the corridor.
-  ///
-  /// Forward is every [SubwaySkaterConfig.facingAngle] plus a whole number of
-  /// turns, and this picks the first one the spin has not already passed — so
-  /// righting a skater always *finishes* the rotation it was in the middle of
-  /// rather than unwinding it, and [_Skater.spin] keeps only ever growing,
-  /// which is what stops an interpolated angle from spinning backwards across
-  /// a snapshot.
   static double _uprightFrom(double spin) {
     const turn = 2 * math.pi;
     final turns = ((spin - SubwaySkaterConfig.facingAngle) / turn).ceil();
@@ -336,12 +267,6 @@ class SubwaySkaterSim implements GameSim {
     return null;
   }
 
-  /// Only a skater standing still at its own post can be hit.
-  ///
-  /// Tumbling is obvious. Closing up the line is the one worth spelling out: a
-  /// player who has just been promoted is sprinting up the corridor *through*
-  /// the traffic that knocked the last person out, and clipping them for it
-  /// would punish them for somebody else's mistake.
   bool _isVulnerable(_Skater s, int slot) =>
       s.riding == null &&
       s.graceFor <= 0 &&
@@ -354,16 +279,12 @@ class SubwaySkaterSim implements GameSim {
 
     for (final o in _obstacles) {
       if (!o.active) continue;
-      // Re-read the slot every time: an earlier hit in this same tick may have
-      // moved everybody along.
+
       for (var slot = 0; slot < _order.length; slot++) {
         final s = _skaters[_order[slot]]!;
         if (s.lane != o.lane) continue;
         if ((o.x - s.x).abs() > reach) continue;
 
-        // Fresh off a promotion: they go through it. The second after climbing
-        // a place is the one thing in this game that pays out for being in the
-        // way rather than out of it.
         if (s.chargeFor > 0) {
           o.active = false;
           s.smashed++;
@@ -385,8 +306,6 @@ class SubwaySkaterSim implements GameSim {
 
     _promoteBehind(slot);
 
-    // The whole mechanic, in three lines: out of the line, on to the back, and
-    // everyone who was behind is now one place further forward.
     _order.removeAt(slot);
     _order.add(s.phoneId);
 
@@ -395,21 +314,10 @@ class SubwaySkaterSim implements GameSim {
     s.chargeFor = 0;
     s.hits++;
 
-    // Where it happened, before the car carries them off down the corridor.
     _playAt(s.x, s.y, SubwaySkaterConfig.crash);
     _playAt(s.x, s.y, SubwaySkaterConfig.knockedDown);
   }
 
-  /// Leave a shatter where a block was flattened.
-  ///
-  /// The birth time rides in the descriptor rather than the shatter carrying a
-  /// progress value that ticks: props are sent once, on spawn, and every phone
-  /// already shares the clock they would be measured against. So the view
-  /// subtracts one from the other and gets the same answer everywhere, with
-  /// nothing on the wire per frame.
-  ///
-  /// Silently does nothing if the pool is empty — a missing puff of debris is
-  /// not worth a frame of anybody's attention.
   void _shatter(_Obstacle o) {
     for (final burst in _bursts) {
       if (burst.active) continue;
@@ -426,23 +334,12 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  /// Everybody behind [slot] is about to move up one, so hand them the second
-  /// that comes with it.
-  ///
-  /// Read before the line is rearranged, because afterwards there is no way to
-  /// tell who moved: the slots have already shifted under them.
   void _promoteBehind(int slot) {
     for (var i = slot + 1; i < _order.length; i++) {
       _skaters[_order[i]]!.chargeFor = SubwaySkaterConfig.chargeSeconds;
     }
   }
 
-  /// Position-points, every tick, for everybody standing in the line.
-  ///
-  /// The back is worth nothing and each place forward is worth one more, so the
-  /// front of a line of four is worth three a tick. A line of one is worth
-  /// nothing to the one person in it, which needs no special case: there is
-  /// nobody to be ahead of.
   void _scoreTick() {
     final n = _order.length;
     for (var slot = 0; slot < n; slot++) {
@@ -450,9 +347,6 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  // ---------------------------------------------------------------- scoring
-
-  /// Every position-point anybody has earned this round.
   double get _totalRaw {
     var total = 0.0;
     for (final s in _skaters.values) {
@@ -461,17 +355,8 @@ class SubwaySkaterSim implements GameSim {
     return total;
   }
 
-  /// How much position-time [phoneId] has banked: one a tick for every
-  /// skater behind them in the line.
   double positionTimeOf(String phoneId) => _skaters[phoneId]?.raw ?? 0;
 
-  /// [phoneId]'s place on the shared ladder if the round ended now, and the
-  /// only place the split is worked out.
-  ///
-  /// Ranked by position-time, the whole table including anybody who has left:
-  /// what they banked before going is still theirs. Zero for everybody until
-  /// somebody has been ahead of somebody — a line of one has earned nothing
-  /// and has nobody to be ranked against.
   int pointsOf(String phoneId) {
     if (_totalRaw <= 0) return 0;
     return _placements()[phoneId] ?? 0;
@@ -483,10 +368,8 @@ class SubwaySkaterSim implements GameSim {
     }),
   );
 
-  /// How many times [phoneId] has been clipped this round.
   int hitsOf(String phoneId) => _skaters[phoneId]?.hits ?? 0;
 
-  /// How many blocks [phoneId] has run through on the way up the line.
   int smashesOf(String phoneId) => _skaters[phoneId]?.smashed ?? 0;
 
   void _awardOnce() {
@@ -498,20 +381,14 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  // ------------------------------------------------------------------ input
-
-  /// Where each finger started, so a drag can be measured against it.
   final _dragFrom = <String, double>{};
 
-  /// Phones whose current drag has already moved its lane.
   final _dragSpent = <String>{};
 
   @override
   void onTouch(TouchEvent touch) {
     if (_over) return;
 
-    // By owner, not by place: your phone steers your runner wherever in the
-    // line they have got to.
     final s = _skaters[touch.phoneId];
     if (s == null) return;
 
@@ -524,24 +401,15 @@ class SubwaySkaterSim implements GameSim {
     final from = _dragFrom[touch.phoneId];
     if (from == null) return;
 
-    // One swipe, one lane — however far the finger carries on.
-    //
-    // It used to spend a lane for every stride of the threshold the drag
-    // covered, which reads fine on paper and is unusable in the hand: a real
-    // flick crosses several centimetres, so every swipe pinned you against the
-    // far wall of the corridor and the middle lane could not be reached from
-    // either side. Moving to the *next* lane is the whole vocabulary of the
-    // game; crossing two is two swipes.
     if (!_dragSpent.contains(touch.phoneId)) {
       final delta = touch.worldY - from;
       if (delta.abs() >= SubwaySkaterConfig.swipeThreshold) {
         _dragSpent.add(touch.phoneId);
-        // Not while being carried: you are not on your feet.
+
         if (s.riding == null) {
           final dir = delta.isNegative ? -1 : 1;
           final lane = (s.lane + dir).clamp(0, SubwaySkaterConfig.lanes - 1);
-          // Only a real change: a swipe into the wall of the corridor goes
-          // nowhere and says nothing.
+
           if (lane != s.lane) {
             s.lane = lane;
             _playOn(touch.phoneId, SubwaySkaterConfig.woosh);
@@ -555,8 +423,6 @@ class SubwaySkaterSim implements GameSim {
       _dragSpent.remove(touch.phoneId);
     }
   }
-
-  // -------------------------------------------------------------- snapshots
 
   @override
   Iterable<Entity> get entities sync* {
@@ -585,16 +451,8 @@ class SubwaySkaterSim implements GameSim {
     }
   }
 
-  /// Joined into strings rather than sent as lists, and that is not a style
-  /// choice: the host diffs shared state value by value with `==`, and two Lists
-  /// are never equal in Dart however identical their contents. A list here would
-  /// be a packet to every phone sixty times a second.
   @override
   Map<String, Object?> get sharedState => {
-    // The phones in board order, so a screen can work out which place in the
-    // line it *is* — which is the question it has to answer to know which
-    // circle its swipes move. Constant for the round: diffed once, then never
-    // sent again.
     'phones': _boardOrder,
     'order': _order.join(','),
     'tumbling': [
@@ -609,15 +467,10 @@ class SubwaySkaterSim implements GameSim {
     'over': _over,
   };
 
-  // ---------------------------------------------------------------- outcome
-
   @override
   GameOutcome? get outcome {
     if (!_over) return null;
 
-    // Nobody wins a corridor. Everyone ran the same round and the only thing
-    // to report is how much of it each of them spent near the front. Built once
-    // and kept: `outcome` is polled several times a tick.
     return _outcome ??= GameOutcome.perPhone({
       for (final id in context.phoneIds) id: _lineFor(id),
     }, summary: _summary());
@@ -627,7 +480,7 @@ class SubwaySkaterSim implements GameSim {
     final points = pointsOf(phoneId);
     final hits = hitsOf(phoneId);
     final smashed = smashesOf(phoneId);
-    // Cars now, not blocks: run over by them, and wrecking them when charged.
+
     final tail = smashed == 0
         ? ''
         : ', $smashed car${smashed == 1 ? '' : 's'} wrecked';
@@ -651,8 +504,6 @@ class SubwaySkaterSim implements GameSim {
     return '$label led the line, ${ranked.first.points} points';
   }
 
-  // ------------------------------------------------------------------ reset
-
   @override
   void reset() {
     _dragFrom.clear();
@@ -664,38 +515,23 @@ class SubwaySkaterSim implements GameSim {
   void dispose() {}
 }
 
-/// One player, wherever in the line they currently are.
 class _Skater {
   _Skater({required this.phoneId, required this.descriptor});
 
   final String phoneId;
   final EntityDescriptor descriptor;
 
-  /// Where the circle actually is, which is not always where its slot says it
-  /// should be — it takes a moment to close up the line, and a tumble takes it
-  /// somewhere else entirely. Collision reads this, not the slot.
   double x = 0;
   double y = 0;
 
-  /// The lane it has committed to. The dodge counts from the instant of the
-  /// swipe; [y] catches up over the next fraction of a second.
   int lane = 0;
 
-  /// Which obstacle is carrying it to the back, if any.
   String? riding;
   double tumbleFor = 0;
   double graceFor = 0;
 
-  /// Seconds left of the second that comes with climbing a place: untouchable,
-  /// and smashing anything it runs into.
   double chargeFor = 0;
 
-  /// Only ever grows, so interpolating it across a snapshot never has to cross
-  /// a wrap and spin the circle backwards for a frame.
-  ///
-  /// Starts facing up the corridor, which is where it returns to after every
-  /// tumble: a skater is looking where they are going for all of the round
-  /// except the seconds they are being carried backwards.
   double spin = SubwaySkaterConfig.facingAngle;
 
   double raw = 0;
@@ -703,11 +539,6 @@ class _Skater {
   int smashed = 0;
 }
 
-/// A car coming down a lane.
-///
-/// The descriptor is rebuilt on every launch, like [_Burst]'s, because which
-/// car it is lives in it: the platform sends props on spawn, and a pooled id
-/// coming back is a spawn, so every phone draws the same car for it.
 class _Obstacle {
   _Obstacle(this.id, {required this.height})
     : descriptor = EntityDescriptor(id: id, kind: 'obstacle');
@@ -720,7 +551,6 @@ class _Obstacle {
   double x = 0;
   int lane = 0;
 
-  /// The phone its bonnet is on, for telling when it arrives on the next.
   String? onPhone;
 
   void launch({required int lane, required double x, required int car}) {
@@ -736,11 +566,6 @@ class _Obstacle {
   }
 }
 
-/// What is left of a block somebody ran through.
-///
-/// The descriptor is rebuilt on every lighting rather than made once, because
-/// the birth time is in it — the platform sends props on spawn, and a pooled id
-/// coming back is a spawn, so each shatter arrives stamped with its own moment.
 class _Burst {
   _Burst(this.id);
 

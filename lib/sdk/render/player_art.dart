@@ -1,17 +1,3 @@
-/// A player's picture, as something you can draw rather than something you
-/// have to load.
-///
-/// The API deliberately does not say what the art *is*. Not a path, not an
-/// image, not an SVG — a handle with a [PlayerArt.draw] on it. A game asks for
-/// a player's picture and paints it at a world position; whether that resolved
-/// to a rasterised vector, a sprite sheet or eleven lines of geometry is the
-/// SDK's business, and it will change at least once.
-///
-/// That indirection is what makes the whole feature shippable before any art
-/// exists. What is here today paints a coloured circle and a coloured square.
-/// It is not a stub — it is a complete implementation of the interface, which
-/// means games can be written against the real API now and start looking like
-/// something the day the assets land, with no game edited.
 library;
 
 import 'dart:async';
@@ -25,39 +11,12 @@ import '../model/player_character.dart';
 import '../model/player_color.dart';
 import '../ui/intro_animation.dart';
 
-/// Which picture of a character.
-///
-/// Closed and small on purpose. Two views is a promise eight characters can
-/// actually keep; "whatever the game needs" is one that gets broken by the
-/// fourth game. A game wanting a third angle draws it itself, as they all do
-/// today.
-enum PlayerArtSlot {
-  /// From above: the piece on the board. Small, rotated, read from two metres.
-  topdown,
+enum PlayerArtSlot { topdown, face }
 
-  /// From the front: a portrait. Upright, larger, has a face.
-  face,
-}
-
-/// One player's picture in one slot.
-///
-/// **[draw] always paints something.** The sprite loader this replaced handed
-/// the not-ready case back to its caller, and every caller solved it the same
-/// way, by drawing a circle — so this solves it once, on the inside. There
-/// is no `false` to check and no fallback for a game to write: art that has not
-/// loaded, or does not exist, is the placeholder geometry, and the round
-/// neither waits nor looks broken. Artwork is not allowed to decide whether a
-/// game starts, a rule this codebase learned the hard way — see
-/// `test/sprite_loading_test.dart`.
 abstract class PlayerArt {
-  /// The art for a colour, in a slot. Cached — these are stateless and shared,
-  /// so a game may call this in a render loop.
   factory PlayerArt.of(PlayerColor color, PlayerArtSlot slot) {
     final key = '${color.id}/${slot.name}';
     return _cache[key] ??= switch (slot) {
-      // Each view is one vector character, coloured per player from its view
-      // model — see [_RiveArt]. The drawn image per colour is what it falls
-      // back to.
       PlayerArtSlot.topdown => _RiveArt(color, _RiveCharacter.topdown),
       PlayerArtSlot.face => _RiveArt(color, _RiveCharacter.front),
     };
@@ -65,16 +24,6 @@ abstract class PlayerArt {
 
   static final _cache = <String, PlayerArt>{};
 
-  /// Start decoding the art for these colours, and hand control straight back.
-  ///
-  /// Called during placement, which is dead time — people are pushing phones
-  /// together — so the picture is ready before the first frame. **Nothing
-  /// awaits it.** A stalled decode must not be able to decide whether a round
-  /// starts; a phone was once left on a screen that never appeared for exactly
-  /// that reason. Here the worst case is a second of flat colour.
-  ///
-  /// Only the colours in play, rather than all sixteen images: a four-player
-  /// round has no reason to hold eight pictures nobody is looking at.
   static void preload(Iterable<PlayerColor> colors) {
     for (final color in colors) {
       for (final slot in PlayerArtSlot.values) {
@@ -83,27 +32,10 @@ abstract class PlayerArt {
     }
   }
 
-  /// Decode this picture in the background if it has not been started.
-  ///
-  /// Safe to call repeatedly and safe never to call at all — the first [draw]
-  /// starts it too. Until it finishes, the geometry is what gets painted.
   void beginLoading();
 
-  /// Whether the file has arrived. For tests and a debug panel; a game has no
-  /// reason to ask, because there is no case where nothing is drawn.
   bool get isLoaded;
 
-  /// Paints centred on [center], scaled so the picture fills [worldSize] world
-  /// units, turned by [angle] radians.
-  ///
-  /// The canvas arrives with the camera already applied, so this is world
-  /// space: the same call on two phones puts the picture in the same physical
-  /// place on the table.
-  ///
-  /// [opacity] is here because fading a player out is something games keep
-  /// needing — knocked over, out of the round, not your turn — and the
-  /// alternative is every caller wrapping this in a `saveLayer`, which is both
-  /// more code and more expensive than multiplying two colours.
   void draw(
     Canvas canvas,
     Offset center, {
@@ -112,21 +44,9 @@ abstract class PlayerArt {
     double opacity = 1,
   });
 
-  /// The same picture as a widget, for a HUD, the lobby or the results screen.
-  ///
-  /// Shares [draw]'s painting code rather than reimplementing it, so the
-  /// portrait on the scoreboard and the piece on the board can never drift into
-  /// being two different drawings of the same character.
   Widget widget({double size});
 }
 
-/// The placeholder: geometry in the player's colour.
-///
-/// A filled circle from above and a rounded square from the side — enough to be
-/// unmistakably *somebody*, and honest about being unfinished. The outline is
-/// [PlayerColor.onColor], the shade already chosen per entry to sit legibly on
-/// that swatch, so a yellow player is still visible on a light background
-/// without anyone computing a luminance at draw time.
 class _ShapeArt implements PlayerArt {
   _ShapeArt(this.color, this.slot);
 
@@ -138,9 +58,6 @@ class _ShapeArt implements PlayerArt {
     ..isAntiAlias = true
     ..style = PaintingStyle.stroke;
 
-  /// Repainted when the picture lands, so a widget drawn before the decode
-  /// finished does not sit on flat colour forever. The canvas path needs no
-  /// such signal — it is already redrawing sixty times a second.
   final _arrived = ValueNotifier<int>(0);
 
   ui.Image? _image;
@@ -149,11 +66,6 @@ class _ShapeArt implements PlayerArt {
   @override
   bool get isLoaded => _image != null;
 
-  /// Where this picture lives, or null for a character nobody has drawn yet.
-  ///
-  /// Looked up rather than defaulted: a colour with no character of its own —
-  /// [PlayerPalette.away] — is the geometry in its own shade, not Green's
-  /// picture.
   String? get _asset => switch (slot) {
     PlayerArtSlot.topdown => Cast.byColorId(color.id)?.topdownAsset,
     PlayerArtSlot.face => Cast.byColorId(color.id)?.faceAsset,
@@ -165,9 +77,7 @@ class _ShapeArt implements PlayerArt {
     _started = true;
     final asset = _asset;
     if (asset == null) return;
-    // Not awaited by anyone. A failure — a missing file, a codec that does not
-    // like it — leaves [_image] null, which is simply the geometry, and is the
-    // same outcome as a character that has not been drawn yet.
+
     unawaited(_load(asset));
   }
 
@@ -191,8 +101,6 @@ class _ShapeArt implements PlayerArt {
     double angle = 0,
     double opacity = 1,
   }) {
-    // The first draw is also what starts the decode, so a game that never
-    // preloads still ends up with pictures — a frame or two later.
     beginLoading();
 
     canvas.save();
@@ -202,11 +110,6 @@ class _ShapeArt implements PlayerArt {
     canvas.restore();
   }
 
-  /// Paints centred on the origin, filling a [size] square.
-  ///
-  /// The picture when there is one, the geometry until then. Both are drawn to
-  /// the same box, so the swap is a change of detail rather than of silhouette
-  /// — nothing on the board moves or resizes when a decode finishes.
   void _paint(Canvas canvas, double size, [double opacity = 1]) {
     final image = _image;
     if (image != null) {
@@ -214,7 +117,6 @@ class _ShapeArt implements PlayerArt {
         image,
         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
         Rect.fromCenter(center: Offset.zero, width: size, height: size),
-        // The paint's alpha is what modulates an image; its colour is ignored.
         Paint()
           ..isAntiAlias = true
           ..filterQuality = FilterQuality.medium
@@ -227,9 +129,6 @@ class _ShapeArt implements PlayerArt {
     _fill.color = color.value.withValues(alpha: opacity);
     _stroke
       ..color = color.onColor.withValues(alpha: opacity)
-      // Proportional, not absolute: this is drawn at three world units on a
-      // board and at forty-eight logical pixels in a HUD, and a fixed width
-      // would be invisible in one and a black ring in the other.
       ..strokeWidth = size * 0.06;
 
     switch (slot) {
@@ -254,15 +153,11 @@ class _ShapeArt implements PlayerArt {
     return SizedBox(
       width: size,
       height: size,
-      // Repainting on [_arrived] rather than rebuilding the widget: the art
-      // outlives every screen that shows it, and a decode landing should not
-      // require whoever drew it to be listening.
       child: CustomPaint(painter: _ShapeArtPainter(this, _arrived)),
     );
   }
 }
 
-/// Which of a player's three shades a view model property takes.
 enum _Shade {
   main,
   light,
@@ -275,12 +170,6 @@ enum _Shade {
   };
 }
 
-/// One `.riv` character for the whole cast, and how to colour it.
-///
-/// Per file rather than one table every file has to match: the two views were
-/// drawn separately and do not agree on names — the swatch is `SkinPrincipal`
-/// on the board piece and `NormalSkin` on the portrait — and renaming a
-/// property is a trip back to the editor, where mapping it is a line here.
 class _RiveCharacter {
   const _RiveCharacter({
     required this.asset,
@@ -292,23 +181,14 @@ class _RiveCharacter {
 
   final String asset;
 
-  /// Whose drawn image and geometry this falls back to.
   final PlayerArtSlot slot;
 
-  /// The view model the shades live on. Only asked for by name when the
-  /// artboard does not say which one is its own.
   final String viewModel;
 
-  /// Property name to shade. By name, because there are three of them and
-  /// position in the list is not a contract.
   final Map<String, _Shade> shades;
 
-  /// Which way the character is drawn, in the same convention as an entity's
-  /// angle: 0 is +x, `pi / 2` is down the screen. Everything is turned by the
-  /// difference between where the player is heading and this.
   final double facing;
 
-  /// The piece on the board, drawn heading down the screen.
   static const topdown = _RiveCharacter(
     asset: 'assets/sdk/players/smallcharacter.riv',
     slot: PlayerArtSlot.topdown,
@@ -318,11 +198,9 @@ class _RiveCharacter {
       'SkinLight': _Shade.light,
       'SkinDark': _Shade.dark,
     },
-    facing: 1.5707963267948966, // pi / 2
+    facing: 1.5707963267948966,
   );
 
-  /// The portrait, drawn upright: an angle of 0 leaves it standing, the same
-  /// as the drawn face it replaces.
   static const front = _RiveCharacter(
     asset: 'assets/sdk/players/CharacterFrontView.riv',
     slot: PlayerArtSlot.face,
@@ -336,44 +214,19 @@ class _RiveCharacter {
   );
 }
 
-/// A player's character from one `.riv`, painted in their colours.
-///
-/// One file per view for the whole cast rather than an image per colour,
-/// because the character is the same drawing eight times over and the only
-/// thing that differs is three fills. Those come off [PlayerColor] —
-/// [PlayerColor.value], [PlayerColor.skinLight] and [PlayerColor.skinDark] —
-/// and are bound to the artboard's own view model, so re-tinting the cast is
-/// editing the palette rather than re-exporting eight images.
-///
-/// **It is a ladder, not a replacement.** Rive does not render on every
-/// platform this is developed on — Windows takes the process down, see
-/// [IntroAnimation.platformSupportsRive] — and a file can always fail to
-/// parse. Either way this falls through to [_ShapeArt], which is the drawn
-/// image for that view and, under that, the flat geometry. Every rung paints
-/// something, which is the rule this class exists inside of: art never decides
-/// whether a round starts.
 class _RiveArt implements PlayerArt {
   _RiveArt(this.color, this.character);
 
   final PlayerColor color;
   final _RiveCharacter character;
 
-  /// The drawn image, and the geometry under it. Built up front rather than on
-  /// failure: it is what paints every frame until the artboard is ready, and
-  /// on a platform without Rive it is what paints for the whole session.
   late final _fallback = _ShapeArt(color, character.slot);
 
-  /// Repainted when the artboard lands, so a widget drawn before the file
-  /// arrived does not sit on the fallback forever. The canvas path needs no
-  /// such signal — it is already redrawing sixty times a second.
   final _arrived = ValueNotifier<int>(0);
 
   rive.Artboard? _artboard;
   bool _started = false;
 
-  /// Everything bound to an artboard here, held for as long as the artboard
-  /// is. Each is a native object with a finalizer: left for the GC, it frees
-  /// what the artboard still draws with, and the next draw reads freed memory.
   final _keepAlive = <Object>[];
 
   @override
@@ -384,7 +237,7 @@ class _RiveArt implements PlayerArt {
     _fallback.beginLoading();
     if (_started) return;
     _started = true;
-    // Not awaited by anyone, exactly like the image decode below it.
+
     unawaited(_load());
   }
 
@@ -392,49 +245,49 @@ class _RiveArt implements PlayerArt {
     final file = await _RiveCast.file(character.asset);
     if (file == null) return;
     try {
-      // `frameOrigin: true` puts the artboard's top-left at (0, 0). The
-      // centring is done by hand in [_paint], which is the only version of it
-      // that behaves the same on every runtime.
       final artboard = file.defaultArtboard(frameOrigin: true);
       if (artboard == null) throw StateError('no artboard');
       final machine = artboard.defaultStateMachine();
       if (machine != null) _keepAlive.add(machine);
       _bind(file, artboard, machine);
-      // Once, and only ever once: this is a still. Advancing by zero is what
-      // applies the binding, and never advancing again is what keeps the
-      // character from walking off on its own clock.
+
       machine?.advanceAndApply(0);
       _artboard = artboard;
       _arrived.value++;
     } on Object catch (e) {
       debugPrint(
-          '[player art] no ${character.slot.name} character for ${color.id}: $e');
+        '[player art] no ${character.slot.name} character for ${color.id}: $e',
+      );
     }
   }
 
-  /// Put a player's three shades on their character.
-  ///
-  /// A property that is not there is said out loud and skipped: two shades on
-  /// a character is worth more than none.
-  void _bind(rive.File file, rive.Artboard artboard, rive.StateMachine? machine) {
-    final viewModel = file.defaultArtboardViewModel(artboard) ??
+  void _bind(
+    rive.File file,
+    rive.Artboard artboard,
+    rive.StateMachine? machine,
+  ) {
+    final viewModel =
+        file.defaultArtboardViewModel(artboard) ??
         file.viewModelByName(character.viewModel);
     final instance = viewModel?.createDefaultInstance();
     if (viewModel == null || instance == null) {
-      debugPrint('[player art] ${character.asset} has no view model — '
-          'characters keep the colours they were drawn');
+      debugPrint(
+        '[player art] ${character.asset} has no view model — '
+        'characters keep the colours they were drawn',
+      );
       return;
     }
-    // Each artboard binds its *own* instance: a shared one would repaint every
-    // character on the table the colour of whoever was coloured last.
+
     _keepAlive.addAll([viewModel, instance]);
     artboard.bindViewModelInstance(instance);
     machine?.bindViewModelInstance(instance);
     for (final MapEntry(key: name, value: shade) in character.shades.entries) {
       final property = instance.color(name);
       if (property == null) {
-        debugPrint('[player art] ${viewModel.name} has no $name '
-            '(expected the ${shade.name} shade)');
+        debugPrint(
+          '[player art] ${viewModel.name} has no $name '
+          '(expected the ${shade.name} shade)',
+        );
         continue;
       }
       property.value = shade.of(color);
@@ -449,14 +302,17 @@ class _RiveArt implements PlayerArt {
     double angle = 0,
     double opacity = 1,
   }) {
-    // The first draw is also what starts the load, so a game that never
-    // preloads still ends up with characters — a frame or two later.
     beginLoading();
 
     final artboard = _artboard;
     if (artboard == null) {
-      _fallback.draw(canvas, center,
-          worldSize: worldSize, angle: angle, opacity: opacity);
+      _fallback.draw(
+        canvas,
+        center,
+        worldSize: worldSize,
+        angle: angle,
+        opacity: opacity,
+      );
       return;
     }
 
@@ -467,29 +323,26 @@ class _RiveArt implements PlayerArt {
     canvas.restore();
   }
 
-  /// Paints the artboard centred on the origin, its longest side filling
-  /// [size].
   void _paint(
-      Canvas canvas, rive.Artboard artboard, double size, double opacity) {
+    Canvas canvas,
+    rive.Artboard artboard,
+    double size,
+    double opacity,
+  ) {
     final bounds = artboard.bounds;
     final longest = bounds.width > bounds.height ? bounds.width : bounds.height;
     if (longest == 0) return;
 
     canvas.save();
     canvas.scale(size / longest);
-    // The artboard draws from its top-left, so pull it back by half its size:
-    // the origin is then the middle of the character, and the rotation above
-    // turns about that same point.
+
     canvas.translate(-bounds.width / 2, -bounds.height / 2);
-    // A fresh renderer each frame, so the modulation starts from full and does
-    // not accumulate over a fade.
+
     final renderer = rive.Renderer.make(canvas);
     try {
       if (opacity < 1) renderer.modulateOpacity(opacity);
       artboard.draw(renderer);
     } finally {
-      // Now, not whenever the GC gets round to it: one of these is made every
-      // frame.
       renderer.dispose();
     }
     canvas.restore();
@@ -506,9 +359,6 @@ class _RiveArt implements PlayerArt {
   }
 }
 
-/// Drawn upright, not turned to [_RiveCharacter.facing]: a piece on the board
-/// points where the player is heading, but a picture in a HUD points at the
-/// person reading it.
 class _RiveArtPainter extends CustomPainter {
   const _RiveArtPainter(this.art, Listenable repaint) : super(repaint: repaint);
 
@@ -530,13 +380,6 @@ class _RiveArtPainter extends CustomPainter {
   bool shouldRepaint(_RiveArtPainter old) => !identical(old.art, art);
 }
 
-/// The character files, each opened once for the whole app.
-///
-/// Static because the cast they feed is: [PlayerArt._cache] holds its
-/// artboards for the life of the process, and a file per colour would be eight
-/// parses of the same kilobyte. Nothing here throws — a platform that cannot
-/// render Rive and a file that will not parse both resolve to null, which is a
-/// drawn image rather than an error anybody sees.
 class _RiveCast {
   const _RiveCast._();
 
@@ -546,17 +389,9 @@ class _RiveCast {
       _opening[asset] ??= _open(asset);
 
   static Future<rive.File?> _open(String asset) async {
-    // Same gate as the intro and the walking cast: on a platform where
-    // `rive_native` takes the process down there is nothing to catch, so do
-    // not even load. See [IntroAnimation.platformSupportsRive].
     if (!IntroAnimation.available) return null;
     try {
-      return await rive.File.asset(
-        asset,
-        // The Flutter renderer, not Rive's: this is drawn into the game's own
-        // canvas alongside everything else, not into a surface of its own.
-        riveFactory: rive.Factory.flutter,
-      );
+      return await rive.File.asset(asset, riveFactory: rive.Factory.flutter);
     } on Object catch (e) {
       debugPrint('[player art] $asset did not load: $e');
       return null;
@@ -565,7 +400,8 @@ class _RiveCast {
 }
 
 class _ShapeArtPainter extends CustomPainter {
-  const _ShapeArtPainter(this.art, Listenable repaint) : super(repaint: repaint);
+  const _ShapeArtPainter(this.art, Listenable repaint)
+    : super(repaint: repaint);
 
   final _ShapeArt art;
 

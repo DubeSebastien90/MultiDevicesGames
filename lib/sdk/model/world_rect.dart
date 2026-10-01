@@ -1,8 +1,3 @@
-/// A rectangle in world coordinates.
-///
-/// Deliberately not `dart:ui`'s `Rect`: the host's world model and physics must
-/// stay renderer-agnostic, so a phone that is only a viewport can never be
-/// confused with the source of truth.
 class WorldRect {
   const WorldRect(this.left, this.top, this.width, this.height);
 
@@ -22,11 +17,15 @@ class WorldRect {
   bool overlaps(WorldRect o) =>
       left < o.right && o.left < right && top < o.bottom && o.top < bottom;
 
-  /// Grown by [d] on every side. Negative shrinks.
   WorldRect inflate(double d) =>
       WorldRect(left - d, top - d, width + 2 * d, height + 2 * d);
 
-  Map<String, dynamic> toJson() => {'x': left, 'y': top, 'w': width, 'h': height};
+  Map<String, dynamic> toJson() => {
+    'x': left,
+    'y': top,
+    'w': width,
+    'h': height,
+  };
 
   static WorldRect fromJson(Map<String, dynamic> j) => WorldRect(
     (j['x'] as num).toDouble(),
