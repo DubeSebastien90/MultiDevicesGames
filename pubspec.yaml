@@ -1,38 +1,16 @@
 name: multiscreen_slingshot
-description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+description: "Party games played across several phones laid out on a table."
+publish_to: 'none'
 
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
 version: 1.0.0+3
 
 environment:
   sdk: ^3.11.5
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   flame: ^1.38.0
   forge2d: ^0.14.2+1
@@ -42,11 +20,9 @@ dependencies:
   rive: ^0.14.11
   flutter_svg: ^2.3.0
   purchases_flutter: ^10.9.0
-  # Bonjour/mDNS discovery, for iOS. UDP broadcast — the original transport —
-  # needs the multicast entitlement there, which Apple grants only on request;
-  # Bonjour goes through the system daemon and needs none. See
-  # `net/bonjour_discovery.dart`.
-  # Pinned below 7.1.5 on purpose: that release needs Dart >=3.12, and this
+  # Bonjour/mDNS discovery. UDP broadcast needs the multicast entitlement on
+  # iOS, which Apple grants only on request; Bonjour needs none.
+  # Pinned below 7.1.5 on purpose: that release needs Dart >=3.12 and this
   # project is on 3.11.5. Raise it after the SDK moves, not before.
   bonsoir: ^7.1.4
   url_launcher: ^6.3.2
@@ -58,37 +34,20 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
   flutter_lints: ^6.0.0
   change_app_package_name: ^1.5.0
 
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
 
+  # An asset directory is not scanned recursively, so each folder needs its own
+  # line. SDK art is kept apart from any game's so that extracting lib/sdk/
+  # into a package stays a `git mv`.
   assets:
-    # The SDK's own art, kept apart from any game's so that extracting
-    # `lib/sdk/` into a real package one day is a `git mv` and not an audit.
-    # Flat rather than a folder per colour: an asset directory is not scanned
-    # recursively, so eight subfolders would be eight lines here.
     - assets/sdk/players/
     - assets/sdk/sfx/
     - assets/sdk/animations/
     - assets/sdk/screenshots/
-    # Each game's own sounds and art, one folder per game id. Leveled copies —
-    # the originals live in audio-src/originals/games/ (see audio-src/README.md).
     - assets/games/arena/
     - assets/games/copsrobbers/
     - assets/games/dodgeball/
@@ -99,23 +58,16 @@ flutter:
     - assets/games/paintwar/
     - assets/games/pitch_cars/
     - assets/games/subway_skater/
-    # One file rather than the folder: the rest of it is app icons, which
-    # have no business in the bundle.
+    # One file rather than the folder: the rest of assets/icons/ is app icons,
+    # which have no business in the bundle.
     - assets/icons/LightSaber.riv
     - assets/icons/subwaySkater/
     - assets/icons/hotPotato/
     - assets/icons/pitchCars/
     - assets/icons/icones_minijeux/
 
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # The sticker screens' type. Bundled rather than fetched: the app is played
-  # on a local network, often with no internet, and a font that arrives after
-  # the first frame is a layout that jumps. Both OFL — see assets/fonts/.
+  # Bundled rather than fetched: the app runs on a local network, often with no
+  # internet, and a font arriving after the first frame is a layout that jumps.
   fonts:
     - family: LilitaOne
       fonts:
