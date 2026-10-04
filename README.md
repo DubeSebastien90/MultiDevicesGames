@@ -41,6 +41,48 @@ networks drop: the list, scanning the host's QR, and typing the address by hand
 (debug builds only). The host is a player too, and renders through the same code
 path as everybody else.
 
+## Purchases: live on Android, waiting on Apple
+
+Premium is a one-time, non-consumable purchase through
+[RevenueCat](https://www.revenuecat.com/).
+
+- **Android: working.** Purchases go through Google Play Billing and RevenueCat
+  in our closed-testing build, and Premium unlocks.
+- **iOS: wired in, waiting on Apple.** The same code is configured for the App
+  Store, but our Paid Applications Agreement is still being approved by Apple.
+  Until it is, Apple returns no products, even in Sandbox, and the paywall shows
+  *"Couldn't reach the store"* instead of a price. That is the store-side gate,
+  not a bug in the app, and no code change is needed once the agreement is
+  active.
+
+What is already in place:
+
+- **One `premium` entitlement** shared by the App Store and Google Play apps,
+  so a single entitlement check covers both platforms.
+- **The paywall reads RevenueCat's current offering** and buys its lifetime
+  package, so no product ID is hard-coded in the app.
+- **Only the host pays.** One purchase on the host's phone unlocks the premium
+  games for everyone who joins that table.
+- **Restore purchase**, and a **10-second timeout on the entitlement check** at
+  launch and on retry: a customer who already paid gets a "check failed, retry"
+  state, never an endless spinner.
+- The code lives in
+  [lib/sdk/monetization/](lib/sdk/monetization/):
+  `premium_status.dart` (the SDK and entitlement state) and
+  `paywall_view.dart` (the sheet).
+
+The RevenueCat keys are not in the repo: `env/revenuecat.json` is gitignored
+(shape in [env/revenuecat.example.json](env/revenuecat.example.json)). Without
+it, a plain `flutter run` still works: debug builds unlock Premium, so every
+game is playable. A real purchase also needs a Google account on our testers
+list, so ask us if you want to try one.
+
+With the keys, this shows the real paywall:
+
+```bash
+flutter run --dart-define-from-file=env/revenuecat.json --dart-define=LOCK_PREMIUM=true
+```
+
 ## Running the tests
 
 ```bash
