@@ -17,13 +17,90 @@ one continuous surface. And it has to work whichever way the phones are laid out
 
 ## Running it
 
-Needs two devices on the same WiFi. iOS and Android are the shipping targets;
-macOS, Linux and Windows build and are used for development.
+iOS and Android are the shipping targets; macOS, Linux and Windows build and
+are used for development. The game itself needs **at least two phones on the
+same WiFi**.
+
+### 1. Install the tools
+
+- **Flutter 3.44 or newer**: follow
+  [flutter.dev's install guide](https://docs.flutter.dev/get-started/install)
+  for your OS.
+- **For iPhones:** a Mac with **Xcode 26 or newer** (Mac App Store). Open it
+  once to finish installing its components. The app supports iOS 15+.
+- **For Android phones:** [Android Studio](https://developer.android.com/studio)
+  (any OS), then run `flutter doctor --android-licenses` and answer `y`.
+
+Check everything with `flutter doctor`: the lines for your platform should be
+green. Then get the code:
 
 ```bash
+git clone https://github.com/DubeSebastien90/MultiDevicesGames.git
+cd MultiDevicesGames
 flutter pub get
-flutter run
 ```
+
+### 2. Prepare each phone
+
+Every phone is installed **from the computer, over a USB cable**.
+
+**Android**
+
+1. Settings → About phone → tap **Build number** seven times. This unlocks
+   Developer options.
+2. Settings → Developer options → turn on **USB debugging**.
+3. Plug the phone in and accept **Allow USB debugging** on its screen.
+
+**iPhone** (needs the Mac). The project is signed with our team, so you sign
+with your own. A **free Apple ID** is enough, no paid developer account:
+
+1. Plug the iPhone in, unlock it and tap **Trust This Computer**.
+2. Xcode → Settings → Accounts → **+** → sign in with your Apple ID. This gives
+   you a free *Personal Team*.
+3. Open `ios/Runner.xcworkspace` in Xcode, select the **Runner** target →
+   **Signing & Capabilities**. Pick your Personal Team and change the
+   **Bundle Identifier** to something unique, e.g.
+   `com.yourname.bubblegames` (ours is registered to our team).
+4. On the iPhone, turn on **Developer Mode** (Settings → Privacy & Security; the
+   option only appears after the phone has been connected to Xcode once). The
+   phone restarts.
+5. After the first install, trust your certificate: Settings → General →
+   VPN & Device Management → your Apple ID → **Trust**.
+
+With a free Personal Team the app stops launching after **7 days**; run it
+again to reinstall.
+
+### 3. Install and launch
+
+With several phones plugged in, `flutter run` asks which one to use, so name
+each device and use **one terminal per phone**:
+
+```bash
+flutter devices                # list phones, simulators and desktop
+flutter run -d <device-id>     # repeat in another terminal for each phone
+```
+
+The first build takes a few minutes.
+
+**To play unplugged on an iPhone, install a release build.** iOS will not
+reopen a Flutter *debug* build once the cable is out and the app is closed.
+Release builds do not unlock Premium on their own, so force it for your own
+phones:
+
+```bash
+flutter run -d <device-id> --release --dart-define=FORCE_PREMIUM=true
+```
+
+Never use `FORCE_PREMIUM` for a build that goes to a store. Android debug
+builds reopen normally, so a plain `flutter run` is enough there.
+
+**Simulators and emulators** run the app but have no camera for the QR code and
+no physical layout to play on. Several iOS simulators on the same Mac do find
+each other: start one with `open -a Simulator`, add more with File → Open
+Simulator, then `flutter run -d <id>` on each. The Android emulator sits behind
+its own NAT, so other devices cannot reach it.
+
+### 4. Play
 
 On the first phone tap **Host a game** and name it. On the second tap **Join a
 game** — the host appears in the list. Then:
@@ -38,8 +115,8 @@ game** — the host appears in the list. Then:
 
 Discovery has three ways in, because broadcast traffic is exactly what guest
 networks drop: the list, scanning the host's QR, and typing the address by hand
-(debug builds only). The host is a player too, and renders through the same code
-path as everybody else.
+(debug builds only). On guest or venue WiFi, use the QR code. The host is a
+player too, and renders through the same code path as everybody else.
 
 ## Purchases: live on Android, waiting on Apple
 
